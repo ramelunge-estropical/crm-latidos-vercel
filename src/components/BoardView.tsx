@@ -45,6 +45,8 @@ export function BoardView({ processId, processName }: BoardViewProps) {
     process_id: string;
     created_at: string;
     updated_at: string;
+    type: string | null;
+    subtype: string | null;
   };
 
   const { data: gestiones = [] } = useQuery<GestionRow[]>({

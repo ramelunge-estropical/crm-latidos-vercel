@@ -11,6 +11,8 @@ interface Gestion {
   responsable_nombre: string | null;
   owner_id: string | null;
   stage_id: string;
+  type: string | null;
+  subtype: string | null;
 }
 
 interface BoardColumnProps {
