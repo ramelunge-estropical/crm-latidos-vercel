@@ -1,4 +1,4 @@
-import { Calendar, User } from "lucide-react";
+import { Calendar, User, Tag } from "lucide-react";
 import { Draggable } from "@hello-pangea/dnd";
 
 interface GestionCardProps {
@@ -9,6 +9,8 @@ interface GestionCardProps {
   priority: string;
   dueDate?: string | null;
   responsable?: string | null;
+  type?: string | null;
+  subtype?: string | null;
   onClick: () => void;
 }
 
@@ -19,8 +21,16 @@ const priorityConfig: Record<string, { label: string; className: string }> = {
   low: { label: "Baja", className: "bg-muted text-muted-foreground" },
 };
 
-export function GestionCard({ id, index, title, description, priority, dueDate, responsable, onClick }: GestionCardProps) {
+const typeConfig: Record<string, { label: string; className: string }> = {
+  comercial: { label: "Comercial", className: "bg-blue-500/10 text-blue-600" },
+  proyecto: { label: "Proyecto", className: "bg-violet-500/10 text-violet-600" },
+  operativa: { label: "Operativa", className: "bg-amber-500/10 text-amber-600" },
+  caso: { label: "Caso", className: "bg-emerald-500/10 text-emerald-600" },
+};
+
+export function GestionCard({ id, index, title, description, priority, dueDate, responsable, type, subtype, onClick }: GestionCardProps) {
   const pConfig = priorityConfig[priority] || priorityConfig.medium;
+  const tConfig = type ? typeConfig[type] : null;
 
   return (
     <Draggable draggableId={id} index={index}>
@@ -36,6 +46,19 @@ export function GestionCard({ id, index, title, description, priority, dueDate, 
               : "border-border hover:shadow-md hover:border-primary/30"
           }`}
         >
+          {/* Type badge */}
+          {tConfig && (
+            <div className="flex items-center gap-1 mb-1.5">
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${tConfig.className}`}>
+                <Tag className="w-2.5 h-2.5" />
+                {tConfig.label}
+              </span>
+              {subtype && (
+                <span className="text-[10px] text-muted-foreground">· {subtype}</span>
+              )}
+            </div>
+          )}
+
           <h4 className="text-sm font-medium text-card-foreground leading-snug mb-1">{title}</h4>
 
           {description && (

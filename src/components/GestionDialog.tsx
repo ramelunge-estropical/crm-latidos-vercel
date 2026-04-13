@@ -29,8 +29,24 @@ interface GestionDialogProps {
     owner_id: string | null;
     stage_id: string;
     responsable_nombre: string | null;
+    type: string | null;
+    subtype: string | null;
   } | null;
 }
+
+const GESTION_TYPES = [
+  { value: "comercial", label: "Comercial" },
+  { value: "proyecto", label: "Proyecto" },
+  { value: "operativa", label: "Operativa" },
+  { value: "caso", label: "Caso" },
+];
+
+const SUBTYPES: Record<string, string[]> = {
+  comercial: ["Lead", "Oportunidad", "Renovación", "Upsell"],
+  proyecto: ["Implementación", "Migración", "Desarrollo", "Consultoría"],
+  operativa: ["Tarea", "Mantenimiento", "Proceso", "Auditoría"],
+  caso: ["Incidencia", "Reclamo", "Consulta", "Solicitud"],
+};
 
 export function GestionDialog({ open, onOpenChange, processId, stageId, gestion }: GestionDialogProps) {
   const isEdit = !!gestion;
@@ -40,16 +56,22 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
   const [description, setDescription] = useState(gestion?.description || "");
   const [priority, setPriority] = useState(gestion?.priority || "medium");
   const [responsable, setResponsable] = useState(gestion?.responsable_nombre || "");
+  const [gestionType, setGestionType] = useState(gestion?.type || "operativa");
+  const [subtype, setSubtype] = useState(gestion?.subtype || "");
   const [dueDate, setDueDate] = useState<Date | undefined>(
     gestion?.due_date ? new Date(gestion.due_date) : undefined
   );
   const [loading, setLoading] = useState(false);
+
+  const currentSubtypes = SUBTYPES[gestionType] || [];
 
   const resetForm = () => {
     setTitle("");
     setDescription("");
     setPriority("medium");
     setResponsable("");
+    setGestionType("operativa");
+    setSubtype("");
     setDueDate(undefined);
   };
 
@@ -60,9 +82,11 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
       const payload = {
         title: title.trim(),
         description: description.trim() || null,
-        priority: priority as any,
+        priority: priority,
         due_date: dueDate ? format(dueDate, "yyyy-MM-dd") : null,
         responsable_nombre: responsable.trim() || null,
+        type: gestionType,
+        subtype: subtype.trim() || null,
         process_id: processId,
         stage_id: gestion?.stage_id || stageId!,
       };
@@ -118,6 +142,34 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
             <Label htmlFor="g-desc">Descripción</Label>
             <Textarea id="g-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descripción..." rows={2} />
           </div>
+
+          {/* Type & Subtype */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Tipo</Label>
+              <Select value={gestionType} onValueChange={(v) => { setGestionType(v); setSubtype(""); }}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {GESTION_TYPES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Subtipo</Label>
+              <Select value={subtype} onValueChange={setSubtype}>
+                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                <SelectContent>
+                  {currentSubtypes.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Priority & Due date */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Prioridad</Label>
@@ -146,6 +198,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
               </Popover>
             </div>
           </div>
+
           <div>
             <Label htmlFor="g-resp">Responsable</Label>
             <Input id="g-resp" value={responsable} onChange={(e) => setResponsable(e.target.value)} placeholder="Nombre del responsable" />

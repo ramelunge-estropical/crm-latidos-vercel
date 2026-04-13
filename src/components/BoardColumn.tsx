@@ -11,6 +11,8 @@ interface Gestion {
   responsable_nombre: string | null;
   owner_id: string | null;
   stage_id: string;
+  type: string | null;
+  subtype: string | null;
 }
 
 interface BoardColumnProps {
@@ -60,6 +62,8 @@ export function BoardColumn({ stageId, name, globalStatus, gestiones, onAddGesti
                 priority={g.priority}
                 dueDate={g.due_date}
                 responsable={g.responsable_nombre}
+                type={g.type}
+                subtype={g.subtype}
                 onClick={() => onEditGestion(g)}
               />
             ))}
