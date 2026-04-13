@@ -6,7 +6,7 @@ import { GestionDialog } from "./GestionDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Filter, Briefcase, FolderKanban, Cog, AlertCircle, Calendar } from "lucide-react";
+import { Plus, Filter, Briefcase, FolderKanban, Cog, AlertCircle, Calendar, LayoutGrid, List } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
