@@ -57,9 +57,12 @@ export function ProcessSidebar({
         )}
       </div>
 
-      {/* Navigation */}
+      {/* Principal */}
       <div className="px-2 pt-2 space-y-0.5">
-        {navItems.map((item) => (
+        {!collapsed && (
+          <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Principal</span>
+        )}
+        {mainItems.map((item) => (
           <button
             key={item.view}
             onClick={() => onChangeView(item.view)}
@@ -75,8 +78,51 @@ export function ProcessSidebar({
         ))}
       </div>
 
+      <Separator className="my-2 mx-2 bg-sidebar-border" />
+
+      {/* Vistas Especializadas */}
+      <div className="px-2 space-y-0.5">
+        {!collapsed && (
+          <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Vistas</span>
+        )}
+        {specializedItems.map((item) => (
+          <button
+            key={item.view}
+            onClick={() => onChangeView(item.view)}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+              activeView === item.view
+                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+            }`}
+          >
+            <item.icon className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span>{item.label}</span>}
+          </button>
+        ))}
+      </div>
 
       <Separator className="my-2 mx-2 bg-sidebar-border" />
+
+      {/* Utilidades */}
+      <div className="px-2 space-y-0.5">
+        {!collapsed && (
+          <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Utilidades</span>
+        )}
+        {utilItems.map((item) => (
+          <button
+            key={item.view}
+            onClick={() => onChangeView(item.view)}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+              activeView === item.view
+                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+            }`}
+          >
+            <item.icon className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span>{item.label}</span>}
+          </button>
+        ))}
+      </div>
 
       {/* Process List */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
