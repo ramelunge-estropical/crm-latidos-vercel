@@ -19,6 +19,7 @@ export type Database = {
           created_at: string
           description: string | null
           due_date: string | null
+          entered_stage_at: string
           id: string
           owner_id: string | null
           priority: Database["public"]["Enums"]["gestion_priority"]
@@ -34,6 +35,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           due_date?: string | null
+          entered_stage_at?: string
           id?: string
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["gestion_priority"]
@@ -49,6 +51,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           due_date?: string | null
+          entered_stage_at?: string
           id?: string
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["gestion_priority"]
@@ -141,6 +144,93 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      stage_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          from_stage_id: string | null
+          gestion_id: string
+          id: string
+          to_stage_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          from_stage_id?: string | null
+          gestion_id: string
+          id?: string
+          to_stage_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          from_stage_id?: string | null
+          gestion_id?: string
+          id?: string
+          to_stage_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stage_history_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_history_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_history_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stage_rules: {
+        Row: {
+          applies_to_subtype: string | null
+          applies_to_type: string | null
+          created_at: string
+          id: string
+          rule_config: Json
+          rule_type: string
+          stage_id: string
+        }
+        Insert: {
+          applies_to_subtype?: string | null
+          applies_to_type?: string | null
+          created_at?: string
+          id?: string
+          rule_config?: Json
+          rule_type: string
+          stage_id: string
+        }
+        Update: {
+          applies_to_subtype?: string | null
+          applies_to_type?: string | null
+          created_at?: string
+          id?: string
+          rule_config?: Json
+          rule_type?: string
+          stage_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stage_rules_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
