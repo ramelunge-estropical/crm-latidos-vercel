@@ -14,7 +14,125 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      gestiones: {
+        Row: {
+          created_at: string
+          description: string | null
+          due_date: string | null
+          id: string
+          owner_id: string | null
+          priority: Database["public"]["Enums"]["gestion_priority"]
+          process_id: string
+          stage_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          owner_id?: string | null
+          priority?: Database["public"]["Enums"]["gestion_priority"]
+          process_id: string
+          stage_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          owner_id?: string | null
+          priority?: Database["public"]["Enums"]["gestion_priority"]
+          process_id?: string
+          stage_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestiones_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestiones_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pipeline_stages: {
+        Row: {
+          created_at: string
+          global_status: Database["public"]["Enums"]["global_status"]
+          id: string
+          name: string
+          order: number
+          process_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          global_status?: Database["public"]["Enums"]["global_status"]
+          id?: string
+          name: string
+          order?: number
+          process_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          global_status?: Database["public"]["Enums"]["global_status"]
+          id?: string
+          name?: string
+          order?: number
+          process_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      processes: {
+        Row: {
+          area: string | null
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          area?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          area?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +141,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      gestion_priority: "low" | "medium" | "high" | "urgent"
+      global_status: "todo" | "planned" | "doing" | "review" | "done"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +269,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      gestion_priority: ["low", "medium", "high", "urgent"],
+      global_status: ["todo", "planned", "doing", "review", "done"],
+    },
   },
 } as const
