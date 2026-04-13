@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
 import { BoardColumn } from "./BoardColumn";
 import { GestionDialog } from "./GestionDialog";
+import { GestionDetailView } from "./GestionDetailView";
 import { StageRulesDialog } from "./StageRulesDialog";
 import { useProcessEngine } from "@/hooks/useProcessEngine";
 import { Plus, Filter, ShieldCheck, AlertTriangle } from "lucide-react";
@@ -37,6 +38,7 @@ export function BoardView({ processId, processName }: BoardViewProps) {
   const queryClient = useQueryClient();
   const [createStageId, setCreateStageId] = useState<string | null>(null);
   const [editGestion, setEditGestion] = useState<any | null>(null);
+  const [detailGestionId, setDetailGestionId] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterResponsable, setFilterResponsable] = useState<string>("all");
   const [showRules, setShowRules] = useState(false);
@@ -234,7 +236,7 @@ export function BoardView({ processId, processName }: BoardViewProps) {
                 progressMap={progressMap}
                 hasRules={rules.some((r) => r.stage_id === stage.id)}
                 onAddGestion={() => setCreateStageId(stage.id)}
-                onEditGestion={(g) => setEditGestion(g)}
+                onEditGestion={(g) => setDetailGestionId(g.id)}
               />
             ))}
 
@@ -259,13 +261,13 @@ export function BoardView({ processId, processName }: BoardViewProps) {
         />
       )}
 
-      {/* Edit dialog */}
-      {editGestion && (
-        <GestionDialog
-          open={!!editGestion}
-          onOpenChange={(o) => !o && setEditGestion(null)}
+      {/* Detail view */}
+      {detailGestionId && (
+        <GestionDetailView
+          open={!!detailGestionId}
+          onOpenChange={(o) => !o && setDetailGestionId(null)}
+          gestionId={detailGestionId}
           processId={processId}
-          gestion={editGestion}
         />
       )}
 
