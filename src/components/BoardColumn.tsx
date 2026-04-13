@@ -62,7 +62,10 @@ export function BoardColumn({ stageId, name, globalStatus, gestiones, onAddGesti
                 priority={g.priority}
                 dueDate={g.due_date}
                 responsable={g.responsable_nombre}
+                type={g.type}
+                subtype={g.subtype}
                 onClick={() => onEditGestion(g)}
+              />
               />
             ))}
             {provided.placeholder}
