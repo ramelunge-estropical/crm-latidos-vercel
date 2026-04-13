@@ -24,16 +24,13 @@ interface ProcessSidebarProps {
 const navItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "cliente360", label: "Cliente 360", icon: Users },
   { view: "mis-gestiones", label: "Mis Gestiones", icon: ClipboardList },
-  { view: "agenda", label: "Agenda", icon: CalendarDays },
-  { view: "resumen", label: "Resumen Diario", icon: BarChart3 },
-  { view: "configuraciones", label: "Configuraciones", icon: Settings },
-];
-
-const specializedItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "comercial", label: "Comercial", icon: Briefcase },
   { view: "proyectos", label: "Proyectos", icon: FolderKanban },
   { view: "operativa", label: "Operativa", icon: Cog },
   { view: "casos", label: "Casos", icon: AlertCircle },
+  { view: "agenda", label: "Agenda", icon: CalendarDays },
+  { view: "resumen", label: "Resumen Diario", icon: BarChart3 },
+  { view: "configuraciones", label: "Configuraciones", icon: Settings },
 ];
 
 export function ProcessSidebar({
