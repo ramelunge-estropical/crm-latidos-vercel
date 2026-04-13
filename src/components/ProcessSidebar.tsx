@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
@@ -10,7 +10,7 @@ interface Process {
   area: string | null;
 }
 
-export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones";
+export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos";
 
 interface ProcessSidebarProps {
   processes: Process[];
@@ -27,6 +27,13 @@ const navItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[
   { view: "agenda", label: "Agenda", icon: CalendarDays },
   { view: "resumen", label: "Resumen Diario", icon: BarChart3 },
   { view: "configuraciones", label: "Configuraciones", icon: Settings },
+];
+
+const specializedItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
+  { view: "comercial", label: "Comercial", icon: Briefcase },
+  { view: "proyectos", label: "Proyectos", icon: FolderKanban },
+  { view: "operativa", label: "Operativa", icon: Cog },
+  { view: "casos", label: "Casos", icon: AlertCircle },
 ];
 
 export function ProcessSidebar({
