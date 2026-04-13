@@ -23,6 +23,7 @@ export type Database = {
           owner_id: string | null
           priority: Database["public"]["Enums"]["gestion_priority"]
           process_id: string
+          responsable_nombre: string | null
           stage_id: string
           title: string
           updated_at: string
@@ -35,6 +36,7 @@ export type Database = {
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["gestion_priority"]
           process_id: string
+          responsable_nombre?: string | null
           stage_id: string
           title: string
           updated_at?: string
@@ -47,6 +49,7 @@ export type Database = {
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["gestion_priority"]
           process_id?: string
+          responsable_nombre?: string | null
           stage_id?: string
           title?: string
           updated_at?: string

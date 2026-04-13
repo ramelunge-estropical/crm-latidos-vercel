@@ -68,11 +68,11 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
       };
 
       if (isEdit) {
-        const { error } = await supabase.from("gestiones").update(payload).eq("id", gestion!.id);
+        const { error } = await supabase.from("gestiones").update(payload as any).eq("id", gestion!.id);
         if (error) throw error;
         toast.success("Gestión actualizada");
       } else {
-        const { error } = await supabase.from("gestiones").insert(payload);
+        const { error } = await supabase.from("gestiones").insert(payload as any);
         if (error) throw error;
         toast.success("Gestión creada");
       }

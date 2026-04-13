@@ -33,7 +33,21 @@ export function BoardView({ processId, processName }: BoardViewProps) {
     },
   });
 
-  const { data: gestiones = [] } = useQuery({
+  type GestionRow = {
+    id: string;
+    title: string;
+    description: string | null;
+    priority: string;
+    due_date: string | null;
+    responsable_nombre: string | null;
+    owner_id: string | null;
+    stage_id: string;
+    process_id: string;
+    created_at: string;
+    updated_at: string;
+  };
+
+  const { data: gestiones = [] } = useQuery<GestionRow[]>({
     queryKey: ["gestiones", processId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -42,7 +56,7 @@ export function BoardView({ processId, processName }: BoardViewProps) {
         .eq("process_id", processId)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data;
+      return data as unknown as GestionRow[];
     },
   });
 
