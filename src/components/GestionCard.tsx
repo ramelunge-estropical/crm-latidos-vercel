@@ -1,5 +1,6 @@
 import { Calendar, User, Tag } from "lucide-react";
 import { Draggable } from "@hello-pangea/dnd";
+import { Progress } from "@/components/ui/progress";
 
 interface GestionCardProps {
   id: string;
@@ -11,6 +12,7 @@ interface GestionCardProps {
   responsable?: string | null;
   type?: string | null;
   subtype?: string | null;
+  progress?: number;
   onClick: () => void;
 }
 
@@ -28,7 +30,7 @@ const typeConfig: Record<string, { label: string; className: string }> = {
   caso: { label: "Caso", className: "bg-emerald-500/10 text-emerald-600" },
 };
 
-export function GestionCard({ id, index, title, description, priority, dueDate, responsable, type, subtype, onClick }: GestionCardProps) {
+export function GestionCard({ id, index, title, description, priority, dueDate, responsable, type, subtype, progress, onClick }: GestionCardProps) {
   const pConfig = priorityConfig[priority] || priorityConfig.medium;
   const tConfig = type ? typeConfig[type] : null;
 
@@ -63,6 +65,17 @@ export function GestionCard({ id, index, title, description, priority, dueDate, 
 
           {description && (
             <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{description}</p>
+          )}
+
+          {/* Progress bar */}
+          {progress !== undefined && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[10px] text-muted-foreground">Progreso</span>
+                <span className="text-[10px] font-medium text-foreground">{progress}%</span>
+              </div>
+              <Progress value={progress} className="h-1.5" />
+            </div>
           )}
 
           <div className="flex items-center gap-2 flex-wrap">
