@@ -37,7 +37,7 @@ export function ProcessSidebar({
         {!collapsed && (
           <div className="flex-1 min-w-0">
             <h1 className="text-sm font-semibold text-sidebar-primary-foreground truncate">
-              Pulso TOS
+              CRM Latidos
             </h1>
             <p className="text-xs text-sidebar-foreground/60">Gestión Operativa</p>
           </div>
