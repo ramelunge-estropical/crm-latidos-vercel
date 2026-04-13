@@ -42,7 +42,7 @@ export function BoardColumn({ stageId, name, globalStatus, gestiones, progressMa
         <div className={`w-2.5 h-2.5 rounded-full ${statusColors[globalStatus] || "bg-muted-foreground"}`} />
         <h3 className="text-sm font-semibold text-foreground">{name}</h3>
         {hasRules && (
-          <ShieldCheck className="w-3.5 h-3.5 text-primary/60" title="Tiene reglas de proceso" />
+          <ShieldCheck className="w-3.5 h-3.5 text-primary/60" />
         )}
         <span className="ml-auto text-xs font-medium text-muted-foreground bg-background rounded-full px-2 py-0.5">
           {gestiones.length}
