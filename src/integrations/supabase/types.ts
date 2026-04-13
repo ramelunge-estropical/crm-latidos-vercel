@@ -14,6 +14,59 @@ export type Database = {
   }
   public: {
     Tables: {
+      activities: {
+        Row: {
+          activity_type: Database["public"]["Enums"]["activity_type"]
+          assigned_to: string | null
+          completed: boolean
+          completed_at: string | null
+          created_at: string
+          description: string | null
+          duration_minutes: number | null
+          gestion_id: string
+          id: string
+          scheduled_at: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          activity_type?: Database["public"]["Enums"]["activity_type"]
+          assigned_to?: string | null
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          gestion_id: string
+          id?: string
+          scheduled_at?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          activity_type?: Database["public"]["Enums"]["activity_type"]
+          assigned_to?: string | null
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          duration_minutes?: number | null
+          gestion_id?: string
+          id?: string
+          scheduled_at?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activities_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gestion_attachments: {
         Row: {
           created_at: string
@@ -221,6 +274,45 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          department: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          phone: string | null
+          role: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          department?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          role?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          department?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          role?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       stage_history: {
         Row: {
           changed_at: string
@@ -316,6 +408,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
+      activity_type: "tarea" | "llamada" | "reunión"
       gestion_priority: "low" | "medium" | "high" | "urgent"
       gestion_type: "comercial" | "proyecto" | "operativa" | "caso"
       global_status: "todo" | "planned" | "doing" | "review" | "done"
@@ -446,6 +539,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      activity_type: ["tarea", "llamada", "reunión"],
       gestion_priority: ["low", "medium", "high", "urgent"],
       gestion_type: ["comercial", "proyecto", "operativa", "caso"],
       global_status: ["todo", "planned", "doing", "review", "done"],
