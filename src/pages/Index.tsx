@@ -8,6 +8,7 @@ import { Cliente360View } from "@/components/Cliente360View";
 import { MisGestionesView } from "@/components/MisGestionesView";
 import { ResumenDiarioView } from "@/components/ResumenDiarioView";
 import { ConfiguracionesView } from "@/components/ConfiguracionesView";
+import { SpecializedView } from "@/components/SpecializedView";
 import { CreateProcessDialog } from "@/components/CreateProcessDialog";
 import { LayoutGrid } from "lucide-react";
 
@@ -44,6 +45,10 @@ const Index = () => {
       case "mis-gestiones": return <MisGestionesView />;
       case "resumen": return <ResumenDiarioView />;
       case "configuraciones": return <ConfiguracionesView />;
+      case "comercial": return <SpecializedView type="comercial" />;
+      case "proyectos": return <SpecializedView type="proyecto" />;
+      case "operativa": return <SpecializedView type="operativa" />;
+      case "casos": return <SpecializedView type="caso" />;
       case "process":
       default:
         if (selectedProcess) {

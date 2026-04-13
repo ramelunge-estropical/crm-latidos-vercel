@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
@@ -10,7 +10,7 @@ interface Process {
   area: string | null;
 }
 
-export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones";
+export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos";
 
 interface ProcessSidebarProps {
   processes: Process[];
@@ -27,6 +27,13 @@ const navItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[
   { view: "agenda", label: "Agenda", icon: CalendarDays },
   { view: "resumen", label: "Resumen Diario", icon: BarChart3 },
   { view: "configuraciones", label: "Configuraciones", icon: Settings },
+];
+
+const specializedItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
+  { view: "comercial", label: "Comercial", icon: Briefcase },
+  { view: "proyectos", label: "Proyectos", icon: FolderKanban },
+  { view: "operativa", label: "Operativa", icon: Cog },
+  { view: "casos", label: "Casos", icon: AlertCircle },
 ];
 
 export function ProcessSidebar({
@@ -50,6 +57,29 @@ export function ProcessSidebar({
       {/* Navigation */}
       <div className="px-2 pt-2 space-y-0.5">
         {navItems.map((item) => (
+          <button
+            key={item.view}
+            onClick={() => onChangeView(item.view)}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+              activeView === item.view
+                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+            }`}
+          >
+            <item.icon className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span>{item.label}</span>}
+          </button>
+        ))}
+      </div>
+
+      <Separator className="my-2 mx-2 bg-sidebar-border" />
+
+      {/* Specialized Views */}
+      <div className="px-2 space-y-0.5">
+        {!collapsed && (
+          <span className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/50">Vistas</span>
+        )}
+        {specializedItems.map((item) => (
           <button
             key={item.view}
             onClick={() => onChangeView(item.view)}
