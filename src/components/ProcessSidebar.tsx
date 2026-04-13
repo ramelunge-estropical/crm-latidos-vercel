@@ -21,13 +21,19 @@ interface ProcessSidebarProps {
   onChangeView: (view: SidebarView) => void;
 }
 
-const navItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
+const mainItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "cliente360", label: "Cliente 360", icon: Users },
   { view: "mis-gestiones", label: "Mis Gestiones", icon: ClipboardList },
+];
+
+const specializedItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "comercial", label: "Comercial", icon: Briefcase },
   { view: "proyectos", label: "Proyectos", icon: FolderKanban },
   { view: "operativa", label: "Operativa", icon: Cog },
   { view: "casos", label: "Casos", icon: AlertCircle },
+];
+
+const utilItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "agenda", label: "Agenda", icon: CalendarDays },
   { view: "resumen", label: "Resumen Diario", icon: BarChart3 },
   { view: "configuraciones", label: "Configuraciones", icon: Settings },
