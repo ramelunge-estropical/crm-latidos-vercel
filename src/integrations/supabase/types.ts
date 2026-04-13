@@ -14,6 +14,82 @@ export type Database = {
   }
   public: {
     Tables: {
+      gestion_attachments: {
+        Row: {
+          created_at: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          gestion_id: string
+          id: string
+          mime_type: string | null
+          uploaded_by_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          gestion_id: string
+          id?: string
+          mime_type?: string | null
+          uploaded_by_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          gestion_id?: string
+          id?: string
+          mime_type?: string | null
+          uploaded_by_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestion_attachments_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gestion_comments: {
+        Row: {
+          author_name: string | null
+          comment_type: string
+          content: string
+          created_at: string
+          gestion_id: string
+          id: string
+        }
+        Insert: {
+          author_name?: string | null
+          comment_type?: string
+          content: string
+          created_at?: string
+          gestion_id: string
+          id?: string
+        }
+        Update: {
+          author_name?: string | null
+          comment_type?: string
+          content?: string
+          created_at?: string
+          gestion_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestion_comments_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gestiones: {
         Row: {
           created_at: string
