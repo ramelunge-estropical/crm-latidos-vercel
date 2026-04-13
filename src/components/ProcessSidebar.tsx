@@ -24,16 +24,13 @@ interface ProcessSidebarProps {
 const navItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "cliente360", label: "Cliente 360", icon: Users },
   { view: "mis-gestiones", label: "Mis Gestiones", icon: ClipboardList },
-  { view: "agenda", label: "Agenda", icon: CalendarDays },
-  { view: "resumen", label: "Resumen Diario", icon: BarChart3 },
-  { view: "configuraciones", label: "Configuraciones", icon: Settings },
-];
-
-const specializedItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "comercial", label: "Comercial", icon: Briefcase },
   { view: "proyectos", label: "Proyectos", icon: FolderKanban },
   { view: "operativa", label: "Operativa", icon: Cog },
   { view: "casos", label: "Casos", icon: AlertCircle },
+  { view: "agenda", label: "Agenda", icon: CalendarDays },
+  { view: "resumen", label: "Resumen Diario", icon: BarChart3 },
+  { view: "configuraciones", label: "Configuraciones", icon: Settings },
 ];
 
 export function ProcessSidebar({
@@ -72,28 +69,6 @@ export function ProcessSidebar({
         ))}
       </div>
 
-      <Separator className="my-2 mx-2 bg-sidebar-border" />
-
-      {/* Specialized Views */}
-      <div className="px-2 space-y-0.5">
-        {!collapsed && (
-          <span className="px-3 py-1 text-xs font-medium uppercase tracking-wider text-sidebar-foreground/50">Vistas</span>
-        )}
-        {specializedItems.map((item) => (
-          <button
-            key={item.view}
-            onClick={() => onChangeView(item.view)}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
-              activeView === item.view
-                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-            }`}
-          >
-            <item.icon className="w-4 h-4 flex-shrink-0" />
-            {!collapsed && <span>{item.label}</span>}
-          </button>
-        ))}
-      </div>
 
       <Separator className="my-2 mx-2 bg-sidebar-border" />
 
