@@ -110,6 +110,20 @@ export function SpecializedView({ type }: SpecializedViewProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center border border-border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <Filter className="w-4 h-4 text-muted-foreground" />
           <Select value={filterPriority} onValueChange={setFilterPriority}>
             <SelectTrigger className="h-8 w-[130px] text-xs">
