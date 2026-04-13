@@ -25,7 +25,9 @@ export type Database = {
           process_id: string
           responsable_nombre: string | null
           stage_id: string
+          subtype: string | null
           title: string
+          type: Database["public"]["Enums"]["gestion_type"]
           updated_at: string
         }
         Insert: {
@@ -38,7 +40,9 @@ export type Database = {
           process_id: string
           responsable_nombre?: string | null
           stage_id: string
+          subtype?: string | null
           title: string
+          type?: Database["public"]["Enums"]["gestion_type"]
           updated_at?: string
         }
         Update: {
@@ -51,7 +55,9 @@ export type Database = {
           process_id?: string
           responsable_nombre?: string | null
           stage_id?: string
+          subtype?: string | null
           title?: string
+          type?: Database["public"]["Enums"]["gestion_type"]
           updated_at?: string
         }
         Relationships: [
@@ -145,6 +151,7 @@ export type Database = {
     }
     Enums: {
       gestion_priority: "low" | "medium" | "high" | "urgent"
+      gestion_type: "comercial" | "proyecto" | "operativa" | "caso"
       global_status: "todo" | "planned" | "doing" | "review" | "done"
     }
     CompositeTypes: {
@@ -274,6 +281,7 @@ export const Constants = {
   public: {
     Enums: {
       gestion_priority: ["low", "medium", "high", "urgent"],
+      gestion_type: ["comercial", "proyecto", "operativa", "caso"],
       global_status: ["todo", "planned", "doing", "review", "done"],
     },
   },
