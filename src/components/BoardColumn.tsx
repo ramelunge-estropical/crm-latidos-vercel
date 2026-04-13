@@ -1,6 +1,7 @@
 import { Plus } from "lucide-react";
 import { Droppable } from "@hello-pangea/dnd";
 import { GestionCard } from "./GestionCard";
+import { ShieldCheck } from "lucide-react";
 
 interface Gestion {
   id: string;
@@ -20,6 +21,8 @@ interface BoardColumnProps {
   name: string;
   globalStatus: string;
   gestiones: Gestion[];
+  progressMap?: Record<string, number>;
+  hasRules?: boolean;
   onAddGestion: () => void;
   onEditGestion: (g: Gestion) => void;
 }
@@ -32,12 +35,15 @@ const statusColors: Record<string, string> = {
   done: "bg-status-done",
 };
 
-export function BoardColumn({ stageId, name, globalStatus, gestiones, onAddGestion, onEditGestion }: BoardColumnProps) {
+export function BoardColumn({ stageId, name, globalStatus, gestiones, progressMap, hasRules, onAddGestion, onEditGestion }: BoardColumnProps) {
   return (
     <div className="flex flex-col w-72 flex-shrink-0 bg-muted/50 rounded-xl">
       <div className="flex items-center gap-2 px-3 py-3">
         <div className={`w-2.5 h-2.5 rounded-full ${statusColors[globalStatus] || "bg-muted-foreground"}`} />
         <h3 className="text-sm font-semibold text-foreground">{name}</h3>
+        {hasRules && (
+          <ShieldCheck className="w-3.5 h-3.5 text-primary/60" />
+        )}
         <span className="ml-auto text-xs font-medium text-muted-foreground bg-background rounded-full px-2 py-0.5">
           {gestiones.length}
         </span>
@@ -64,6 +70,7 @@ export function BoardColumn({ stageId, name, globalStatus, gestiones, onAddGesti
                 responsable={g.responsable_nombre}
                 type={g.type}
                 subtype={g.subtype}
+                progress={progressMap?.[g.id]}
                 onClick={() => onEditGestion(g)}
               />
             ))}

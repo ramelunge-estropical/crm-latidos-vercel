@@ -4,8 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
 import { BoardColumn } from "./BoardColumn";
 import { GestionDialog } from "./GestionDialog";
-import { Plus, Settings, Filter } from "lucide-react";
+import { StageRulesDialog } from "./StageRulesDialog";
+import { useProcessEngine } from "@/hooks/useProcessEngine";
+import { Plus, Filter, ShieldCheck, AlertTriangle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 interface BoardViewProps {
@@ -13,12 +16,30 @@ interface BoardViewProps {
   processName: string;
 }
 
+type GestionRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  priority: string;
+  due_date: string | null;
+  responsable_nombre: string | null;
+  owner_id: string | null;
+  stage_id: string;
+  process_id: string;
+  created_at: string;
+  updated_at: string;
+  type: string | null;
+  subtype: string | null;
+  entered_stage_at?: string;
+};
+
 export function BoardView({ processId, processName }: BoardViewProps) {
   const queryClient = useQueryClient();
   const [createStageId, setCreateStageId] = useState<string | null>(null);
   const [editGestion, setEditGestion] = useState<any | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterResponsable, setFilterResponsable] = useState<string>("all");
+  const [showRules, setShowRules] = useState(false);
 
   const { data: stages = [] } = useQuery({
     queryKey: ["stages", processId],
@@ -33,22 +54,6 @@ export function BoardView({ processId, processName }: BoardViewProps) {
     },
   });
 
-  type GestionRow = {
-    id: string;
-    title: string;
-    description: string | null;
-    priority: string;
-    due_date: string | null;
-    responsable_nombre: string | null;
-    owner_id: string | null;
-    stage_id: string;
-    process_id: string;
-    created_at: string;
-    updated_at: string;
-    type: string | null;
-    subtype: string | null;
-  };
-
   const { data: gestiones = [] } = useQuery<GestionRow[]>({
     queryKey: ["gestiones", processId],
     queryFn: async () => {
@@ -61,6 +66,8 @@ export function BoardView({ processId, processName }: BoardViewProps) {
       return data as unknown as GestionRow[];
     },
   });
+
+  const { validateMove, getProgress, rules } = useProcessEngine(processId);
 
   // Unique responsables for filter
   const responsables = useMemo(() => {
@@ -79,6 +86,16 @@ export function BoardView({ processId, processName }: BoardViewProps) {
     });
   }, [gestiones, filterPriority, filterResponsable]);
 
+  // Compute progress for each gestion
+  const progressMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    const stageList = stages.map((s) => ({ id: s.id, name: s.name, order: s.order, global_status: s.global_status }));
+    for (const g of gestiones) {
+      map[g.id] = getProgress(g, stageList);
+    }
+    return map;
+  }, [gestiones, stages, getProgress]);
+
   const onDragEnd = async (result: DropResult) => {
     const { draggableId, destination } = result;
     if (!destination) return;
@@ -86,23 +103,56 @@ export function BoardView({ processId, processName }: BoardViewProps) {
     const gestion = gestiones.find((g) => g.id === draggableId);
     if (!gestion || gestion.stage_id === newStageId) return;
 
+    // Validate move with process engine
+    const stageList = stages.map((s) => ({ id: s.id, name: s.name, order: s.order, global_status: s.global_status }));
+    const violations = validateMove(gestion, newStageId, stageList);
+
+    if (violations.length > 0) {
+      toast.error(
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="w-4 h-4" />
+            No se puede mover
+          </div>
+          {violations.map((v, i) => (
+            <p key={i} className="text-xs">{v.message}</p>
+          ))}
+        </div>,
+        { duration: 5000 }
+      );
+      return;
+    }
+
     // Optimistic update
     queryClient.setQueryData(["gestiones", processId], (old: any[]) =>
-      old.map((g) => (g.id === draggableId ? { ...g, stage_id: newStageId } : g))
+      old.map((g) =>
+        g.id === draggableId
+          ? { ...g, stage_id: newStageId, entered_stage_at: new Date().toISOString() }
+          : g
+      )
     );
 
     const { error } = await supabase
       .from("gestiones")
-      .update({ stage_id: newStageId })
+      .update({ stage_id: newStageId, entered_stage_at: new Date().toISOString() } as any)
       .eq("id", draggableId);
 
     if (error) {
       toast.error("Error al mover la gestión");
       queryClient.invalidateQueries({ queryKey: ["gestiones", processId] });
+      return;
     }
+
+    // Record stage history
+    await supabase.from("stage_history").insert({
+      gestion_id: draggableId,
+      from_stage_id: gestion.stage_id,
+      to_stage_id: newStageId,
+    } as any);
   };
 
   const hasFilters = filterPriority !== "all" || filterResponsable !== "all";
+  const hasRules = rules.length > 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -112,9 +162,26 @@ export function BoardView({ processId, processName }: BoardViewProps) {
           <h2 className="text-lg font-semibold text-foreground">{processName}</h2>
           <p className="text-xs text-muted-foreground">
             {stages.length} etapas · {gestiones.length} gestiones
+            {hasRules && (
+              <span className="ml-2 inline-flex items-center gap-1 text-primary">
+                <ShieldCheck className="w-3 h-3" />
+                {rules.length} regla(s)
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Rules button */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={() => setShowRules(true)}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Reglas
+          </Button>
+
           {/* Filters */}
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-muted-foreground" />
@@ -164,6 +231,8 @@ export function BoardView({ processId, processName }: BoardViewProps) {
                 name={stage.name}
                 globalStatus={stage.global_status}
                 gestiones={filtered.filter((g) => g.stage_id === stage.id)}
+                progressMap={progressMap}
+                hasRules={rules.some((r) => r.stage_id === stage.id)}
                 onAddGestion={() => setCreateStageId(stage.id)}
                 onEditGestion={(g) => setEditGestion(g)}
               />
@@ -197,6 +266,17 @@ export function BoardView({ processId, processName }: BoardViewProps) {
           onOpenChange={(o) => !o && setEditGestion(null)}
           processId={processId}
           gestion={editGestion}
+        />
+      )}
+
+      {/* Rules dialog */}
+      {showRules && (
+        <StageRulesDialog
+          open={showRules}
+          onOpenChange={setShowRules}
+          processId={processId}
+          stages={stages.map((s) => ({ id: s.id, name: s.name, order: s.order }))}
+          rules={rules}
         />
       )}
     </div>
