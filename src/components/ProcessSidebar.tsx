@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Plus, LayoutGrid, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import logoHeart from "@/assets/logo-heart.png";
 
 interface Process {
   id: string;
@@ -30,16 +31,18 @@ export function ProcessSidebar({
       }`}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 p-4 border-b border-sidebar-border">
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-sidebar-primary">
-          <LayoutGrid className="w-4 h-4 text-sidebar-primary-foreground" />
-        </div>
+      <div className="flex items-center gap-2.5 p-4 border-b border-sidebar-border">
+        <img
+          src={logoHeart}
+          alt="Latidos"
+          className="w-8 h-8 rounded-lg object-contain flex-shrink-0"
+        />
         {!collapsed && (
           <div className="flex-1 min-w-0">
             <h1 className="text-sm font-semibold text-sidebar-primary-foreground truncate">
               CRM Latidos
             </h1>
-            <p className="text-xs text-sidebar-foreground/60">Gestión Operativa</p>
+            <p className="text-[11px] text-sidebar-foreground/60">Travel Operating System</p>
           </div>
         )}
       </div>
