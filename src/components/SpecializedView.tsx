@@ -25,6 +25,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
   const [detailGestionId, setDetailGestionId] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const config = typeConfig[type];
   const Icon = config.icon;
