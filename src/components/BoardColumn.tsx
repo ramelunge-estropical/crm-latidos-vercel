@@ -66,7 +66,6 @@ export function BoardColumn({ stageId, name, globalStatus, gestiones, onAddGesti
                 subtype={g.subtype}
                 onClick={() => onEditGestion(g)}
               />
-              />
             ))}
             {provided.placeholder}
           </div>
