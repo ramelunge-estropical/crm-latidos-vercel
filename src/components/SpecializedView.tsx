@@ -6,7 +6,7 @@ import { GestionDialog } from "./GestionDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Filter, Briefcase, FolderKanban, Cog, AlertCircle, Calendar } from "lucide-react";
+import { Plus, Filter, Briefcase, FolderKanban, Cog, AlertCircle, Calendar, LayoutGrid, List } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -25,6 +25,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
   const [detailGestionId, setDetailGestionId] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   const config = typeConfig[type];
   const Icon = config.icon;
@@ -109,6 +110,20 @@ export function SpecializedView({ type }: SpecializedViewProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center border border-border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 transition-colors ${viewMode === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+          </div>
           <Filter className="w-4 h-4 text-muted-foreground" />
           <Select value={filterPriority} onValueChange={setFilterPriority}>
             <SelectTrigger className="h-8 w-[130px] text-xs">
@@ -138,7 +153,10 @@ export function SpecializedView({ type }: SpecializedViewProps) {
             <p className="text-sm text-muted-foreground">No hay gestiones de tipo {config.label.toLowerCase()}</p>
           </div>
         ) : (
-          <div className="grid gap-3 max-w-4xl mx-auto sm:grid-cols-2 lg:grid-cols-3">
+          <div className={viewMode === "grid"
+            ? "grid gap-3 max-w-5xl mx-auto sm:grid-cols-2 lg:grid-cols-3"
+            : "flex flex-col gap-2 max-w-4xl mx-auto"
+          }>
             {filtered.map(g => {
               const stage = stageMap[g.stage_id];
               const process = processMap[g.process_id];
@@ -146,13 +164,46 @@ export function SpecializedView({ type }: SpecializedViewProps) {
               const isOverdue = daysUntilDue !== null && daysUntilDue < 0;
               const isDueSoon = daysUntilDue !== null && daysUntilDue >= 0 && daysUntilDue <= 3;
 
+              if (viewMode === "list") {
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => setDetailGestionId(g.id)}
+                    className="group w-full flex items-center gap-4 p-3 rounded-lg border border-border bg-card hover:shadow-sm hover:border-primary/30 transition-all text-left"
+                  >
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {priorityBadge(g.priority)}
+                      {statusBadge(g.stage_id)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{g.title}</p>
+                      <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5">
+                        {process && <span>{process.name}</span>}
+                        {g.responsable_nombre && <span>· {g.responsable_nombre}</span>}
+                        {g.subtype && <span>· {g.subtype}</span>}
+                      </div>
+                    </div>
+                    {g.due_date && (
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-medium flex-shrink-0 ${
+                        isOverdue ? "text-destructive" : isDueSoon ? "text-orange-500" : "text-muted-foreground"
+                      }`}>
+                        <Calendar className="w-3 h-3" />
+                        {format(new Date(g.due_date), "dd MMM", { locale: es })}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">
+                      {format(new Date(g.updated_at), "dd/MM HH:mm")}
+                    </span>
+                  </button>
+                );
+              }
+
               return (
                 <button
                   key={g.id}
                   onClick={() => setDetailGestionId(g.id)}
                   className="group w-full flex flex-col gap-3 p-4 rounded-xl border border-border bg-card hover:shadow-md hover:border-primary/30 transition-all text-left"
                 >
-                  {/* Top row: badges */}
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {priorityBadge(g.priority)}
                     {statusBadge(g.stage_id)}
@@ -160,8 +211,6 @@ export function SpecializedView({ type }: SpecializedViewProps) {
                       <Badge variant="outline" className="text-[10px] bg-accent/50">{g.subtype}</Badge>
                     )}
                   </div>
-
-                  {/* Title & description */}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
                       {g.title}
@@ -170,8 +219,6 @@ export function SpecializedView({ type }: SpecializedViewProps) {
                       <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{g.description}</p>
                     )}
                   </div>
-
-                  {/* Meta info */}
                   <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
                     {process && (
                       <div className="flex items-center gap-1.5">
@@ -190,8 +237,6 @@ export function SpecializedView({ type }: SpecializedViewProps) {
                       </div>
                     )}
                   </div>
-
-                  {/* Footer: due date + updated */}
                   <div className="flex items-center justify-between pt-2 border-t border-border/50">
                     {g.due_date ? (
                       <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${
