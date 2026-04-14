@@ -10,14 +10,19 @@ import {
   Star, AlertTriangle, FileText, Plane, CreditCard,
   MessageSquare, Heart, DollarSign, Wallet,
   CheckCircle2, Clock, Globe, Landmark,
-  Sparkles, RefreshCw, Home, Tag,
+  Sparkles, RefreshCw, Home, Tag, Building2, UserCircle,
 } from "lucide-react";
 
 // ─── Local types (until Supabase types.ts regenerates after migration) ───────
 
 type Cliente = {
   id: string;
+  tipo_cliente: "natural" | "juridica";
   nombre_completo: string;
+  razon_social: string | null;
+  nit: string | null;
+  contacto_nombre: string | null;
+  contacto_cargo: string | null;
   email: string | null;
   email_secundario: string | null;
   telefono: string | null;
@@ -165,8 +170,11 @@ export function Cliente360View() {
     const q = search.toLowerCase();
     return clientes.filter(c =>
       c.nombre_completo.toLowerCase().includes(q) ||
+      c.razon_social?.toLowerCase().includes(q) ||
       c.email?.toLowerCase().includes(q) ||
-      c.telefono?.includes(q)
+      c.telefono?.includes(q) ||
+      c.nit?.includes(q) ||
+      c.documento_numero?.includes(q)
     );
   }, [clientes, search]);
 
@@ -307,16 +315,23 @@ export function Cliente360View() {
                   onMouseDown={() => { setSelectedId(c.id); setActiveTab("resumen"); setSearch(""); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-accent text-left transition-colors"
                 >
-                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
-                    {c.nombre_completo.charAt(0).toUpperCase()}
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${c.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600" : "bg-primary/10 text-primary"}`}>
+                    {c.tipo_cliente === "juridica" ? <Building2 className="w-3.5 h-3.5" /> : c.nombre_completo.charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate">{c.nombre_completo}</p>
-                    <p className="text-[10px] text-muted-foreground">{c.email ?? c.telefono ?? "Sin contacto"}</p>
+                    <p className="text-xs font-medium truncate">{c.tipo_cliente === "juridica" ? (c.razon_social ?? c.nombre_completo) : c.nombre_completo}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {c.tipo_cliente === "juridica" ? (c.nit ? `NIT: ${c.nit}` : "Empresa") : (c.email ?? c.telefono ?? "Sin contacto")}
+                    </p>
                   </div>
-                  <Badge variant="outline" className={`text-[10px] flex-shrink-0 ${estadoConfig[c.estado]?.className ?? ""}`}>
-                    {estadoConfig[c.estado]?.label ?? c.estado}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <Badge variant="outline" className={`text-[10px] ${c.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600 border-violet-200" : "bg-muted text-muted-foreground"}`}>
+                      {c.tipo_cliente === "juridica" ? "Empresa" : "Persona"}
+                    </Badge>
+                    <Badge variant="outline" className={`text-[10px] ${estadoConfig[c.estado]?.className ?? ""}`}>
+                      {estadoConfig[c.estado]?.label ?? c.estado}
+                    </Badge>
+                  </div>
                 </button>
               ))}
             </div>
@@ -354,19 +369,54 @@ export function Cliente360View() {
             {/* Identity card */}
             <div className="p-4 border-b border-border">
               <div className="flex items-start gap-3 mb-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-lg font-bold text-primary flex-shrink-0">
-                  {cliente.nombre_completo.charAt(0).toUpperCase()}
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold flex-shrink-0 ${cliente.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600" : "bg-primary/10 text-primary"}`}>
+                  {cliente.tipo_cliente === "juridica" ? <Building2 className="w-6 h-6" /> : cliente.nombre_completo.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-semibold text-sm text-foreground leading-tight">{cliente.nombre_completo}</h3>
-                  {cliente.profesion && <p className="text-xs text-muted-foreground">{cliente.profesion}</p>}
-                  <Badge variant="outline" className={`mt-1.5 text-[10px] ${estadoConfig[cliente.estado]?.className ?? ""}`}>
-                    {estadoConfig[cliente.estado]?.label ?? cliente.estado}
-                  </Badge>
+                  <h3 className="font-semibold text-sm text-foreground leading-tight">
+                    {cliente.tipo_cliente === "juridica" ? (cliente.razon_social ?? cliente.nombre_completo) : cliente.nombre_completo}
+                  </h3>
+                  {cliente.tipo_cliente === "juridica" && cliente.razon_social && (
+                    <p className="text-xs text-muted-foreground">{cliente.nombre_completo}</p>
+                  )}
+                  {cliente.profesion && cliente.tipo_cliente === "natural" && (
+                    <p className="text-xs text-muted-foreground">{cliente.profesion}</p>
+                  )}
+                  <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                    <Badge variant="outline" className={`text-[10px] ${cliente.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600 border-violet-200" : "bg-blue-500/10 text-blue-600 border-blue-200"}`}>
+                      {cliente.tipo_cliente === "juridica" ? <><Building2 className="w-2.5 h-2.5 mr-1" />Empresa</> : <><UserCircle className="w-2.5 h-2.5 mr-1" />Persona natural</>}
+                    </Badge>
+                    <Badge variant="outline" className={`text-[10px] ${estadoConfig[cliente.estado]?.className ?? ""}`}>
+                      {estadoConfig[cliente.estado]?.label ?? cliente.estado}
+                    </Badge>
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-2">
+                {/* NIT (jurídica) o CI (natural) */}
+                {cliente.tipo_cliente === "juridica" && cliente.nit && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>NIT: <span className="text-foreground font-medium">{cliente.nit}</span></span>
+                  </div>
+                )}
+                {cliente.tipo_cliente === "natural" && cliente.documento_numero && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <FileText className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{cliente.documento_tipo ?? "CI"}: <span className="text-foreground font-medium">{cliente.documento_numero}</span></span>
+                  </div>
+                )}
+                {/* Contacto empresa */}
+                {cliente.tipo_cliente === "juridica" && cliente.contacto_nombre && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <UserCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>
+                      {cliente.contacto_nombre}
+                      {cliente.contacto_cargo && <span className="opacity-70"> · {cliente.contacto_cargo}</span>}
+                    </span>
+                  </div>
+                )}
                 {cliente.telefono && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Phone className="w-3.5 h-3.5 flex-shrink-0" />
@@ -386,7 +436,7 @@ export function Cliente360View() {
                     <span>{[cliente.ciudad, cliente.pais].filter(Boolean).join(", ")}</span>
                   </div>
                 )}
-                {cliente.fecha_nacimiento && (
+                {cliente.tipo_cliente === "natural" && cliente.fecha_nacimiento && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
                     <span>{fmtDate(cliente.fecha_nacimiento)}</span>
@@ -581,28 +631,58 @@ export function Cliente360View() {
 
                   {/* Info básica */}
                   <div>
-                    <SectionTitle icon={User}>Información básica</SectionTitle>
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                      {[
-                        { label: "Nombre completo",    value: cliente.nombre_completo },
-                        { label: "Teléfono principal", value: cliente.telefono },
-                        { label: "Teléfono secundario",value: cliente.telefono_secundario },
-                        { label: "Email principal",    value: cliente.email },
-                        { label: "Email secundario",   value: cliente.email_secundario },
-                        { label: "Documento",          value: cliente.documento_numero ? `${cliente.documento_tipo ?? ""} ${cliente.documento_numero}`.trim() : null },
-                        { label: "Fecha de nacimiento",value: fmtDate(cliente.fecha_nacimiento, { day: "2-digit", month: "long", year: "numeric" }) },
-                        { label: "Nacionalidad",       value: cliente.nacionalidad },
-                        { label: "Ciudad / País",      value: [cliente.ciudad, cliente.pais].filter(Boolean).join(" / ") || null },
-                        { label: "Profesión",          value: cliente.profesion },
-                        { label: "Estado civil",       value: cliente.estado_civil },
-                        { label: "Asesor asignado",    value: cliente.asesor_nombre },
-                      ].map(({ label, value }) => (
-                        <div key={label}>
-                          <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
-                          <p className="text-xs font-medium text-foreground">{value || "—"}</p>
-                        </div>
-                      ))}
+                    <div className="flex items-center gap-2 mb-4">
+                      <SectionTitle icon={cliente.tipo_cliente === "juridica" ? Building2 : User}>
+                        {cliente.tipo_cliente === "juridica" ? "Datos de la empresa" : "Información básica"}
+                      </SectionTitle>
+                      <Badge variant="outline" className={`text-[10px] mb-3 ${cliente.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600 border-violet-200" : "bg-blue-500/10 text-blue-600 border-blue-200"}`}>
+                        {cliente.tipo_cliente === "juridica" ? "Persona jurídica" : "Persona natural"}
+                      </Badge>
                     </div>
+
+                    {cliente.tipo_cliente === "juridica" ? (
+                      <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                        {[
+                          { label: "Razón social",         value: cliente.razon_social },
+                          { label: "NIT",                  value: cliente.nit },
+                          { label: "Persona de contacto",  value: cliente.contacto_nombre },
+                          { label: "Cargo del contacto",   value: cliente.contacto_cargo },
+                          { label: "Teléfono principal",   value: cliente.telefono },
+                          { label: "Teléfono secundario",  value: cliente.telefono_secundario },
+                          { label: "Email principal",      value: cliente.email },
+                          { label: "Email secundario",     value: cliente.email_secundario },
+                          { label: "Ciudad / País",        value: [cliente.ciudad, cliente.pais].filter(Boolean).join(" / ") || null },
+                          { label: "Asesor asignado",      value: cliente.asesor_nombre },
+                        ].map(({ label, value }) => (
+                          <div key={label}>
+                            <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
+                            <p className="text-xs font-medium text-foreground">{value || "—"}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                        {[
+                          { label: "Nombre completo",    value: cliente.nombre_completo },
+                          { label: "Carnet de identidad",value: cliente.documento_numero ? `${cliente.documento_tipo ?? "CI"} ${cliente.documento_numero}`.trim() : null },
+                          { label: "Teléfono principal", value: cliente.telefono },
+                          { label: "Teléfono secundario",value: cliente.telefono_secundario },
+                          { label: "Email principal",    value: cliente.email },
+                          { label: "Email secundario",   value: cliente.email_secundario },
+                          { label: "Fecha de nacimiento",value: fmtDate(cliente.fecha_nacimiento, { day: "2-digit", month: "long", year: "numeric" }) },
+                          { label: "Nacionalidad",       value: cliente.nacionalidad },
+                          { label: "Ciudad / País",      value: [cliente.ciudad, cliente.pais].filter(Boolean).join(" / ") || null },
+                          { label: "Profesión",          value: cliente.profesion },
+                          { label: "Estado civil",       value: cliente.estado_civil },
+                          { label: "Asesor asignado",    value: cliente.asesor_nombre },
+                        ].map(({ label, value }) => (
+                          <div key={label}>
+                            <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
+                            <p className="text-xs font-medium text-foreground">{value || "—"}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <Separator />
