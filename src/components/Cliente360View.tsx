@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CreateClienteDialog } from "@/components/CreateClienteDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -152,9 +153,11 @@ function SectionTitle({ icon: Icon, children }: { icon: React.ElementType; child
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Cliente360View() {
-  const [search,     setSearch]     = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab,  setActiveTab]  = useState("resumen");
+  const [search,       setSearch]       = useState("");
+  const [selectedId,   setSelectedId]   = useState<string | null>(null);
+  const [activeTab,    setActiveTab]    = useState("resumen");
+  const [showCreate,   setShowCreate]   = useState(false);
+  const [createNombre, setCreateNombre] = useState("");
 
   // ── Clientes list ──
   const { data: clientes = [] } = useQuery<Cliente[]>({
@@ -295,6 +298,14 @@ export function Cliente360View() {
           )}
         </div>
 
+        <button
+          onClick={() => { setCreateNombre(""); setShowCreate(true); }}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors flex-shrink-0"
+        >
+          <Users className="w-3.5 h-3.5" />
+          Nuevo cliente
+        </button>
+
         {/* Search */}
         <div className="relative w-80">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -308,7 +319,16 @@ export function Cliente360View() {
           {search.length >= 2 && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
               {filtered.length === 0 ? (
-                <p className="px-3 py-2 text-xs text-muted-foreground">Sin resultados</p>
+                <div className="p-3 text-center">
+                  <p className="text-xs text-muted-foreground mb-2">No se encontró "{search}"</p>
+                  <button
+                    onMouseDown={() => { setCreateNombre(search); setShowCreate(true); setSearch(""); }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90 transition-colors"
+                  >
+                    <Users className="w-3 h-3" />
+                    Crear cliente nuevo
+                  </button>
+                </div>
               ) : filtered.map(c => (
                 <button
                   key={c.id}
@@ -350,6 +370,13 @@ export function Cliente360View() {
             <p className="text-sm text-muted-foreground max-w-sm">
               Buscá un cliente por nombre, email o teléfono para ver su perfil completo.
             </p>
+            <button
+              onClick={() => { setCreateNombre(""); setShowCreate(true); }}
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+            >
+              <Users className="w-4 h-4" />
+              Crear primer cliente
+            </button>
             {clientes.length === 0 && (
               <p className="text-xs text-muted-foreground mt-2 opacity-60">
                 Aún no hay clientes registrados en la base de datos.
@@ -989,6 +1016,12 @@ export function Cliente360View() {
 
         </div>
       )}
+
+      <CreateClienteDialog
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        initialNombre={createNombre}
+      />
     </div>
   );
 }
