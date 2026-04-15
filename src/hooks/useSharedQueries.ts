@@ -85,7 +85,7 @@ export function useAllStages() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("pipeline_stages")
-        .select("id, process_id, global_status, order, name")
+        .select("id, process_id, global_status, order, name, responsable_id, duracion_estimada_dias")
         .order("order");
       if (error) throw error;
       return data as any[];
