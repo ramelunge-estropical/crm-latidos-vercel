@@ -293,36 +293,36 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0">
 
         {/* ── HEADER ─────────────────────────────────────────────────── */}
-        <div className="px-6 pt-5 pb-4 border-b border-border">
+        <div className="px-6 pt-5 pb-4 border-b border-border pr-14">
           {/* Código + Título editable */}
-          <div className="flex items-start gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-3">
             {gestion.codigo && (
-              <span className="inline-flex items-center gap-1 text-xs font-mono font-semibold text-muted-foreground mt-1 shrink-0">
+              <span className="inline-flex items-center gap-1 text-xs font-mono font-semibold text-muted-foreground shrink-0">
                 <Hash className="w-3 h-3" />{gestion.codigo}
               </span>
             )}
             {editingTitle ? (
-              <div className="flex items-center gap-1.5 flex-1">
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
                 <Input
                   ref={titleInputRef}
                   value={titleValue}
                   onChange={(e) => setTitleValue(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") handleSaveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
-                  className="text-lg font-semibold h-8 flex-1"
+                  className="text-base font-semibold h-9 flex-1 min-w-0"
                 />
-                <Button size="sm" variant="ghost" aria-label="Guardar título" className="h-8 w-8 p-0 text-green-600 hover:text-green-700" onClick={handleSaveTitle}>
+                <Button size="sm" variant="ghost" aria-label="Guardar título" className="h-8 w-8 p-0 text-green-600 hover:text-green-700 shrink-0" onClick={handleSaveTitle}>
                   <Check className="w-4 h-4" />
                 </Button>
-                <Button size="sm" variant="ghost" aria-label="Cancelar edición" className="h-8 w-8 p-0" onClick={() => setEditingTitle(false)}>
+                <Button size="sm" variant="ghost" aria-label="Cancelar edición" className="h-8 w-8 p-0 shrink-0" onClick={() => setEditingTitle(false)}>
                   <X className="w-4 h-4" />
                 </Button>
               </div>
             ) : (
               <button
-                className="text-lg font-semibold text-foreground text-left hover:text-primary flex items-center gap-1.5 group flex-1"
+                className="text-lg font-semibold text-foreground text-left hover:text-primary flex items-center gap-1.5 group flex-1 min-w-0"
                 onClick={() => { setTitleValue(gestion.title); setEditingTitle(true); }}
               >
-                {gestion.title}
+                <span className="truncate">{gestion.title}</span>
                 <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
               </button>
             )}
