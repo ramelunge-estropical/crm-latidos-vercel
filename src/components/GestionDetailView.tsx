@@ -429,20 +429,17 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
           {/* Main content */}
           <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-              <div className="px-4 pt-3 pb-0 overflow-x-auto shrink-0 scrollbar-thin">
-                <TabsList className="w-max">
+              <div className="px-4 pt-3 pb-0 shrink-0">
+                <TabsList>
                   <TabsTrigger value="resumen"        className="text-xs gap-1"><FileText className="w-3 h-3" />Resumen</TabsTrigger>
                   <TabsTrigger value="checklist"      className="text-xs gap-1">
                     <CheckSquare className="w-3 h-3" />Checklist
                     {tareas.length > 0 && <span className="ml-0.5 text-[9px] bg-primary/15 text-primary rounded-full px-1">{tareasDone}/{tareas.length}</span>}
                   </TabsTrigger>
                   <TabsTrigger value="actividades"    className="text-xs gap-1"><Activity className="w-3 h-3" />Actividades</TabsTrigger>
-                  <TabsTrigger value="comunicaciones" className="text-xs gap-1"><MessageSquare className="w-3 h-3" />Comun.</TabsTrigger>
+                  <TabsTrigger value="comunicaciones" className="text-xs gap-1"><MessageSquare className="w-3 h-3" />Comunicaciones</TabsTrigger>
                   <TabsTrigger value="documentos"     className="text-xs gap-1"><Paperclip className="w-3 h-3" />Documentos</TabsTrigger>
                   <TabsTrigger value="historial"      className="text-xs gap-1"><History className="w-3 h-3" />Historial</TabsTrigger>
-                  <TabsTrigger value="dependencias"   className="text-xs gap-1"><Link2 className="w-3 h-3" />Depend.</TabsTrigger>
-                  <TabsTrigger value="cliente"        className="text-xs gap-1"><Building2 className="w-3 h-3" />Cliente</TabsTrigger>
-                  <TabsTrigger value="configuracion"  className="text-xs gap-1"><Settings className="w-3 h-3" />Config.</TabsTrigger>
                 </TabsList>
               </div>
 
@@ -817,6 +814,25 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                   <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
                     onClick={() => setActiveTab("comunicaciones")}>
                     <MessageSquare className="w-3.5 h-3.5" />Enviar mensaje
+                  </Button>
+                </div>
+
+                <Separator />
+
+                {/* Secciones secundarias */}
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Ver más</p>
+                  <Button variant="ghost" size="sm" className={cn("w-full justify-start gap-2 h-8 text-xs", activeTab === "dependencias" && "bg-muted")}
+                    onClick={() => setActiveTab("dependencias")}>
+                    <Link2 className="w-3.5 h-3.5" />Dependencias
+                  </Button>
+                  <Button variant="ghost" size="sm" className={cn("w-full justify-start gap-2 h-8 text-xs", activeTab === "cliente" && "bg-muted")}
+                    onClick={() => setActiveTab("cliente")}>
+                    <Building2 className="w-3.5 h-3.5" />Cliente
+                  </Button>
+                  <Button variant="ghost" size="sm" className={cn("w-full justify-start gap-2 h-8 text-xs", activeTab === "configuracion" && "bg-muted")}
+                    onClick={() => setActiveTab("configuracion")}>
+                    <Settings className="w-3.5 h-3.5" />Configuración
                   </Button>
                 </div>
 
