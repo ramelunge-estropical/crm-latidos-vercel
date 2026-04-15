@@ -290,7 +290,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0">
 
         {/* ── HEADER ─────────────────────────────────────────────────── */}
         <div className="px-6 pt-5 pb-4 border-b border-border">
@@ -427,22 +427,24 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
         <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* Main content */}
-          <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-              <TabsList className="mx-4 mt-3 mb-0 w-fit shrink-0">
-                <TabsTrigger value="resumen"        className="text-xs gap-1"><FileText className="w-3 h-3" />Resumen</TabsTrigger>
-                <TabsTrigger value="checklist"      className="text-xs gap-1">
-                  <CheckSquare className="w-3 h-3" />Checklist
-                  {tareas.length > 0 && <span className="ml-0.5 text-[9px] bg-primary/15 text-primary rounded-full px-1">{tareasDone}/{tareas.length}</span>}
-                </TabsTrigger>
-                <TabsTrigger value="actividades"    className="text-xs gap-1"><Activity className="w-3 h-3" />Actividades</TabsTrigger>
-                <TabsTrigger value="comunicaciones" className="text-xs gap-1"><MessageSquare className="w-3 h-3" />Comunicaciones</TabsTrigger>
-                <TabsTrigger value="documentos"     className="text-xs gap-1"><Paperclip className="w-3 h-3" />Documentos</TabsTrigger>
-                <TabsTrigger value="historial"      className="text-xs gap-1"><History className="w-3 h-3" />Historial</TabsTrigger>
-                <TabsTrigger value="dependencias"   className="text-xs gap-1"><Link2 className="w-3 h-3" />Dependencias</TabsTrigger>
-                <TabsTrigger value="cliente"        className="text-xs gap-1"><Building2 className="w-3 h-3" />Cliente</TabsTrigger>
-                <TabsTrigger value="configuracion"  className="text-xs gap-1"><Settings className="w-3 h-3" />Configuración</TabsTrigger>
-              </TabsList>
+              <div className="px-4 pt-3 pb-0 overflow-x-auto shrink-0 scrollbar-thin">
+                <TabsList className="w-max">
+                  <TabsTrigger value="resumen"        className="text-xs gap-1"><FileText className="w-3 h-3" />Resumen</TabsTrigger>
+                  <TabsTrigger value="checklist"      className="text-xs gap-1">
+                    <CheckSquare className="w-3 h-3" />Checklist
+                    {tareas.length > 0 && <span className="ml-0.5 text-[9px] bg-primary/15 text-primary rounded-full px-1">{tareasDone}/{tareas.length}</span>}
+                  </TabsTrigger>
+                  <TabsTrigger value="actividades"    className="text-xs gap-1"><Activity className="w-3 h-3" />Actividades</TabsTrigger>
+                  <TabsTrigger value="comunicaciones" className="text-xs gap-1"><MessageSquare className="w-3 h-3" />Comun.</TabsTrigger>
+                  <TabsTrigger value="documentos"     className="text-xs gap-1"><Paperclip className="w-3 h-3" />Documentos</TabsTrigger>
+                  <TabsTrigger value="historial"      className="text-xs gap-1"><History className="w-3 h-3" />Historial</TabsTrigger>
+                  <TabsTrigger value="dependencias"   className="text-xs gap-1"><Link2 className="w-3 h-3" />Depend.</TabsTrigger>
+                  <TabsTrigger value="cliente"        className="text-xs gap-1"><Building2 className="w-3 h-3" />Cliente</TabsTrigger>
+                  <TabsTrigger value="configuracion"  className="text-xs gap-1"><Settings className="w-3 h-3" />Config.</TabsTrigger>
+                </TabsList>
+              </div>
 
               <ScrollArea className="flex-1 px-4 py-4">
 
@@ -713,7 +715,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
           </div>
 
           {/* ── SIDEBAR: Acciones Rápidas ────────────────────────────────── */}
-          <div className="w-56 border-l border-border flex flex-col shrink-0">
+          <div className="w-60 border-l border-border flex flex-col shrink-0">
             <div className="px-4 py-3 border-b border-border">
               <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 <Zap className="w-3.5 h-3.5 text-primary" />Acciones rápidas
