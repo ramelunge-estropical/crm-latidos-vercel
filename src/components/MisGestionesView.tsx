@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useColaboradores, useAllStages } from "@/hooks/useSharedQueries";
+import { Skeleton } from "@/components/ui/skeleton";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { GestionDetailView } from "./GestionDetailView";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -63,25 +65,10 @@ export function MisGestionesView() {
   const [colaboradorId, setColaboradorId] = useState<string>(
     () => localStorage.getItem("mis_gestiones_colaborador") || ""
   );
+  const [filterType,     setFilterType]     = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
 
-  const { data: colaboradores = [] } = useQuery<{ id: string; nombre: string; cargo: string; color: string }[]>({
-    queryKey: ["colaboradores"],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("colaboradores")
-        .select("id, nombre, cargo, color, email")
-        .eq("activo", true)
-        .order("nombre");
-      if (error) return [];
-      const seen = new Set<string>();
-      return (data as any[]).filter((c) => {
-        const key = c.email || c.id;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    },
-  });
+  const { data: colaboradores = [] } = useColaboradores();
 
   // Default al primer colaborador si no hay ninguno seleccionado
   useEffect(() => {
@@ -107,23 +94,16 @@ export function MisGestionesView() {
     enabled: !!colaboradorId,
   });
 
-  const { data: allStages = [] } = useQuery<{ id: string; process_id: string; global_status: string; order: number }[]>({
-    queryKey: ["all-stages"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("pipeline_stages").select("id, process_id, global_status, order").order("order");
-      if (error) throw error;
-      return data as any[];
-    },
-  });
+  const { data: allStages = [] } = useAllStages();
 
   const grouped = useMemo(() => {
     const map: Record<string, GestionRow[]> = { to_do: [], doing: [], review: [], done: [] };
-    for (const g of gestiones) {
+    for (const g of filtered) {
       const status = g.pipeline_stages?.global_status || "to_do";
       if (map[status]) map[status].push(g);
     }
     return map;
-  }, [gestiones]);
+  }, [filtered]);
 
   const onDragEnd = async (result: DropResult) => {
     const { draggableId, destination } = result;
@@ -174,26 +154,36 @@ export function MisGestionesView() {
   };
 
   const currentColab = colaboradores.find(c => c.id === colaboradorId);
-  const vencidas = gestiones.filter(g => g.due_date && new Date(g.due_date) < new Date() && g.pipeline_stages?.global_status !== "done").length;
+
+  const filtered = useMemo(() => {
+    return gestiones.filter(g => {
+      if (filterType     !== "all" && g.type     !== filterType)     return false;
+      if (filterPriority !== "all" && g.priority !== filterPriority) return false;
+      return true;
+    });
+  }, [gestiones, filterType, filterPriority]);
+
+  const vencidas = filtered.filter(g => g.due_date && new Date(g.due_date) < new Date() && g.pipeline_stages?.global_status !== "done").length;
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Mis Gestiones</h2>
-          <p className="text-xs text-muted-foreground">
-            {gestiones.length} gestiones asignadas
-            {vencidas > 0 && (
-              <span className="ml-2 text-red-500 inline-flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" />{vencidas} vencida{vencidas > 1 ? "s" : ""}
-              </span>
-            )}
-          </p>
-        </div>
+      <div className="px-6 py-4 border-b border-border bg-card space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Mis Gestiones</h2>
+            <p className="text-xs text-muted-foreground">
+              {filtered.length}{filtered.length !== gestiones.length && ` de ${gestiones.length}`} gestiones asignadas
+              {vencidas > 0 && (
+                <span className="ml-2 text-red-500 inline-flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />{vencidas} vencida{vencidas > 1 ? "s" : ""}
+                </span>
+              )}
+            </p>
+          </div>
 
-        {/* Selector de colaborador */}
-        <Select value={colaboradorId} onValueChange={handleSelectColab}>
+          {/* Selector de colaborador */}
+          <Select value={colaboradorId} onValueChange={handleSelectColab}>
           <SelectTrigger className="h-9 w-[220px] text-sm">
             <SelectValue placeholder="Seleccionar colaborador">
               {currentColab && (
@@ -221,12 +211,70 @@ export function MisGestionesView() {
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+          </Select>
+        </div>
+
+        {/* Filtros */}
+        <div className="flex items-center gap-2">
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="h-8 w-auto min-w-[140px] text-xs border-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all"       className="text-xs">Todos los tipos</SelectItem>
+              <SelectItem value="comercial" className="text-xs">Comercial</SelectItem>
+              <SelectItem value="proyecto"  className="text-xs">Proyecto</SelectItem>
+              <SelectItem value="operativa" className="text-xs">Operativa</SelectItem>
+              <SelectItem value="caso"      className="text-xs">Caso</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterPriority} onValueChange={setFilterPriority}>
+            <SelectTrigger className="h-8 w-auto min-w-[150px] text-xs border-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all"    className="text-xs">Todas las prioridades</SelectItem>
+              <SelectItem value="urgent" className="text-xs">Urgente</SelectItem>
+              <SelectItem value="high"   className="text-xs">Alta</SelectItem>
+              <SelectItem value="medium" className="text-xs">Media</SelectItem>
+              <SelectItem value="low"    className="text-xs">Baja</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {(filterType !== "all" || filterPriority !== "all") && (
+            <button
+              onClick={() => { setFilterType("all"); setFilterPriority("all"); }}
+              className="text-xs text-primary hover:underline"
+            >
+              Limpiar
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Kanban */}
       {isLoading ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Cargando...</div>
+        <div className="flex-1 overflow-x-auto">
+          <div className="flex gap-4 h-full p-4 min-w-max">
+            {COLUMNS.map(col => (
+              <div key={col.id} className="flex flex-col w-72 flex-shrink-0 bg-muted/40 rounded-xl p-3 gap-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <Skeleton className="w-2.5 h-2.5 rounded-full" />
+                  <Skeleton className="h-4 w-16" />
+                </div>
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="bg-card rounded-lg border border-border p-3 space-y-2">
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-3 w-1/2 mt-1" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="flex-1 overflow-x-auto">

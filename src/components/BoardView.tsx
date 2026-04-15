@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAreasEmpresa } from "@/hooks/useSharedQueries";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
 import { BoardColumn } from "./BoardColumn";
 import { GestionDialog } from "./GestionDialog";
@@ -72,14 +73,7 @@ export function BoardView({ processId, processName }: BoardViewProps) {
     },
   });
 
-  const { data: areas = [] } = useQuery<{ id: string; nombre: string; color: string }[]>({
-    queryKey: ["areas_empresa"],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any).from("areas_empresa").select("id, nombre, color");
-      if (error) return [];
-      return data;
-    },
-  });
+  const { data: areas = [] } = useAreasEmpresa();
 
   const { data: taskCounts = [] } = useQuery<{ gestion_id: string; estado: string }[]>({
     queryKey: ["gestion_tareas_counts", processId],

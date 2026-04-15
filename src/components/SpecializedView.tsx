@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useColaboradores, useProcesses, useAllStages } from "@/hooks/useSharedQueries";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { GestionDetailView } from "./GestionDetailView";
 import { GestionDialog } from "./GestionDialog";
@@ -10,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import {
   Plus, Briefcase, FolderKanban, Cog, AlertCircle,
-  Calendar, LayoutGrid, List, Kanban, Hash, Tag, Users, Search, X
+  Calendar, LayoutGrid, List, Kanban, Hash, Tag, Users, Search, X,
+  Clock, Filter
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -69,9 +71,13 @@ export function SpecializedView({ type }: SpecializedViewProps) {
 
   const [detailGestionId, setDetailGestionId] = useState<string | null>(null);
   const [filterPriority, setFilterPriority]   = useState("all");
+  const [filterStatus,   setFilterStatus]     = useState("all");
+  const [filterFecha,    setFilterFecha]       = useState("all");
+  const [filterResponsable, setFilterResponsable] = useState("all");
   const [searchQuery, setSearchQuery]         = useState("");
   const [showCreate, setShowCreate]           = useState(false);
   const [viewMode, setViewMode]               = useState<ViewMode>("kanban");
+  const [showFilters, setShowFilters]         = useState(false);
   // "mine" = solo del colaborador actual | "all" = todos (futuro: solo admin/gerente)
   const [scope, setScope]                     = useState<"mine" | "all">("mine");
 
@@ -98,33 +104,45 @@ export function SpecializedView({ type }: SpecializedViewProps) {
     },
   });
 
-  const { data: processes = [] } = useQuery({
-    queryKey: ["processes"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("processes").select("*");
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const { data: allStages = [] } = useQuery({
-    queryKey: ["all-stages"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("pipeline_stages")
-        .select("id, process_id, global_status, order, name")
-        .order("order");
-      if (error) throw error;
-      return data as any[];
-    },
-  });
+  const { data: processes  = [] } = useProcesses();
+  const { data: allStages  = [] } = useAllStages();
+  const { data: colaboradores = [] } = useColaboradores();
 
   const processMap = useMemo(() => Object.fromEntries(processes.map(p => [p.id, p])), [processes]);
 
+  const activeFilterCount = [
+    filterPriority !== "all",
+    filterStatus   !== "all",
+    filterFecha    !== "all",
+    filterResponsable !== "all",
+  ].filter(Boolean).length;
+
+  const clearAllFilters = () => {
+    setSearchQuery(""); setFilterPriority("all");
+    setFilterStatus("all"); setFilterFecha("all"); setFilterResponsable("all");
+  };
+
+  const statusLabels: Record<string, string> = {
+    to_do: "Por hacer", doing: "En proceso", review: "En revisión", done: "Finalizado",
+  };
+  const fechaLabels: Record<string, string> = {
+    overdue: "Vencidas", due_soon: "Próximos 7 días", no_date: "Sin fecha",
+  };
+
   const filtered = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    const q   = searchQuery.toLowerCase().trim();
+    const now = Date.now();
     return gestiones.filter(g => {
       if (filterPriority !== "all" && g.priority !== filterPriority) return false;
+      if (filterStatus   !== "all" && g.pipeline_stages?.global_status !== filterStatus) return false;
+      if (filterResponsable !== "all" && g.responsable_id !== filterResponsable) return false;
+      if (filterFecha !== "all") {
+        const due = g.due_date ? new Date(g.due_date).getTime() : null;
+        const isDone = g.pipeline_stages?.global_status === "done";
+        if (filterFecha === "overdue"  && !(due && due < now && !isDone)) return false;
+        if (filterFecha === "due_soon" && !(due && due >= now && due <= now + 7 * 86400000)) return false;
+        if (filterFecha === "no_date"  && due !== null) return false;
+      }
       if (!q) return true;
       return (
         g.title?.toLowerCase().includes(q) ||
@@ -135,7 +153,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
         g.subtype?.toLowerCase().includes(q)
       );
     });
-  }, [gestiones, filterPriority, searchQuery]);
+  }, [gestiones, filterPriority, filterStatus, filterFecha, filterResponsable, searchQuery]);
 
   // Agrupado por global_status para el kanban
   const grouped = useMemo(() => {
@@ -245,42 +263,140 @@ export function SpecializedView({ type }: SpecializedViewProps) {
           </div>
         </div>
 
-        {/* Fila 2: buscador + filtro prioridad */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Buscar por título, código, cliente, responsable..."
-              className="pl-8 pr-8 h-8 text-xs"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="w-3.5 h-3.5" />
+        {/* Fila 2: buscador + filtros */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            {/* Search */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Buscar por título, código, cliente, responsable..."
+                className="pl-8 pr-8 h-8 text-xs"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Toggle filtros avanzados */}
+            <button
+              onClick={() => setShowFilters(f => !f)}
+              className={`inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md border text-xs transition-colors ${
+                showFilters || activeFilterCount > 0
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              Filtros
+              {activeFilterCount > 0 && (
+                <span className="bg-primary-foreground text-primary rounded-full px-1.5 py-0 text-[10px] font-bold leading-4">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {(searchQuery || activeFilterCount > 0) && (
+              <button onClick={clearAllFilters} className="text-xs text-primary hover:underline whitespace-nowrap">
+                Limpiar todo
               </button>
             )}
           </div>
 
-          <Select value={filterPriority} onValueChange={setFilterPriority}>
-            <SelectTrigger className="h-8 w-[130px] text-xs">
-              <SelectValue placeholder="Prioridad" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas las prioridades</SelectItem>
-              <SelectItem value="urgent">Urgente</SelectItem>
-              <SelectItem value="high">Alta</SelectItem>
-              <SelectItem value="medium">Media</SelectItem>
-              <SelectItem value="low">Baja</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* Panel de filtros avanzados */}
+          {showFilters && (
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              {/* Prioridad */}
+              <Select value={filterPriority} onValueChange={setFilterPriority}>
+                <SelectTrigger className="h-7 w-[130px] text-xs">
+                  <SelectValue placeholder="Prioridad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="text-xs">Todas las prioridades</SelectItem>
+                  <SelectItem value="urgent" className="text-xs">Urgente</SelectItem>
+                  <SelectItem value="high"   className="text-xs">Alta</SelectItem>
+                  <SelectItem value="medium" className="text-xs">Media</SelectItem>
+                  <SelectItem value="low"    className="text-xs">Baja</SelectItem>
+                </SelectContent>
+              </Select>
 
-          {(searchQuery || filterPriority !== "all") && (
-            <button onClick={() => { setSearchQuery(""); setFilterPriority("all"); }}
-              className="text-xs text-primary hover:underline whitespace-nowrap">
-              Limpiar filtros
-            </button>
+              {/* Estado global */}
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-7 w-[140px] text-xs">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all"    className="text-xs">Todos los estados</SelectItem>
+                  <SelectItem value="to_do"  className="text-xs">Por hacer</SelectItem>
+                  <SelectItem value="doing"  className="text-xs">En proceso</SelectItem>
+                  <SelectItem value="review" className="text-xs">En revisión</SelectItem>
+                  <SelectItem value="done"   className="text-xs">Finalizado</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Fecha */}
+              <Select value={filterFecha} onValueChange={setFilterFecha}>
+                <SelectTrigger className="h-7 w-[150px] text-xs">
+                  <Clock className="w-3 h-3 mr-1" /><SelectValue placeholder="Fecha" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all"      className="text-xs">Todas las fechas</SelectItem>
+                  <SelectItem value="overdue"  className="text-xs">Vencidas</SelectItem>
+                  <SelectItem value="due_soon" className="text-xs">Próximos 7 días</SelectItem>
+                  <SelectItem value="no_date"  className="text-xs">Sin fecha</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Responsable (solo scope=all) */}
+              {scope === "all" && colaboradores.length > 0 && (
+                <Select value={filterResponsable} onValueChange={setFilterResponsable}>
+                  <SelectTrigger className="h-7 w-[150px] text-xs">
+                    <SelectValue placeholder="Responsable" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">Todos los responsables</SelectItem>
+                    {colaboradores.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+
+          {/* Chips de filtros activos */}
+          {activeFilterCount > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {filterPriority !== "all" && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                  {priorityConfig[filterPriority]?.label}
+                  <button onClick={() => setFilterPriority("all")}><X className="w-3 h-3" /></button>
+                </span>
+              )}
+              {filterStatus !== "all" && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                  {statusLabels[filterStatus]}
+                  <button onClick={() => setFilterStatus("all")}><X className="w-3 h-3" /></button>
+                </span>
+              )}
+              {filterFecha !== "all" && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                  {fechaLabels[filterFecha]}
+                  <button onClick={() => setFilterFecha("all")}><X className="w-3 h-3" /></button>
+                </span>
+              )}
+              {filterResponsable !== "all" && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+                  {colaboradores.find((c: any) => c.id === filterResponsable)?.nombre || "Responsable"}
+                  <button onClick={() => setFilterResponsable("all")}><X className="w-3 h-3" /></button>
+                </span>
+              )}
+            </div>
           )}
         </div>
       </div>

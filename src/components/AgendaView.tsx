@@ -81,9 +81,9 @@ export function AgendaView() {
             </TabsList>
           </Tabs>
           <div className="flex items-center gap-1 ml-2">
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => navigate(-1)}><ChevronLeft className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" aria-label="Período anterior" className="h-7 w-7 p-0" onClick={() => navigate(-1)}><ChevronLeft className="w-4 h-4" /></Button>
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setCurrentDate(new Date())}>Hoy</Button>
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => navigate(1)}><ChevronRight className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" aria-label="Período siguiente" className="h-7 w-7 p-0" onClick={() => navigate(1)}><ChevronRight className="w-4 h-4" /></Button>
           </div>
         </div>
       </div>

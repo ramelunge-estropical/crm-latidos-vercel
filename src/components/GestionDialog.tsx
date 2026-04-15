@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useColaboradores, useAreasEmpresa } from "@/hooks/useSharedQueries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,33 +85,8 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
     }
   }, [gestion]);
 
-  const { data: areas = [] } = useQuery({
-    queryKey: ["areas_empresa"],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any).from("areas_empresa").select("*").order("nombre");
-      if (error) return [] as { id: string; nombre: string; color: string }[];
-      return data as { id: string; nombre: string; color: string }[];
-    },
-  });
-
-  const { data: colaboradores = [] } = useQuery({
-    queryKey: ["colaboradores"],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("colaboradores")
-        .select("id, nombre, cargo, color, email")
-        .eq("activo", true)
-        .order("nombre");
-      if (error) return [] as { id: string; nombre: string; cargo: string; color: string }[];
-      const seen = new Set<string>();
-      return (data as any[]).filter((c) => {
-        const key = c.email || c.id;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }) as { id: string; nombre: string; cargo: string; color: string }[];
-    },
-  });
+  const { data: areas = [] }         = useAreasEmpresa();
+  const { data: colaboradores = [] } = useColaboradores();
 
   const currentSubtypes = SUBTYPES[gestionType] || [];
 

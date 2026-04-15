@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useProcesses } from "@/hooks/useSharedQueries";
 import { ProcessSidebar, SidebarView } from "@/components/ProcessSidebar";
 import { BoardView } from "@/components/BoardView";
 import { AgendaView } from "@/components/AgendaView";
@@ -17,14 +16,7 @@ const Index = () => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [activeView, setActiveView] = useState<SidebarView>("process");
 
-  const { data: processes = [] } = useQuery({
-    queryKey: ["processes"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("processes").select("*").order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-  });
+  const { data: processes = [] } = useProcesses();
 
   const selectedProcess = processes.find((p) => p.id === selectedProcessId);
 

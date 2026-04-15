@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart3, CheckCircle2, Clock, AlertTriangle, TrendingUp } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -8,7 +9,7 @@ export function ResumenDiarioView() {
   const today = new Date();
   const todayStr = format(today, "yyyy-MM-dd");
 
-  const { data: stats } = useQuery({
+  const { data: stats, isLoading } = useQuery({
     queryKey: ["daily-summary", todayStr],
     queryFn: async () => {
       const [gestiones, activities, recentHistory] = await Promise.all([
@@ -49,7 +50,10 @@ export function ResumenDiarioView() {
                 <c.icon className={`w-4 h-4 ${c.color}`} />
                 <span className="text-xs text-muted-foreground">{c.label}</span>
               </div>
-              <p className="text-2xl font-bold text-foreground">{c.value}</p>
+              {isLoading
+                ? <Skeleton className="h-8 w-12" />
+                : <p className="text-2xl font-bold text-foreground">{c.value}</p>
+              }
             </div>
           ))}
         </div>

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useColaboradores } from "@/hooks/useSharedQueries";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -15,7 +16,7 @@ import {
   FileText, MessageSquare, Paperclip, History, Activity,
   User, Calendar, Tag, Upload, Send, Trash2, ArrowRight,
   Hash, CheckSquare, Plus, ChevronRight,
-  Zap, UserCheck, Pencil, X, Check
+  Zap, UserCheck, Pencil, X, Check, Link2, Building2, Settings
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -66,6 +67,9 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
   const [authorName,  setAuthorName]    = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
 
+  // Active tab
+  const [activeTab, setActiveTab] = useState("resumen");
+
   // New task
   const [newTaskText, setNewTaskText]   = useState("");
   const [addingTask,  setAddingTask]    = useState(false);
@@ -93,22 +97,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
     enabled: !!processId,
   });
 
-  const { data: colaboradores = [] } = useQuery({
-    queryKey: ["colaboradores"],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("colaboradores").select("id, nombre, cargo, color, email").eq("activo", true).order("nombre");
-      if (error) return [];
-      // Dedup por email (parche hasta aplicar UNIQUE constraint en DB)
-      const seen = new Set<string>();
-      return (data as any[]).filter((c) => {
-        const key = c.email || c.id;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }) as { id: string; nombre: string; cargo: string; color: string }[];
-    },
-  });
+  const { data: colaboradores = [] } = useColaboradores();
 
   const { data: tareas = [], refetch: refetchTareas } = useQuery({
     queryKey: ["gestion-tareas", gestionId],
@@ -284,6 +273,17 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
     } catch (err: any) { toast.error(err.message); }
   };
 
+  const handleUpdateField = async (field: string, value: any) => {
+    try {
+      const { error } = await (supabase as any)
+        .from("gestiones").update({ [field]: value || null }).eq("id", gestionId);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ["gestion-detail", gestionId] });
+      queryClient.invalidateQueries({ queryKey: ["gestiones", processId] });
+      toast.success("Campo actualizado");
+    } catch (err: any) { toast.error(err.message); }
+  };
+
   const getStageName = (stageId: string) => stages.find((s) => s.id === stageId)?.name || "—";
 
   if (isLoading || !gestion) return null;
@@ -310,10 +310,10 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                   onKeyDown={(e) => { if (e.key === "Enter") handleSaveTitle(); if (e.key === "Escape") setEditingTitle(false); }}
                   className="text-lg font-semibold h-8 flex-1"
                 />
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-green-600 hover:text-green-700" onClick={handleSaveTitle}>
+                <Button size="sm" variant="ghost" aria-label="Guardar título" className="h-8 w-8 p-0 text-green-600 hover:text-green-700" onClick={handleSaveTitle}>
                   <Check className="w-4 h-4" />
                 </Button>
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setEditingTitle(false)}>
+                <Button size="sm" variant="ghost" aria-label="Cancelar edición" className="h-8 w-8 p-0" onClick={() => setEditingTitle(false)}>
                   <X className="w-4 h-4" />
                 </Button>
               </div>
@@ -428,7 +428,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
 
           {/* Main content */}
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
-            <Tabs defaultValue="resumen" className="flex-1 flex flex-col min-h-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
               <TabsList className="mx-4 mt-3 mb-0 w-fit shrink-0">
                 <TabsTrigger value="resumen"        className="text-xs gap-1"><FileText className="w-3 h-3" />Resumen</TabsTrigger>
                 <TabsTrigger value="checklist"      className="text-xs gap-1">
@@ -439,6 +439,9 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 <TabsTrigger value="comunicaciones" className="text-xs gap-1"><MessageSquare className="w-3 h-3" />Comunicaciones</TabsTrigger>
                 <TabsTrigger value="documentos"     className="text-xs gap-1"><Paperclip className="w-3 h-3" />Documentos</TabsTrigger>
                 <TabsTrigger value="historial"      className="text-xs gap-1"><History className="w-3 h-3" />Historial</TabsTrigger>
+                <TabsTrigger value="dependencias"   className="text-xs gap-1"><Link2 className="w-3 h-3" />Dependencias</TabsTrigger>
+                <TabsTrigger value="cliente"        className="text-xs gap-1"><Building2 className="w-3 h-3" />Cliente</TabsTrigger>
+                <TabsTrigger value="configuracion"  className="text-xs gap-1"><Settings className="w-3 h-3" />Configuración</TabsTrigger>
               </TabsList>
 
               <ScrollArea className="flex-1 px-4 py-4">
@@ -505,6 +508,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                         </span>
                         <Button
                           variant="ghost" size="sm"
+                          aria-label="Eliminar tarea"
                           className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                           onClick={() => handleDeleteTarea(tarea.id)}
                         >
@@ -583,7 +587,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                               {a.file_size ? `${(a.file_size / 1024).toFixed(1)} KB` : ""} · {a.uploaded_by_name || "—"} · {format(new Date(a.created_at), "dd MMM HH:mm", { locale: es })}
                             </span>
                           </div>
-                          <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
+                          <Button variant="ghost" size="sm" aria-label="Eliminar archivo" className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
                             onClick={() => handleDeleteAttachment(a.id, a.file_path)}>
                             <Trash2 className="w-3 h-3 text-destructive" />
                           </Button>
@@ -607,6 +611,100 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                       </div>
                     ))}
                     {history.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin historial</p>}
+                  </div>
+                </TabsContent>
+
+                {/* ── Dependencias ── */}
+                <TabsContent value="dependencias" className="mt-0">
+                  <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                    <Link2 className="w-8 h-8 text-muted-foreground/40" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Sin dependencias</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Las dependencias entre gestiones estarán disponibles próximamente.</p>
+                    </div>
+                    <Button variant="outline" size="sm" className="gap-1.5 mt-1" disabled>
+                      <Plus className="w-3.5 h-3.5" />Agregar dependencia
+                    </Button>
+                  </div>
+                </TabsContent>
+
+                {/* ── Cliente ── */}
+                <TabsContent value="cliente" className="mt-0">
+                  {gestion.cliente_nombre ? (
+                    <div className="space-y-3">
+                      <div className="p-4 rounded-lg border border-border bg-muted/30 flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <Building2 className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm">{gestion.cliente_nombre}</p>
+                          {gestion.cliente_id && (
+                            <p className="text-[10px] text-muted-foreground font-mono mt-0.5">ID: {gestion.cliente_id}</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground text-center">Para ver el perfil completo, buscá al cliente desde la vista Clientes.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                      <Building2 className="w-8 h-8 text-muted-foreground/40" />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Sin cliente asociado</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Esta gestión no tiene un cliente vinculado.</p>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* ── Configuración ── */}
+                <TabsContent value="configuracion" className="mt-0">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide block mb-1">Prioridad</label>
+                        <Select value={gestion.priority || "medium"} onValueChange={(v) => handleUpdateField("priority", v)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(priorityConfig).map(([key, cfg]) => (
+                              <SelectItem key={key} value={key} className="text-xs">{cfg.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide block mb-1">Tipo</label>
+                        <Select value={gestion.type || ""} onValueChange={(v) => handleUpdateField("type", v)}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Sin tipo" /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(typeConfig).map(([key, cfg]) => (
+                              <SelectItem key={key} value={key} className="text-xs">{cfg.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide block mb-1">Subtipo</label>
+                        <Input
+                          defaultValue={gestion.subtype || ""}
+                          className="h-8 text-xs"
+                          placeholder="Ej: Renovación"
+                          onBlur={(e) => {
+                            if (e.target.value !== (gestion.subtype || "")) handleUpdateField("subtype", e.target.value);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide block mb-1">Fecha límite</label>
+                        <Input
+                          type="date"
+                          className="h-8 text-xs"
+                          defaultValue={gestion.due_date ? gestion.due_date.slice(0, 10) : ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (gestion.due_date?.slice(0, 10) || "")) handleUpdateField("due_date", e.target.value || null);
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </TabsContent>
 
@@ -705,7 +803,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                     <UserCheck className="w-3.5 h-3.5" />Reasignar
                   </Button>
                   <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
-                    onClick={() => { /* open checklist tab */ }}>
+                    onClick={() => setActiveTab("checklist")}>
                     <CheckSquare className="w-3.5 h-3.5" />Agregar tarea
                   </Button>
                   <label className="cursor-pointer w-full">
@@ -715,7 +813,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                     <input type="file" className="hidden" onChange={handleFileUpload} />
                   </label>
                   <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
-                    onClick={() => { /* open communications tab */ }}>
+                    onClick={() => setActiveTab("comunicaciones")}>
                     <MessageSquare className="w-3.5 h-3.5" />Enviar mensaje
                   </Button>
                 </div>

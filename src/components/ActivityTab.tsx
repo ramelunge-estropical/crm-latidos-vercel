@@ -178,7 +178,7 @@ export function ActivityTab({ gestionId }: ActivityTabProps) {
                     </div>
                   )}
                 </div>
-                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0" onClick={() => handleDelete(a.id)}>
+                <Button variant="ghost" size="sm" aria-label="Eliminar actividad" className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0" onClick={() => handleDelete(a.id)}>
                   <Trash2 className="w-3 h-3 text-destructive" />
                 </Button>
               </div>
