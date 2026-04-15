@@ -57,15 +57,15 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
   const isEdit = !!gestion;
   const queryClient = useQueryClient();
 
-  const [title,         setTitle]         = useState(gestion?.title || "");
-  const [description,   setDescription]   = useState(gestion?.description || "");
-  const [priority,      setPriority]      = useState(gestion?.priority || "medium");
-  const [responsable,   setResponsable]   = useState(gestion?.responsable_nombre || "");
-  const [gestionType,   setGestionType]   = useState(gestion?.type || "operativa");
-  const [subtype,       setSubtype]       = useState(gestion?.subtype || "");
-  const [areaId,        setAreaId]        = useState(gestion?.area_id || NO_AREA);
-  const [clienteNombre, setClienteNombre] = useState(gestion?.cliente_nombre || "");
-  const [dueDate,       setDueDate]       = useState<Date | undefined>(
+  const [title,           setTitle]           = useState(gestion?.title || "");
+  const [description,     setDescription]     = useState(gestion?.description || "");
+  const [priority,        setPriority]        = useState(gestion?.priority || "medium");
+  const [responsableId,   setResponsableId]   = useState((gestion as any)?.responsable_id || NO_AREA);
+  const [gestionType,     setGestionType]     = useState(gestion?.type || "operativa");
+  const [subtype,         setSubtype]         = useState(gestion?.subtype || "");
+  const [areaId,          setAreaId]          = useState(gestion?.area_id || NO_AREA);
+  const [clienteNombre,   setClienteNombre]   = useState(gestion?.cliente_nombre || "");
+  const [dueDate,         setDueDate]         = useState<Date | undefined>(
     gestion?.due_date ? new Date(gestion.due_date) : undefined
   );
   const [loading, setLoading] = useState(false);
@@ -75,7 +75,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
       setTitle(gestion.title || "");
       setDescription(gestion.description || "");
       setPriority(gestion.priority || "medium");
-      setResponsable(gestion.responsable_nombre || "");
+      setResponsableId((gestion as any)?.responsable_id || NO_AREA);
       setGestionType(gestion.type || "operativa");
       setSubtype(gestion.subtype || "");
       setAreaId(gestion.area_id || NO_AREA);
@@ -93,10 +93,23 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
     },
   });
 
+  const { data: colaboradores = [] } = useQuery({
+    queryKey: ["colaboradores"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("colaboradores")
+        .select("id, nombre, cargo, color")
+        .eq("activo", true)
+        .order("nombre");
+      if (error) return [] as { id: string; nombre: string; cargo: string; color: string }[];
+      return data as { id: string; nombre: string; cargo: string; color: string }[];
+    },
+  });
+
   const currentSubtypes = SUBTYPES[gestionType] || [];
 
   const resetForm = () => {
-    setTitle(""); setDescription(""); setPriority("medium"); setResponsable("");
+    setTitle(""); setDescription(""); setPriority("medium"); setResponsableId(NO_AREA);
     setGestionType("operativa"); setSubtype(""); setAreaId(NO_AREA);
     setClienteNombre(""); setDueDate(undefined);
   };
@@ -105,12 +118,14 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
     if (!title.trim()) return;
     setLoading(true);
     try {
+      const selectedColab = colaboradores.find(c => c.id === responsableId);
       const payload: any = {
         title:              title.trim(),
         description:        description.trim() || null,
         priority,
         due_date:           dueDate ? format(dueDate, "yyyy-MM-dd") : null,
-        responsable_nombre: responsable.trim() || null,
+        responsable_id:     responsableId === NO_AREA ? null : responsableId,
+        responsable_nombre: selectedColab?.nombre || null,
         type:               gestionType,
         subtype:            subtype || null,
         process_id:         processId,
@@ -248,8 +263,25 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
           </div>
 
           <div>
-            <Label htmlFor="g-resp">Responsable</Label>
-            <Input id="g-resp" value={responsable} onChange={(e) => setResponsable(e.target.value)} placeholder="Nombre del responsable" />
+            <Label>Responsable</Label>
+            <Select value={responsableId} onValueChange={setResponsableId}>
+              <SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_AREA}>Sin asignar</SelectItem>
+                {colaboradores.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    <span className="flex items-center gap-2">
+                      <span className="inline-flex w-5 h-5 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
+                        style={{ backgroundColor: c.color }}>
+                        {c.nombre.charAt(0)}
+                      </span>
+                      <span>{c.nombre}</span>
+                      {c.cargo && <span className="text-muted-foreground text-[10px]">· {c.cargo}</span>}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex gap-2">

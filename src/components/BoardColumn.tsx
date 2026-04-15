@@ -32,11 +32,10 @@ interface BoardColumnProps {
 }
 
 const statusColors: Record<string, string> = {
-  todo:    "bg-status-todo",
-  planned: "bg-status-planned",
-  doing:   "bg-status-doing",
-  review:  "bg-status-review",
-  done:    "bg-status-done",
+  to_do:  "bg-status-todo",
+  doing:  "bg-status-doing",
+  review: "bg-status-review",
+  done:   "bg-status-done",
 };
 
 export function BoardColumn({

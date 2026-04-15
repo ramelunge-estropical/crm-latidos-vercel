@@ -83,11 +83,10 @@ export function SpecializedView({ type }: SpecializedViewProps) {
     const stage = stageMap[stageId];
     if (!stage) return null;
     const colors: Record<string, string> = {
-      todo: "bg-muted text-muted-foreground",
-      planned: "bg-blue-500/10 text-blue-600",
-      doing: "bg-amber-500/10 text-amber-600",
+      to_do:  "bg-muted text-muted-foreground",
+      doing:  "bg-amber-500/10 text-amber-600",
       review: "bg-violet-500/10 text-violet-600",
-      done: "bg-emerald-500/10 text-emerald-600",
+      done:   "bg-emerald-500/10 text-emerald-600",
     };
     return <Badge variant="outline" className={`text-[10px] ${colors[stage.global_status] || ""}`}>{stage.name}</Badge>;
   };
