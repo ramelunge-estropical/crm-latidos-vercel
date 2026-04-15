@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
-export function AreasConfig() {
+export function AreasConfig({ readonly = false }: { readonly?: boolean }) {
   const queryClient = useQueryClient();
   const { data: areas = [] } = useAreasEmpresa();
 

@@ -20,7 +20,7 @@ const ROL_CONFIG: Record<string, { label: string; className: string }> = {
 
 const EMPTY_FORM = { nombre: "", email: "", cargo: "", area_id: "", color: "#6366f1", rol: "colaborador" };
 
-export function ColaboradoresConfig() {
+export function ColaboradoresConfig({ readonly = false }: { readonly?: boolean }) {
   const queryClient = useQueryClient();
   const { data: colaboradores = [] } = useAllColaboradores();
   const { data: areas = [] }         = useAreasEmpresa();
@@ -82,13 +82,15 @@ export function ColaboradoresConfig() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{colaboradores.length} colaborador{colaboradores.length !== 1 ? "es" : ""}</p>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={openCreate}>
-          <Plus className="w-3.5 h-3.5" />Nuevo colaborador
-        </Button>
+        {!readonly && (
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={openCreate}>
+            <Plus className="w-3.5 h-3.5" />Nuevo colaborador
+          </Button>
+        )}
       </div>
 
       {/* Formulario */}
-      {showForm && (
+      {!readonly && showForm && (
         <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">{editingId ? "Editar colaborador" : "Nuevo colaborador"}</p>
@@ -165,30 +167,38 @@ export function ColaboradoresConfig() {
                     {area && <p className="text-[10px]" style={{ color: area.color }}>{area.nombre}</p>}
                   </td>
                   <td className="px-3 py-2.5">
-                    <Select value={c.rol || "colaborador"} onValueChange={v => handleRolChange(c.id, v)}>
-                      <SelectTrigger className={cn("h-6 w-[110px] text-[10px] border", rolCfg.className)}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(ROL_CONFIG).map(([key, cfg]) => (
-                          <SelectItem key={key} value={key} className="text-xs">{cfg.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {readonly ? (
+                      <span className={cn("inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold border", rolCfg.className)}>
+                        {rolCfg.label}
+                      </span>
+                    ) : (
+                      <Select value={c.rol || "colaborador"} onValueChange={v => handleRolChange(c.id, v)}>
+                        <SelectTrigger className={cn("h-6 w-[110px] text-[10px] border", rolCfg.className)}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(ROL_CONFIG).map(([key, cfg]) => (
+                            <SelectItem key={key} value={key} className="text-xs">{cfg.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    <Switch checked={c.activo} onCheckedChange={() => handleToggleActivo(c.id, c.activo)} />
+                    <Switch checked={c.activo} onCheckedChange={() => !readonly && handleToggleActivo(c.id, c.activo)} disabled={readonly} />
                   </td>
                   <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1 justify-end">
-                      <Button variant="ghost" size="sm" aria-label="Editar" className="h-6 w-6 p-0" onClick={() => openEdit(c)}>
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                      <Button variant="ghost" size="sm" aria-label="Eliminar" className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(c.id)}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
+                    {!readonly && (
+                      <div className="flex items-center gap-1 justify-end">
+                        <Button variant="ghost" size="sm" aria-label="Editar" className="h-6 w-6 p-0" onClick={() => openEdit(c)}>
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" aria-label="Eliminar" className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(c.id)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

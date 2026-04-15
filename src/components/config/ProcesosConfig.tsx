@@ -21,7 +21,7 @@ const GLOBAL_STATUS_OPTIONS = [
   { value: "done",   label: "Finalizado", className: "bg-emerald-500/10 text-emerald-600" },
 ];
 
-export function ProcesosConfig() {
+export function ProcesosConfig({ readonly = false }: { readonly?: boolean }) {
   const queryClient = useQueryClient();
   const { data: processes = [] } = useProcesses();
   const { data: allStages  = [] } = useAllStages();
@@ -133,13 +133,15 @@ export function ProcesosConfig() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{processes.length} proceso{processes.length !== 1 ? "s" : ""} configurado{processes.length !== 1 ? "s" : ""}</p>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setCreatingProc(true)}>
-          <Plus className="w-3.5 h-3.5" />Nuevo proceso
-        </Button>
+        {!readonly && (
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setCreatingProc(true)}>
+            <Plus className="w-3.5 h-3.5" />Nuevo proceso
+          </Button>
+        )}
       </div>
 
       {/* Formulario nuevo proceso */}
-      {creatingProc && (
+      {!readonly && creatingProc && (
         <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 space-y-3">
           <p className="text-sm font-medium">Nuevo proceso</p>
           <div className="grid grid-cols-2 gap-2">
@@ -182,16 +184,18 @@ export function ProcesosConfig() {
                   <Badge variant="outline" className="text-[10px] ml-2 shrink-0">{stages.length} etapas</Badge>
                   {isOpen ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
                 </button>
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="sm" aria-label="Editar nombre" className="h-7 w-7 p-0"
-                    onClick={() => { setEditingProcId(proc.id); setEditProcName(proc.name); }}>
-                    <Pencil className="w-3 h-3" />
-                  </Button>
-                  <Button variant="ghost" size="sm" aria-label="Eliminar proceso" className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                    onClick={() => handleDeleteProcess(proc.id)}>
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </div>
+                {!readonly && (
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" aria-label="Editar nombre" className="h-7 w-7 p-0"
+                      onClick={() => { setEditingProcId(proc.id); setEditProcName(proc.name); }}>
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    <Button variant="ghost" size="sm" aria-label="Eliminar proceso" className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteProcess(proc.id)}>
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Pipeline stages */}
@@ -208,15 +212,17 @@ export function ProcesosConfig() {
                       const statusOpt = GLOBAL_STATUS_OPTIONS.find(o => o.value === stage.global_status);
                       return (
                         <div key={stage.id} className="flex items-center gap-2 p-2 rounded-lg bg-card border border-border">
-                          <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
-                          <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="sm" aria-label="Subir" className="h-6 w-6 p-0" disabled={idx === 0}
-                              onClick={() => handleMoveStage(stage, "up", stages)}><ArrowUp className="w-3 h-3" /></Button>
-                            <Button variant="ghost" size="sm" aria-label="Bajar" className="h-6 w-6 p-0" disabled={idx === stages.length - 1}
-                              onClick={() => handleMoveStage(stage, "down", stages)}><ArrowDown className="w-3 h-3" /></Button>
-                          </div>
+                          {!readonly && <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />}
+                          {!readonly && (
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="sm" aria-label="Subir" className="h-6 w-6 p-0" disabled={idx === 0}
+                                onClick={() => handleMoveStage(stage, "up", stages)}><ArrowUp className="w-3 h-3" /></Button>
+                              <Button variant="ghost" size="sm" aria-label="Bajar" className="h-6 w-6 p-0" disabled={idx === stages.length - 1}
+                                onClick={() => handleMoveStage(stage, "down", stages)}><ArrowDown className="w-3 h-3" /></Button>
+                            </div>
+                          )}
 
-                          {editingStage === stage.id ? (
+                          {!readonly && editingStage === stage.id ? (
                             <div className="flex items-center gap-1.5 flex-1">
                               <Input value={editStageName} onChange={e => setEditStageName(e.target.value)}
                                 onKeyDown={e => { if (e.key === "Enter") handleSaveStage(stage.id); if (e.key === "Escape") setEditingStage(null); }}
@@ -224,6 +230,8 @@ export function ProcesosConfig() {
                               <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600" onClick={() => handleSaveStage(stage.id)}><Check className="w-3 h-3" /></Button>
                               <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingStage(null)}><X className="w-3 h-3" /></Button>
                             </div>
+                          ) : readonly ? (
+                            <span className="text-xs font-medium flex-1">{stage.name}</span>
                           ) : (
                             <button className="text-xs font-medium flex-1 text-left hover:text-primary transition-colors"
                               onClick={() => { setEditingStage(stage.id); setEditStageName(stage.name); }}>
@@ -231,28 +239,23 @@ export function ProcesosConfig() {
                             </button>
                           )}
 
-                          <Select value={stage.global_status} onValueChange={v => handleStageStatusChange(stage.id, v)}>
-                            <SelectTrigger className={cn("h-6 w-[110px] text-[10px] border-0 shadow-none", statusOpt?.className)}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {GLOBAL_STATUS_OPTIONS.map(o => (
-                                <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium", statusOpt?.className)}>
+                            {statusOpt?.label}
+                          </span>
 
-                          <Button variant="ghost" size="sm" aria-label="Eliminar etapa" className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                            onClick={() => handleDeleteStage(stage.id)}>
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
+                          {!readonly && (
+                            <Button variant="ghost" size="sm" aria-label="Eliminar etapa" className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteStage(stage.id)}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
                   {/* Agregar etapa */}
-                  <div className="flex gap-2 pt-1">
+                  {!readonly && <div className="flex gap-2 pt-1">
                     <Input
                       placeholder="Nombre de la nueva etapa..."
                       value={newStageName[proc.id] || ""}
@@ -270,7 +273,7 @@ export function ProcesosConfig() {
                       disabled={!newStageName[proc.id]?.trim()}>
                       <Plus className="w-3 h-3" />Agregar
                     </Button>
-                  </div>
+                  </div>}
                 </div>
               )}
             </div>
