@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +13,10 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+
+// Valor centinela para "sin área" — Radix no permite value=""
+const NO_AREA = "__none__";
 
 interface GestionDialogProps {
   open: boolean;
@@ -31,72 +34,97 @@ interface GestionDialogProps {
     responsable_nombre: string | null;
     type: string | null;
     subtype: string | null;
+    area_id?: string | null;
+    cliente_nombre?: string | null;
   } | null;
 }
 
 const GESTION_TYPES = [
   { value: "comercial", label: "Comercial" },
-  { value: "proyecto", label: "Proyecto" },
+  { value: "proyecto",  label: "Proyecto"  },
   { value: "operativa", label: "Operativa" },
-  { value: "caso", label: "Caso" },
+  { value: "caso",      label: "Caso"      },
 ];
 
 const SUBTYPES: Record<string, string[]> = {
   comercial: ["Lead", "Oportunidad", "Renovación", "Upsell"],
-  proyecto: ["Implementación", "Migración", "Desarrollo", "Consultoría"],
+  proyecto:  ["Implementación", "Migración", "Desarrollo", "Consultoría"],
   operativa: ["Tarea", "Mantenimiento", "Proceso", "Auditoría"],
-  caso: ["Incidencia", "Reclamo", "Consulta", "Solicitud"],
+  caso:      ["Incidencia", "Reclamo", "Consulta", "Solicitud"],
 };
 
 export function GestionDialog({ open, onOpenChange, processId, stageId, gestion }: GestionDialogProps) {
   const isEdit = !!gestion;
   const queryClient = useQueryClient();
 
-  const [title, setTitle] = useState(gestion?.title || "");
-  const [description, setDescription] = useState(gestion?.description || "");
-  const [priority, setPriority] = useState(gestion?.priority || "medium");
-  const [responsable, setResponsable] = useState(gestion?.responsable_nombre || "");
-  const [gestionType, setGestionType] = useState(gestion?.type || "operativa");
-  const [subtype, setSubtype] = useState(gestion?.subtype || "");
-  const [dueDate, setDueDate] = useState<Date | undefined>(
+  const [title,         setTitle]         = useState(gestion?.title || "");
+  const [description,   setDescription]   = useState(gestion?.description || "");
+  const [priority,      setPriority]      = useState(gestion?.priority || "medium");
+  const [responsable,   setResponsable]   = useState(gestion?.responsable_nombre || "");
+  const [gestionType,   setGestionType]   = useState(gestion?.type || "operativa");
+  const [subtype,       setSubtype]       = useState(gestion?.subtype || "");
+  const [areaId,        setAreaId]        = useState(gestion?.area_id || NO_AREA);
+  const [clienteNombre, setClienteNombre] = useState(gestion?.cliente_nombre || "");
+  const [dueDate,       setDueDate]       = useState<Date | undefined>(
     gestion?.due_date ? new Date(gestion.due_date) : undefined
   );
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (gestion) {
+      setTitle(gestion.title || "");
+      setDescription(gestion.description || "");
+      setPriority(gestion.priority || "medium");
+      setResponsable(gestion.responsable_nombre || "");
+      setGestionType(gestion.type || "operativa");
+      setSubtype(gestion.subtype || "");
+      setAreaId(gestion.area_id || NO_AREA);
+      setClienteNombre(gestion.cliente_nombre || "");
+      setDueDate(gestion.due_date ? new Date(gestion.due_date) : undefined);
+    }
+  }, [gestion]);
+
+  const { data: areas = [] } = useQuery({
+    queryKey: ["areas_empresa"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("areas_empresa").select("*").order("nombre");
+      if (error) return [] as { id: string; nombre: string; color: string }[];
+      return data as { id: string; nombre: string; color: string }[];
+    },
+  });
+
   const currentSubtypes = SUBTYPES[gestionType] || [];
 
   const resetForm = () => {
-    setTitle("");
-    setDescription("");
-    setPriority("medium");
-    setResponsable("");
-    setGestionType("operativa");
-    setSubtype("");
-    setDueDate(undefined);
+    setTitle(""); setDescription(""); setPriority("medium"); setResponsable("");
+    setGestionType("operativa"); setSubtype(""); setAreaId(NO_AREA);
+    setClienteNombre(""); setDueDate(undefined);
   };
 
   const handleSubmit = async () => {
     if (!title.trim()) return;
     setLoading(true);
     try {
-      const payload = {
-        title: title.trim(),
-        description: description.trim() || null,
-        priority: priority,
-        due_date: dueDate ? format(dueDate, "yyyy-MM-dd") : null,
+      const payload: any = {
+        title:              title.trim(),
+        description:        description.trim() || null,
+        priority,
+        due_date:           dueDate ? format(dueDate, "yyyy-MM-dd") : null,
         responsable_nombre: responsable.trim() || null,
-        type: gestionType,
-        subtype: subtype.trim() || null,
-        process_id: processId,
-        stage_id: gestion?.stage_id || stageId!,
+        type:               gestionType,
+        subtype:            subtype || null,
+        process_id:         processId,
+        stage_id:           gestion?.stage_id || stageId!,
+        area_id:            areaId === NO_AREA ? null : areaId,
+        cliente_nombre:     clienteNombre.trim() || null,
       };
 
       if (isEdit) {
-        const { error } = await supabase.from("gestiones").update(payload as any).eq("id", gestion!.id);
+        const { error } = await (supabase as any).from("gestiones").update(payload).eq("id", gestion!.id);
         if (error) throw error;
         toast.success("Gestión actualizada");
       } else {
-        const { error } = await supabase.from("gestiones").insert(payload as any);
+        const { error } = await (supabase as any).from("gestiones").insert(payload);
         if (error) throw error;
         toast.success("Gestión creada");
       }
@@ -115,7 +143,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
     if (!gestion) return;
     setLoading(true);
     try {
-      const { error } = await supabase.from("gestiones").delete().eq("id", gestion.id);
+      const { error } = await (supabase as any).from("gestiones").delete().eq("id", gestion.id);
       if (error) throw error;
       toast.success("Gestión eliminada");
       queryClient.invalidateQueries({ queryKey: ["gestiones", processId] });
@@ -129,21 +157,22 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar gestión" : "Nueva gestión"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
+
           <div>
-            <Label htmlFor="g-title">Título</Label>
+            <Label htmlFor="g-title">Título *</Label>
             <Input id="g-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título de la gestión" />
           </div>
+
           <div>
             <Label htmlFor="g-desc">Descripción</Label>
             <Textarea id="g-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descripción..." rows={2} />
           </div>
 
-          {/* Type & Subtype */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Tipo</Label>
@@ -158,9 +187,10 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
             </div>
             <div>
               <Label>Subtipo</Label>
-              <Select value={subtype} onValueChange={setSubtype}>
-                <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+              <Select value={subtype || "ninguno"} onValueChange={(v) => setSubtype(v === "ninguno" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Sin subtipo" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="ninguno">Sin subtipo</SelectItem>
                   {currentSubtypes.map((s) => (
                     <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
@@ -169,7 +199,25 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
             </div>
           </div>
 
-          {/* Priority & Due date */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Área</Label>
+              <Select value={areaId} onValueChange={setAreaId}>
+                <SelectTrigger><SelectValue placeholder="Sin área" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_AREA}>Sin área</SelectItem>
+                  {areas.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="g-cliente">Cliente</Label>
+              <Input id="g-cliente" value={clienteNombre} onChange={(e) => setClienteNombre(e.target.value)} placeholder="Nombre del cliente" />
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Prioridad</Label>
@@ -203,14 +251,13 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
             <Label htmlFor="g-resp">Responsable</Label>
             <Input id="g-resp" value={responsable} onChange={(e) => setResponsable(e.target.value)} placeholder="Nombre del responsable" />
           </div>
+
           <div className="flex gap-2">
             <Button onClick={handleSubmit} disabled={!title.trim() || loading} className="flex-1">
               {loading ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear gestión"}
             </Button>
             {isEdit && (
-              <Button variant="destructive" onClick={handleDelete} disabled={loading}>
-                Eliminar
-              </Button>
+              <Button variant="destructive" onClick={handleDelete} disabled={loading}>Eliminar</Button>
             )}
           </div>
         </div>

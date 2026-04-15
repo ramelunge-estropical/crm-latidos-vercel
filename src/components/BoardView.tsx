@@ -32,6 +32,9 @@ type GestionRow = {
   type: string | null;
   subtype: string | null;
   entered_stage_at?: string;
+  codigo?: string | null;
+  area_id?: string | null;
+  cliente_nombre?: string | null;
 };
 
 export function BoardView({ processId, processName }: BoardViewProps) {
@@ -68,6 +71,43 @@ export function BoardView({ processId, processName }: BoardViewProps) {
       return data as unknown as GestionRow[];
     },
   });
+
+  const { data: areas = [] } = useQuery<{ id: string; nombre: string; color: string }[]>({
+    queryKey: ["areas_empresa"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("areas_empresa").select("id, nombre, color");
+      if (error) return [];
+      return data;
+    },
+  });
+
+  const { data: taskCounts = [] } = useQuery<{ gestion_id: string; estado: string }[]>({
+    queryKey: ["gestion_tareas_counts", processId],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("gestion_tareas")
+        .select("gestion_id, estado, gestiones!inner(process_id)")
+        .eq("gestiones.process_id", processId);
+      if (error) return [];
+      return data;
+    },
+  });
+
+  const areasMap = useMemo(() => {
+    const map: Record<string, { nombre: string; color: string }> = {};
+    for (const a of areas) map[a.id] = { nombre: a.nombre, color: a.color };
+    return map;
+  }, [areas]);
+
+  const taskCountMap = useMemo(() => {
+    const map: Record<string, { done: number; total: number }> = {};
+    for (const t of taskCounts) {
+      if (!map[t.gestion_id]) map[t.gestion_id] = { done: 0, total: 0 };
+      map[t.gestion_id].total++;
+      if (t.estado === "completado") map[t.gestion_id].done++;
+    }
+    return map;
+  }, [taskCounts]);
 
   const { validateMove, getProgress, rules } = useProcessEngine(processId);
 
@@ -234,6 +274,8 @@ export function BoardView({ processId, processName }: BoardViewProps) {
                 globalStatus={stage.global_status}
                 gestiones={filtered.filter((g) => g.stage_id === stage.id)}
                 progressMap={progressMap}
+                taskCountMap={taskCountMap}
+                areasMap={areasMap}
                 hasRules={rules.some((r) => r.stage_id === stage.id)}
                 onAddGestion={() => setCreateStageId(stage.id)}
                 onEditGestion={(g) => setDetailGestionId(g.id)}

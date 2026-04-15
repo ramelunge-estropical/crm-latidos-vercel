@@ -1,7 +1,6 @@
-import { Plus } from "lucide-react";
+import { Plus, ShieldCheck } from "lucide-react";
 import { Droppable } from "@hello-pangea/dnd";
 import { GestionCard } from "./GestionCard";
-import { ShieldCheck } from "lucide-react";
 
 interface Gestion {
   id: string;
@@ -14,6 +13,9 @@ interface Gestion {
   stage_id: string;
   type: string | null;
   subtype: string | null;
+  codigo?: string | null;
+  area_id?: string | null;
+  cliente_nombre?: string | null;
 }
 
 interface BoardColumnProps {
@@ -22,28 +24,31 @@ interface BoardColumnProps {
   globalStatus: string;
   gestiones: Gestion[];
   progressMap?: Record<string, number>;
+  taskCountMap?: Record<string, { done: number; total: number }>;
+  areasMap?: Record<string, { nombre: string; color: string }>;
   hasRules?: boolean;
   onAddGestion: () => void;
   onEditGestion: (g: Gestion) => void;
 }
 
 const statusColors: Record<string, string> = {
-  todo: "bg-status-todo",
+  todo:    "bg-status-todo",
   planned: "bg-status-planned",
-  doing: "bg-status-doing",
-  review: "bg-status-review",
-  done: "bg-status-done",
+  doing:   "bg-status-doing",
+  review:  "bg-status-review",
+  done:    "bg-status-done",
 };
 
-export function BoardColumn({ stageId, name, globalStatus, gestiones, progressMap, hasRules, onAddGestion, onEditGestion }: BoardColumnProps) {
+export function BoardColumn({
+  stageId, name, globalStatus, gestiones, progressMap,
+  taskCountMap, areasMap, hasRules, onAddGestion, onEditGestion,
+}: BoardColumnProps) {
   return (
     <div className="flex flex-col w-72 flex-shrink-0 bg-muted/50 rounded-xl">
       <div className="flex items-center gap-2 px-3 py-3">
         <div className={`w-2.5 h-2.5 rounded-full ${statusColors[globalStatus] || "bg-muted-foreground"}`} />
         <h3 className="text-sm font-semibold text-foreground">{name}</h3>
-        {hasRules && (
-          <ShieldCheck className="w-3.5 h-3.5 text-primary/60" />
-        )}
+        {hasRules && <ShieldCheck className="w-3.5 h-3.5 text-primary/60" />}
         <span className="ml-auto text-xs font-medium text-muted-foreground bg-background rounded-full px-2 py-0.5">
           {gestiones.length}
         </span>
@@ -58,22 +63,32 @@ export function BoardColumn({ stageId, name, globalStatus, gestiones, progressMa
               snapshot.isDraggingOver ? "bg-primary/5" : ""
             }`}
           >
-            {gestiones.map((g, i) => (
-              <GestionCard
-                key={g.id}
-                id={g.id}
-                index={i}
-                title={g.title}
-                description={g.description}
-                priority={g.priority}
-                dueDate={g.due_date}
-                responsable={g.responsable_nombre}
-                type={g.type}
-                subtype={g.subtype}
-                progress={progressMap?.[g.id]}
-                onClick={() => onEditGestion(g)}
-              />
-            ))}
+            {gestiones.map((g, i) => {
+              const area  = g.area_id ? areasMap?.[g.area_id] : undefined;
+              const tasks = taskCountMap?.[g.id];
+              return (
+                <GestionCard
+                  key={g.id}
+                  id={g.id}
+                  index={i}
+                  title={g.title}
+                  description={g.description}
+                  priority={g.priority}
+                  dueDate={g.due_date}
+                  responsable={g.responsable_nombre}
+                  type={g.type}
+                  subtype={g.subtype}
+                  progress={progressMap?.[g.id]}
+                  codigo={g.codigo}
+                  areaNombre={area?.nombre}
+                  areaColor={area?.color}
+                  clienteNombre={g.cliente_nombre}
+                  tasksDone={tasks?.done}
+                  tasksTotal={tasks?.total}
+                  onClick={() => onEditGestion(g)}
+                />
+              );
+            })}
             {provided.placeholder}
           </div>
         )}
@@ -83,8 +98,7 @@ export function BoardColumn({ stageId, name, globalStatus, gestiones, progressMa
         onClick={onAddGestion}
         className="flex items-center gap-1.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 rounded-b-xl transition-colors"
       >
-        <Plus className="w-4 h-4" />
-        Agregar gestión
+        <Plus className="w-4 h-4" /> Agregar gestión
       </button>
     </div>
   );

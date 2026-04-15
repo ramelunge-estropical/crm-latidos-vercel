@@ -13,7 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ActivityTab } from "./ActivityTab";
 import {
   FileText, MessageSquare, Paperclip, History, Activity,
-  User, Calendar, Tag, Upload, Send, Trash2, ArrowRight, Edit2
+  User, Calendar, Tag, Upload, Send, Trash2, ArrowRight, Edit2, Hash, Building2
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -184,7 +184,14 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
         {/* Header */}
         <div className="px-6 pt-6 pb-3">
           <DialogHeader>
-            <DialogTitle className="text-lg">{gestion.title}</DialogTitle>
+            <div className="flex items-center gap-2">
+              {(gestion as any).codigo && (
+                <span className="inline-flex items-center gap-1 text-xs font-mono font-semibold text-muted-foreground">
+                  <Hash className="w-3 h-3" />{(gestion as any).codigo}
+                </span>
+              )}
+              <DialogTitle className="text-lg">{gestion.title}</DialogTitle>
+            </div>
           </DialogHeader>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <Badge variant="outline" className={pConfig.className}>{pConfig.label}</Badge>
@@ -195,6 +202,11 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
               </Badge>
             )}
             {currentStage && <Badge variant="outline" className="text-[10px]">{currentStage.name}</Badge>}
+            {(gestion as any).cliente_nombre && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <User className="w-3 h-3" />{(gestion as any).cliente_nombre}
+              </span>
+            )}
             {gestion.due_date && (
               <span className="text-xs text-muted-foreground flex items-center gap-1">
                 <Calendar className="w-3 h-3" /> {format(new Date(gestion.due_date), "dd MMM yyyy", { locale: es })}
@@ -269,12 +281,18 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">En etapa desde</span>
-                    <p>{format(new Date(gestion.entered_stage_at), "dd MMM yyyy HH:mm", { locale: es })}</p>
+                    <p>{gestion.entered_stage_at ? format(new Date(gestion.entered_stage_at), "dd MMM yyyy HH:mm", { locale: es }) : "—"}</p>
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">Responsable</span>
                     <p>{gestion.responsable_nombre || "Sin asignar"}</p>
                   </div>
+                  {(gestion as any).cliente_nombre && (
+                    <div>
+                      <span className="text-xs text-muted-foreground">Cliente</span>
+                      <p>{(gestion as any).cliente_nombre}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </TabsContent>
