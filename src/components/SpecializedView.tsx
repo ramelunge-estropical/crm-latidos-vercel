@@ -71,7 +71,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
   const [filterPriority, setFilterPriority]   = useState("all");
   const [searchQuery, setSearchQuery]         = useState("");
   const [showCreate, setShowCreate]           = useState(false);
-  const [viewMode, setViewMode]               = useState<ViewMode>("grid");
+  const [viewMode, setViewMode]               = useState<ViewMode>("kanban");
   // "mine" = solo del colaborador actual | "all" = todos (futuro: solo admin/gerente)
   const [scope, setScope]                     = useState<"mine" | "all">("mine");
 
