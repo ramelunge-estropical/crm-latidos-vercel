@@ -96,15 +96,6 @@ export function MisGestionesView() {
 
   const { data: allStages = [] } = useAllStages();
 
-  const grouped = useMemo(() => {
-    const map: Record<string, GestionRow[]> = { to_do: [], doing: [], review: [], done: [] };
-    for (const g of filtered) {
-      const status = g.pipeline_stages?.global_status || "to_do";
-      if (map[status]) map[status].push(g);
-    }
-    return map;
-  }, [filtered]);
-
   const onDragEnd = async (result: DropResult) => {
     const { draggableId, destination } = result;
     if (!destination) return;
@@ -162,6 +153,15 @@ export function MisGestionesView() {
       return true;
     });
   }, [gestiones, filterType, filterPriority]);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, GestionRow[]> = { to_do: [], doing: [], review: [], done: [] };
+    for (const g of filtered) {
+      const status = g.pipeline_stages?.global_status || "to_do";
+      if (map[status]) map[status].push(g);
+    }
+    return map;
+  }, [filtered]);
 
   const vencidas = filtered.filter(g => g.due_date && new Date(g.due_date) < new Date() && g.pipeline_stages?.global_status !== "done").length;
 
