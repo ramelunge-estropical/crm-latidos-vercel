@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useProcesses, useAllStages, useAreasEmpresa, useProcessAreas, useColaboradores } from "@/hooks/useSharedQueries";
+import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -120,7 +121,7 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
   };
 
   const handleStageResponsable = async (id: string, responsableId: string) => {
-    const val = responsableId === "none" ? null : responsableId;
+    const val = responsableId === "__none__" ? null : responsableId;
     await (supabase as any).from("pipeline_stages").update({ responsable_id: val }).eq("id", id);
     invalidate();
   };
@@ -347,27 +348,16 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
                                 {responsable ? responsable.nombre : "Sin responsable"}
                               </span>
                             ) : (
-                              <Select
-                                value={stage.responsable_id || "none"}
-                                onValueChange={v => handleStageResponsable(stage.id, v)}>
-                                <SelectTrigger className="h-6 text-[11px] border border-border bg-background px-2 gap-1 min-w-[120px] max-w-[160px]">
-                                  <SelectValue placeholder="Sin responsable" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none" className="text-xs text-muted-foreground">
-                                    Sin responsable
-                                  </SelectItem>
-                                  {colaboradores.map((c: any) => (
-                                    <SelectItem key={c.id} value={c.id} className="text-xs">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                                        {c.nombre}
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                                </Select>
-                              )}
+                              <ColaboradorCombobox
+                                value={stage.responsable_id || "__none__"}
+                                onValueChange={v => handleStageResponsable(stage.id, v)}
+                                colaboradores={colaboradores as any}
+                                emptyLabel="Sin responsable"
+                                placeholder="Sin responsable"
+                                triggerClassName="h-6 min-w-[120px] max-w-[160px]"
+                                size="sm"
+                              />
+                            )}
                           </div>
 
                           {/* Duración estimada */}

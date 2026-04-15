@@ -8,6 +8,7 @@ import { GestionDialog } from "./GestionDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Input } from "@/components/ui/input";
 import {
   Plus, Briefcase, FolderKanban, Cog, AlertCircle,
@@ -356,17 +357,15 @@ export function SpecializedView({ type }: SpecializedViewProps) {
 
               {/* Responsable (solo scope=all) */}
               {scope === "all" && colaboradores.length > 0 && (
-                <Select value={filterResponsable} onValueChange={setFilterResponsable}>
-                  <SelectTrigger className="h-7 w-[150px] text-xs">
-                    <SelectValue placeholder="Responsable" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">Todos los responsables</SelectItem>
-                    {colaboradores.map((c: any) => (
-                      <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ColaboradorCombobox
+                  value={filterResponsable === "all" ? "__none__" : filterResponsable}
+                  onValueChange={v => setFilterResponsable(v === "__none__" ? "all" : v)}
+                  colaboradores={colaboradores as any}
+                  emptyLabel="Todos los responsables"
+                  placeholder="Responsable"
+                  triggerClassName="h-7 w-[165px] text-xs"
+                  size="sm"
+                />
               )}
             </div>
           )}

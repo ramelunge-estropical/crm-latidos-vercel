@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { GestionDetailView } from "./GestionDetailView";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Hash, Tag, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
@@ -183,35 +184,14 @@ export function MisGestionesView() {
           </div>
 
           {/* Selector de colaborador */}
-          <Select value={colaboradorId} onValueChange={handleSelectColab}>
-          <SelectTrigger className="h-9 w-[220px] text-sm">
-            <SelectValue placeholder="Seleccionar colaborador">
-              {currentColab && (
-                <span className="flex items-center gap-2">
-                  <span className="inline-flex w-6 h-6 rounded-full items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
-                    style={{ backgroundColor: currentColab.color }}>
-                    {currentColab.nombre.charAt(0)}
-                  </span>
-                  <span>{currentColab.nombre}</span>
-                </span>
-              )}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {colaboradores.map(c => (
-              <SelectItem key={c.id} value={c.id}>
-                <span className="flex items-center gap-2">
-                  <span className="inline-flex w-5 h-5 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
-                    style={{ backgroundColor: c.color }}>
-                    {c.nombre.charAt(0)}
-                  </span>
-                  <span>{c.nombre}</span>
-                  <span className="text-[10px] text-muted-foreground">· {c.cargo}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-          </Select>
+          <ColaboradorCombobox
+            value={colaboradorId}
+            onValueChange={handleSelectColab}
+            colaboradores={colaboradores}
+            showEmpty={false}
+            placeholder="Seleccionar colaborador"
+            triggerClassName="w-[220px] h-9"
+          />
         </div>
 
         {/* Filtros */}

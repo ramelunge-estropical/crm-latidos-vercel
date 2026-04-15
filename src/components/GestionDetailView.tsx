@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -737,27 +738,15 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                   </label>
                   {editingResponsable ? (
                     <div className="space-y-1.5">
-                      <Select
+                      <ColaboradorCombobox
+                        value="__none__"
                         onValueChange={(val) => { handleResponsableChange(val); }}
-                      >
-                        <SelectTrigger className="h-7 text-xs w-full">
-                          <SelectValue placeholder="Seleccionar..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Sin asignar</SelectItem>
-                          {colaboradores.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              <span className="flex items-center gap-1.5">
-                                <span className="inline-flex w-4 h-4 rounded-full items-center justify-center text-white text-[8px] font-bold shrink-0"
-                                  style={{ backgroundColor: c.color }}>
-                                  {c.nombre.charAt(0)}
-                                </span>
-                                <span className="truncate">{c.nombre}</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        colaboradores={colaboradores}
+                        emptyLabel="Sin asignar"
+                        placeholder="Seleccionar..."
+                        triggerClassName="w-full h-7 text-xs"
+                        size="sm"
+                      />
                       <Button variant="ghost" size="sm" className="h-6 w-full text-xs" onClick={() => setEditingResponsable(false)}>
                         Cancelar
                       </Button>

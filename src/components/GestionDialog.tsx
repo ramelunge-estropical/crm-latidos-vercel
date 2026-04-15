@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
@@ -255,24 +256,14 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
 
           <div>
             <Label>Responsable</Label>
-            <Select value={responsableId} onValueChange={setResponsableId}>
-              <SelectTrigger><SelectValue placeholder="Sin asignar" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_AREA}>Sin asignar</SelectItem>
-                {colaboradores.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    <span className="flex items-center gap-2">
-                      <span className="inline-flex w-5 h-5 rounded-full items-center justify-center text-white text-[9px] font-bold flex-shrink-0"
-                        style={{ backgroundColor: c.color }}>
-                        {c.nombre.charAt(0)}
-                      </span>
-                      <span>{c.nombre}</span>
-                      {c.cargo && <span className="text-muted-foreground text-[10px]">· {c.cargo}</span>}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ColaboradorCombobox
+              value={responsableId}
+              onValueChange={setResponsableId}
+              colaboradores={colaboradores}
+              emptyLabel="Sin asignar"
+              placeholder="Sin asignar"
+              triggerClassName="w-full"
+            />
           </div>
 
           <div className="flex gap-2">

@@ -10,6 +10,8 @@ import { StageRulesDialog } from "./StageRulesDialog";
 import { useProcessEngine } from "@/hooks/useProcessEngine";
 import { Plus, Filter, ShieldCheck, AlertTriangle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
+import { useColaboradores } from "@/hooks/useSharedQueries";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -41,6 +43,7 @@ type GestionRow = {
 export function BoardView({ processId, processName }: BoardViewProps) {
   const queryClient = useQueryClient();
   const { isAdmin } = useCurrentUserRol();
+  const { data: colaboradores = [] } = useColaboradores();
   const [createStageId, setCreateStageId] = useState<string | null>(null);
   const [editGestion, setEditGestion] = useState<any | null>(null);
   const [detailGestionId, setDetailGestionId] = useState<string | null>(null);
@@ -106,19 +109,11 @@ export function BoardView({ processId, processName }: BoardViewProps) {
 
   const { validateMove, getProgress, rules } = useProcessEngine(processId);
 
-  // Unique responsables for filter
-  const responsables = useMemo(() => {
-    const names = gestiones
-      .map((g) => g.responsable_nombre)
-      .filter((n): n is string => !!n);
-    return [...new Set(names)].sort();
-  }, [gestiones]);
-
   // Filtered gestiones
   const filtered = useMemo(() => {
     return gestiones.filter((g) => {
       if (filterPriority !== "all" && g.priority !== filterPriority) return false;
-      if (filterResponsable !== "all" && g.responsable_nombre !== filterResponsable) return false;
+      if (filterResponsable !== "all" && g.owner_id !== filterResponsable) return false;
       return true;
     });
   }, [gestiones, filterPriority, filterResponsable]);
@@ -195,66 +190,63 @@ export function BoardView({ processId, processName }: BoardViewProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">{processName}</h2>
-          <p className="text-xs text-muted-foreground">
-            {stages.length} etapas · {gestiones.length} gestiones
-            {hasRules && (
-              <span className="ml-2 inline-flex items-center gap-1 text-primary">
-                <ShieldCheck className="w-3 h-3" />
-                {rules.length} regla(s)
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Rules button */}
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-card space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-semibold text-foreground truncate">{processName}</h2>
+            <p className="text-xs text-muted-foreground">
+              {stages.length} etapas · {gestiones.length} gestiones
+              {hasRules && (
+                <span className="ml-2 inline-flex items-center gap-1 text-primary">
+                  <ShieldCheck className="w-3 h-3" />
+                  {rules.length} regla(s)
+                </span>
+              )}
+            </p>
+          </div>
           <Button
             variant="outline"
             size="sm"
-            className="h-8 text-xs gap-1.5"
+            className="h-8 text-xs gap-1.5 shrink-0"
             onClick={() => setShowRules(true)}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            Reglas
+            <span className="hidden sm:inline">Reglas</span>
           </Button>
+        </div>
 
-          {/* Filters */}
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-muted-foreground" />
-            <Select value={filterPriority} onValueChange={setFilterPriority}>
-              <SelectTrigger className="h-8 w-[130px] text-xs">
-                <SelectValue placeholder="Prioridad" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                <SelectItem value="urgent">Urgente</SelectItem>
-                <SelectItem value="high">Alta</SelectItem>
-                <SelectItem value="medium">Media</SelectItem>
-                <SelectItem value="low">Baja</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filterResponsable} onValueChange={setFilterResponsable}>
-              <SelectTrigger className="h-8 w-[140px] text-xs">
-                <SelectValue placeholder="Responsable" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {responsables.map((r) => (
-                  <SelectItem key={r} value={r}>{r}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {hasFilters && (
-              <button
-                onClick={() => { setFilterPriority("all"); setFilterResponsable("all"); }}
-                className="text-xs text-primary hover:underline"
-              >
-                Limpiar
-              </button>
-            )}
-          </div>
+        {/* Filters — wraps on mobile */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+          <Select value={filterPriority} onValueChange={setFilterPriority}>
+            <SelectTrigger className="h-8 w-[120px] sm:w-[130px] text-xs">
+              <SelectValue placeholder="Prioridad" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              <SelectItem value="urgent">Urgente</SelectItem>
+              <SelectItem value="high">Alta</SelectItem>
+              <SelectItem value="medium">Media</SelectItem>
+              <SelectItem value="low">Baja</SelectItem>
+            </SelectContent>
+          </Select>
+          <ColaboradorCombobox
+            value={filterResponsable === "all" ? "__none__" : filterResponsable}
+            onValueChange={v => setFilterResponsable(v === "__none__" ? "all" : v)}
+            colaboradores={colaboradores}
+            emptyLabel="Todos"
+            placeholder="Responsable"
+            triggerClassName="h-8 w-[140px] sm:w-[150px] text-xs"
+            size="sm"
+          />
+          {hasFilters && (
+            <button
+              onClick={() => { setFilterPriority("all"); setFilterResponsable("all"); }}
+              className="text-xs text-primary hover:underline"
+            >
+              Limpiar
+            </button>
+          )}
         </div>
       </div>
 
