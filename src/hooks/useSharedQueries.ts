@@ -94,6 +94,67 @@ export function useAllStages() {
   });
 }
 
+export interface GestionTipo {
+  id: string;
+  nombre: string;
+  valor: string;
+  color: string;
+  orden: number;
+  activo: boolean;
+}
+
+export interface GestionSubtipo {
+  id: string;
+  tipo_id: string;
+  nombre: string;
+  orden: number;
+  activo: boolean;
+}
+
+export function useGestionTipos() {
+  return useQuery<GestionTipo[]>({
+    queryKey: ["gestion-tipos"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("gestion_tipos")
+        .select("id, nombre, valor, color, orden, activo")
+        .order("orden");
+      if (error) return [];
+      return data as GestionTipo[];
+    },
+    staleTime: STALE_10MIN,
+  });
+}
+
+export function useGestionSubtipos() {
+  return useQuery<GestionSubtipo[]>({
+    queryKey: ["gestion-subtipos"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("gestion_subtipos")
+        .select("id, tipo_id, nombre, orden, activo")
+        .order("orden");
+      if (error) return [];
+      return data as GestionSubtipo[];
+    },
+    staleTime: STALE_10MIN,
+  });
+}
+
+export function useProcessAreas() {
+  return useQuery<{ process_id: string; area_id: string }[]>({
+    queryKey: ["process-areas"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("process_areas")
+        .select("process_id, area_id");
+      if (error) return [];
+      return data;
+    },
+    staleTime: STALE_5MIN,
+  });
+}
+
 export function useAreasEmpresa() {
   return useQuery<AreaEmpresa[]>({
     queryKey: ["areas_empresa"],

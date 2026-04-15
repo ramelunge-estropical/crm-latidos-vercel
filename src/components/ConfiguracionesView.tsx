@@ -4,19 +4,30 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Settings, FolderKanban, Shield, Users,
   MapPin, MessageSquare, BarChart3, Puzzle, Sliders,
-  ChevronLeft, ChevronRight, Lock, EyeOff
+  ChevronLeft, ChevronRight, Lock, EyeOff,
+  GitBranch, LayoutGrid
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { GestionesConfig }     from "./config/GestionesConfig";
 import { ProcesosConfig }      from "./config/ProcesosConfig";
+import { PipelinesConfig }     from "./config/PipelinesConfig";
 import { AreasConfig }         from "./config/AreasConfig";
 import { ColaboradoresConfig } from "./config/ColaboradoresConfig";
 
-type Section = "procesos" | "areas" | "colaboradores" | "permisos" | null;
+type Section =
+  | "gestiones"
+  | "procesos"
+  | "pipelines"
+  | "areas"
+  | "colaboradores"
+  | "permisos"
+  | null;
 
-// Qué rol puede hacer qué en cada sección
 const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = {
+  gestiones:     { canView: ["admin", "gerente"], canEdit: ["admin"] },
   procesos:      { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  pipelines:     { canView: ["admin", "gerente"], canEdit: ["admin"] },
   areas:         { canView: ["admin", "gerente"], canEdit: ["admin"] },
   colaboradores: { canView: ["admin", "gerente"], canEdit: ["admin"] },
   permisos:      { canView: ["admin"],            canEdit: ["admin"] },
@@ -24,11 +35,25 @@ const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = 
 
 const CARDS = [
   {
+    id: "gestiones" as Section,
+    icon: LayoutGrid,
+    color: "bg-teal-500/10 text-teal-600",
+    title: "Gestiones",
+    desc: "Estados, tipos y subtipos de gestiones",
+  },
+  {
     id: "procesos" as Section,
     icon: FolderKanban,
     color: "bg-violet-500/10 text-violet-600",
-    title: "Procesos & Pipelines",
-    desc: "Definí procesos, etapas y flujos de trabajo",
+    title: "Procesos",
+    desc: "Procesos de negocio y sus áreas asociadas",
+  },
+  {
+    id: "pipelines" as Section,
+    icon: GitBranch,
+    color: "bg-indigo-500/10 text-indigo-600",
+    title: "Pipelines",
+    desc: "Etapas y flujos de trabajo por proceso",
   },
   {
     id: "areas" as Section,
@@ -75,14 +100,16 @@ const CARDS = [
   {
     id: null,
     icon: Puzzle,
-    color: "bg-indigo-500/10 text-indigo-600",
+    color: "bg-orange-500/10 text-orange-600",
     title: "Integraciones",
     desc: "Conectar con sistemas externos",
   },
 ];
 
 const SECTION_TITLES: Record<string, string> = {
-  procesos:      "Procesos & Pipelines",
+  gestiones:     "Gestiones",
+  procesos:      "Procesos",
+  pipelines:     "Pipelines",
   areas:         "Áreas",
   colaboradores: "Colaboradores",
   permisos:      "Permisos y Accesos",
@@ -97,34 +124,58 @@ function PermisosInfo() {
     {
       rol: "Admin",
       color: "bg-red-500/10 text-red-600",
-      permisos: ["Acceso total a Configuraciones", "Crear/editar/eliminar colaboradores", "Cambiar roles", "Gestionar procesos y áreas", "Ver todos los reportes"],
+      permisos: [
+        "Acceso total a Configuraciones",
+        "Crear/editar/eliminar colaboradores",
+        "Cambiar roles",
+        "Gestionar procesos, pipelines y áreas",
+        "Ver todos los reportes",
+      ],
     },
     {
       rol: "Gerente",
       color: "bg-amber-500/10 text-amber-600",
-      permisos: ["Ver Configuraciones (solo lectura)", "Ver colaboradores sin editar", "Ver procesos y áreas", "Ver todo el equipo en gestiones", "Ver reportes completos"],
+      permisos: [
+        "Ver Configuraciones (solo lectura)",
+        "Ver colaboradores sin editar",
+        "Ver procesos, pipelines y áreas",
+        "Ver todo el equipo en gestiones",
+        "Ver reportes completos",
+      ],
     },
     {
       rol: "Colaborador",
       color: "bg-primary/10 text-primary",
-      permisos: ["Sin acceso a Configuraciones", "Ver sus propias gestiones", "Crear y editar gestiones asignadas", "Ver agenda propia"],
+      permisos: [
+        "Sin acceso a Configuraciones",
+        "Ver sus propias gestiones",
+        "Crear y editar gestiones asignadas",
+        "Ver agenda propia",
+      ],
     },
     {
       rol: "Viewer",
       color: "bg-muted text-muted-foreground",
-      permisos: ["Sin acceso a Configuraciones", "Solo lectura en gestiones asignadas", "Sin crear ni editar"],
+      permisos: [
+        "Sin acceso a Configuraciones",
+        "Solo lectura en gestiones asignadas",
+        "Sin crear ni editar",
+      ],
     },
   ];
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
         <Lock className="w-4 h-4 shrink-0" />
-        La aplicación de restricciones se activará con el sistema de autenticación. Los roles ya están definidos en la base de datos.
+        La aplicación de restricciones se activará con el sistema de autenticación.
+        Los roles ya están definidos en la base de datos.
       </div>
       <div className="grid grid-cols-2 gap-3">
         {roles.map(r => (
           <div key={r.rol} className="p-4 rounded-xl border border-border bg-card">
-            <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold mb-3 ${r.color}`}>{r.rol}</span>
+            <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold mb-3 ${r.color}`}>
+              {r.rol}
+            </span>
             <ul className="space-y-1.5">
               {r.permisos.map(p => (
                 <li key={p} className="text-xs text-muted-foreground flex items-start gap-1.5">
@@ -143,7 +194,6 @@ function PermisosInfo() {
 export function ConfiguracionesView() {
   const [active, setActive] = useState<Section>(null);
 
-  // Leer colaborador actual desde localStorage
   const colaboradorId = localStorage.getItem("mis_gestiones_colaborador") || "";
 
   const { data: currentUser } = useQuery({
@@ -162,19 +212,9 @@ export function ConfiguracionesView() {
 
   const userRol = currentUser?.rol || "colaborador";
 
-  const canView = (sectionId: string) => {
-    const perms = SECTION_PERMS[sectionId];
-    if (!perms) return false;
-    return perms.canView.includes(userRol);
-  };
+  const canView = (sectionId: string) => SECTION_PERMS[sectionId]?.canView.includes(userRol) ?? false;
+  const canEdit = (sectionId: string) => SECTION_PERMS[sectionId]?.canEdit.includes(userRol) ?? false;
 
-  const canEdit = (sectionId: string) => {
-    const perms = SECTION_PERMS[sectionId];
-    if (!perms) return false;
-    return perms.canEdit.includes(userRol);
-  };
-
-  // Colaborador/Viewer no puede entrar a Configuraciones
   if (userRol === "colaborador" || userRol === "viewer") {
     return (
       <div className="flex flex-col h-full">
@@ -188,7 +228,8 @@ export function ConfiguracionesView() {
           </div>
           <p className="text-sm font-medium">Sin acceso</p>
           <p className="text-xs text-muted-foreground max-w-xs">
-            Tu rol <span className="font-semibold">{ROL_LABELS[userRol]}</span> no tiene permisos para acceder a Configuraciones.
+            Tu rol <span className="font-semibold">{ROL_LABELS[userRol]}</span> no tiene permisos
+            para acceder a Configuraciones.
             Contactá a un Administrador si necesitás realizar cambios.
           </p>
         </div>
@@ -214,13 +255,11 @@ export function ConfiguracionesView() {
         {active && <ChevronRight className="w-4 h-4 text-muted-foreground" />}
         {active && <span className="text-sm text-muted-foreground">{SECTION_TITLES[active]}</span>}
 
-        {/* Badge de rol del usuario actual */}
         {currentUser && (
           <div className="ml-auto flex items-center gap-2">
             <span
               className="inline-flex w-7 h-7 rounded-full items-center justify-center text-white text-[11px] font-bold"
-              style={{ backgroundColor: currentUser.color }}
-            >
+              style={{ backgroundColor: currentUser.color }}>
               {currentUser.nombre.charAt(0)}
             </span>
             <span className="text-xs text-muted-foreground">{currentUser.nombre}</span>
@@ -236,10 +275,10 @@ export function ConfiguracionesView() {
         {active === null && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl">
             {CARDS.map((card) => {
-              const Icon = card.icon;
+              const Icon        = card.icon;
               const isAccessible = card.id ? canView(card.id) : false;
               const isComingSoon = !card.id;
-              const isBlocked    = card.id && !isAccessible;
+              const isBlocked   = card.id && !isAccessible;
 
               return (
                 <button
@@ -277,11 +316,12 @@ export function ConfiguracionesView() {
           </div>
         )}
 
-        {/* Secciones — modo readonly si no puede editar */}
-        {active === "procesos" && <ProcesosConfig readonly={!canEdit("procesos")} />}
-        {active === "areas"    && <AreasConfig    readonly={!canEdit("areas")} />}
+        {active === "gestiones"     && <GestionesConfig     readonly={!canEdit("gestiones")} />}
+        {active === "procesos"      && <ProcesosConfig      readonly={!canEdit("procesos")} />}
+        {active === "pipelines"     && <PipelinesConfig     readonly={!canEdit("pipelines")} />}
+        {active === "areas"         && <AreasConfig         readonly={!canEdit("areas")} />}
         {active === "colaboradores" && <ColaboradoresConfig readonly={!canEdit("colaboradores")} />}
-        {active === "permisos" && <PermisosInfo />}
+        {active === "permisos"      && <PermisosInfo />}
       </div>
     </div>
   );

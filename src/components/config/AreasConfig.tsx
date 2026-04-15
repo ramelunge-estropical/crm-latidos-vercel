@@ -51,13 +51,15 @@ export function AreasConfig({ readonly = false }: { readonly?: boolean }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{areas.length} área{areas.length !== 1 ? "s" : ""} configurada{areas.length !== 1 ? "s" : ""}</p>
-        <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setCreating(true)}>
-          <Plus className="w-3.5 h-3.5" />Nueva área
-        </Button>
+        {!readonly && (
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setCreating(true)}>
+            <Plus className="w-3.5 h-3.5" />Nueva área
+          </Button>
+        )}
       </div>
 
       {/* Form nueva área */}
-      {creating && (
+      {!readonly && creating && (
         <div className="flex items-center gap-2 p-3 rounded-lg border border-primary/30 bg-primary/5">
           <input type="color" value={newColor} onChange={e => setNewColor(e.target.value)}
             className="w-8 h-8 rounded cursor-pointer border border-border p-0.5" />
@@ -89,14 +91,18 @@ export function AreasConfig({ readonly = false }: { readonly?: boolean }) {
               <>
                 <div className="w-8 h-8 rounded-lg shrink-0" style={{ backgroundColor: area.color }} />
                 <p className="text-sm font-medium flex-1">{area.nombre}</p>
-                <Button variant="ghost" size="sm" aria-label="Editar área" className="h-7 w-7 p-0"
-                  onClick={() => { setEditingId(area.id); setEditNombre(area.nombre); setEditColor(area.color); }}>
-                  <Pencil className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="ghost" size="sm" aria-label="Eliminar área" className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                  onClick={() => handleDelete(area.id)}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
+                {!readonly && (
+                  <>
+                    <Button variant="ghost" size="sm" aria-label="Editar área" className="h-7 w-7 p-0"
+                      onClick={() => { setEditingId(area.id); setEditNombre(area.nombre); setEditColor(area.color); }}>
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="sm" aria-label="Eliminar área" className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      onClick={() => handleDelete(area.id)}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>
