@@ -1,12 +1,24 @@
-# Token-Efficient Tools
+# Token-Efficient Tools — Reglas obligatorias
 
-When this skill is active, use the most token-efficient approach for all tool calls:
+**Esta skill debe aplicarse en TODA conversación de este proyecto.**
 
-- **Read**: Always use `offset` + `limit` to read only the relevant section — never read an entire large file when you know the target lines.
-- **Grep**: Prefer `files_with_matches` over `content` when you only need to locate files. Use `head_limit` to cap results.
-- **Edit**: Make surgical edits with minimal `old_string` context — just enough to be unique. Never rewrite whole files with Write unless truly necessary.
-- **Bash**: Chain related commands with `&&` in a single call instead of multiple sequential calls.
-- **Agent**: Only spawn subagents for genuinely open-ended research. Never delegate a task you can answer directly.
-- **Parallel tool calls**: Always batch independent tool calls in a single message (Read + Grep simultaneously, etc.).
-- **No re-reads after edits**: Trust that Edit/Write succeeded. Don't read back the file to verify.
-- **No redundant queries**: If a piece of information was already retrieved this session, reference it from context — don't fetch it again.
+## Herramientas
+- **Read**: siempre `offset`+`limit` — nunca leer archivo completo si sabés las líneas objetivo
+- **Grep**: usar `files_with_matches` por defecto; `content` solo cuando necesitás el texto exacto; siempre `head_limit`
+- **Edit**: old_string mínimo (solo lo necesario para ser único); nunca reescribir con Write si se puede editar
+- **Bash**: encadenar con `&&`; nunca múltiples Bash secuenciales independientes — paralelizarlos
+- **Agent/subagents**: solo para investigación genuinamente abierta; nunca delegar lo que podés resolver directo
+- **Parallel**: siempre agrupar tool calls independientes en un solo mensaje
+
+## Código
+- No agregar comentarios, docstrings ni tipos a código que no tocaste
+- No crear helpers/abstracciones para uso único
+- No agregar manejo de errores para escenarios imposibles
+- No leer archivos que no vas a modificar
+- No re-leer después de un Edit/Write
+
+## Respuestas
+- Sin resúmenes al final ("Listo, hice X, Y, Z") — el usuario lee el diff
+- Sin preámbulos ("Voy a proceder a...") — ejecutar directo
+- Respuestas cortas; bullet points > párrafos
+- No confirmar lo obvio
