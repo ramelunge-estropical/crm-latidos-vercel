@@ -97,9 +97,16 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
     queryKey: ["colaboradores"],
     queryFn: async () => {
       const { data, error } = await (supabase as any)
-        .from("colaboradores").select("id, nombre, cargo, color").eq("activo", true).order("nombre");
+        .from("colaboradores").select("id, nombre, cargo, color, email").eq("activo", true).order("nombre");
       if (error) return [];
-      return data as { id: string; nombre: string; cargo: string; color: string }[];
+      // Dedup por email (parche hasta aplicar UNIQUE constraint en DB)
+      const seen = new Set<string>();
+      return (data as any[]).filter((c) => {
+        const key = c.email || c.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }) as { id: string; nombre: string; cargo: string; color: string }[];
     },
   });
 

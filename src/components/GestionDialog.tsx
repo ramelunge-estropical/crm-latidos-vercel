@@ -98,11 +98,17 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("colaboradores")
-        .select("id, nombre, cargo, color")
+        .select("id, nombre, cargo, color, email")
         .eq("activo", true)
         .order("nombre");
       if (error) return [] as { id: string; nombre: string; cargo: string; color: string }[];
-      return data as { id: string; nombre: string; cargo: string; color: string }[];
+      const seen = new Set<string>();
+      return (data as any[]).filter((c) => {
+        const key = c.email || c.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }) as { id: string; nombre: string; cargo: string; color: string }[];
     },
   });
 
