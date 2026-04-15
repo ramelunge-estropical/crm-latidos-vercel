@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useColaboradores, useAreasEmpresa } from "@/hooks/useSharedQueries";
+import { useAllColaboradores, useAreasEmpresa } from "@/hooks/useSharedQueries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,14 +22,17 @@ const EMPTY_FORM = { nombre: "", email: "", cargo: "", area_id: "", color: "#636
 
 export function ColaboradoresConfig() {
   const queryClient = useQueryClient();
-  const { data: colaboradores = [] } = useColaboradores();
+  const { data: colaboradores = [] } = useAllColaboradores();
   const { data: areas = [] }         = useAreasEmpresa();
 
   const [showForm,  setShowForm]  = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form,      setForm]      = useState({ ...EMPTY_FORM });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["colaboradores"] });
+    queryClient.invalidateQueries({ queryKey: ["colaboradores-all"] });
+  };
   const setField   = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const openCreate = () => { setForm({ ...EMPTY_FORM }); setEditingId(null); setShowForm(true); };
