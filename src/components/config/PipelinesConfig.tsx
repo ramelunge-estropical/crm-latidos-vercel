@@ -291,140 +291,135 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
 
                   <div className="space-y-1.5">
                     {stages.map((stage, idx) => {
-                      const statusOpt     = STATUS_OPTIONS.find(o => o.value === stage.global_status);
-                      const responsable   = colaboradores.find((c: any) => c.id === stage.responsable_id);
+                      const statusOpt   = STATUS_OPTIONS.find(o => o.value === stage.global_status);
+                      const responsable = colaboradores.find((c: any) => c.id === stage.responsable_id);
                       return (
                         <div key={stage.id}
-                          className="rounded-lg bg-card border border-border overflow-hidden">
+                          className="flex items-center gap-2 p-2 rounded-lg bg-card border border-border">
 
-                          {/* ── Fila principal: orden · nombre · estado · eliminar ── */}
-                          <div className="flex items-center gap-2 px-2 pt-2 pb-1.5">
-                            {!readonly && <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />}
-                            {!readonly && (
-                              <div className="flex items-center gap-0.5">
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={idx === 0}
-                                  onClick={() => handleMoveStage(stage, "up", stages)}>
-                                  <ArrowUp className="w-3 h-3" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
-                                  disabled={idx === stages.length - 1}
-                                  onClick={() => handleMoveStage(stage, "down", stages)}>
-                                  <ArrowDown className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            )}
+                          {/* Ordenar */}
+                          {!readonly && <GripVertical className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />}
+                          {!readonly && (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={idx === 0}
+                                onClick={() => handleMoveStage(stage, "up", stages)}>
+                                <ArrowUp className="w-3 h-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
+                                disabled={idx === stages.length - 1}
+                                onClick={() => handleMoveStage(stage, "down", stages)}>
+                                <ArrowDown className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
 
-                            {!readonly && editingStage === stage.id ? (
-                              <div className="flex items-center gap-1.5 flex-1">
-                                <Input value={editStageName}
-                                  onChange={e => setEditStageName(e.target.value)}
-                                  onKeyDown={e => { if (e.key === "Enter") handleSaveStage(stage.id); if (e.key === "Escape") setEditingStage(null); }}
-                                  className="h-6 text-xs flex-1" autoFocus />
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600"
-                                  onClick={() => handleSaveStage(stage.id)}>
-                                  <Check className="w-3 h-3" />
-                                </Button>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0"
-                                  onClick={() => setEditingStage(null)}>
-                                  <X className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            ) : readonly ? (
-                              <span className="text-xs font-medium flex-1">{stage.name}</span>
-                            ) : (
-                              <button
-                                className="text-xs font-medium flex-1 text-left hover:text-primary transition-colors"
-                                onClick={() => { setEditingStage(stage.id); setEditStageName(stage.name); }}>
-                                {stage.name}
-                              </button>
-                            )}
+                          {/* Nombre */}
+                          {!readonly && editingStage === stage.id ? (
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <Input value={editStageName}
+                                onChange={e => setEditStageName(e.target.value)}
+                                onKeyDown={e => { if (e.key === "Enter") handleSaveStage(stage.id); if (e.key === "Escape") setEditingStage(null); }}
+                                className="h-6 text-xs flex-1" autoFocus />
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-green-600"
+                                onClick={() => handleSaveStage(stage.id)}>
+                                <Check className="w-3 h-3" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0"
+                                onClick={() => setEditingStage(null)}>
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ) : readonly ? (
+                            <span className="text-xs font-medium w-36 shrink-0 truncate">{stage.name}</span>
+                          ) : (
+                            <button
+                              className="text-xs font-medium w-36 shrink-0 text-left truncate hover:text-primary transition-colors"
+                              onClick={() => { setEditingStage(stage.id); setEditStageName(stage.name); }}>
+                              {stage.name}
+                            </button>
+                          )}
 
+                          {/* Responsable */}
+                          <div className="flex items-center gap-1 flex-1 min-w-0">
+                            <User className="w-3 h-3 text-muted-foreground shrink-0" />
                             {readonly ? (
-                              <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium shrink-0", statusOpt?.className)}>
-                                {statusOpt?.label}
+                              <span className="text-[11px] text-muted-foreground truncate">
+                                {responsable ? responsable.nombre : "Sin responsable"}
                               </span>
                             ) : (
-                              <Select value={stage.global_status}
-                                onValueChange={v => handleStageStatusChange(stage.id, v)}>
-                                <SelectTrigger className={cn("h-6 w-[110px] text-[10px] border shrink-0", statusOpt?.className)}>
-                                  <SelectValue />
+                              <Select
+                                value={stage.responsable_id || "none"}
+                                onValueChange={v => handleStageResponsable(stage.id, v)}>
+                                <SelectTrigger className="h-6 text-[11px] border border-border bg-background px-2 gap-1 min-w-[120px] max-w-[160px]">
+                                  <SelectValue placeholder="Sin responsable" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {STATUS_OPTIONS.map(o => (
-                                    <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                                  <SelectItem value="none" className="text-xs text-muted-foreground">
+                                    Sin responsable
+                                  </SelectItem>
+                                  {colaboradores.map((c: any) => (
+                                    <SelectItem key={c.id} value={c.id} className="text-xs">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                                        {c.nombre}
+                                      </div>
+                                    </SelectItem>
                                   ))}
                                 </SelectContent>
-                              </Select>
-                            )}
-
-                            {!readonly && (
-                              <Button variant="ghost" size="sm"
-                                className="h-6 w-6 p-0 text-destructive hover:text-destructive shrink-0"
-                                onClick={() => handleDeleteStage(stage.id)}>
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            )}
-                          </div>
-
-                          {/* ── Fila secundaria: responsable + duración ── */}
-                          <div className="flex items-center gap-3 px-2 pb-2 border-t border-border/40 pt-1.5 bg-muted/20">
-                            {/* Responsable */}
-                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                              <User className="w-3 h-3 text-muted-foreground shrink-0" />
-                              {readonly ? (
-                                <span className="text-[11px] text-muted-foreground truncate">
-                                  {responsable ? responsable.nombre : "Sin responsable"}
-                                </span>
-                              ) : (
-                                <Select
-                                  value={stage.responsable_id || "none"}
-                                  onValueChange={v => handleStageResponsable(stage.id, v)}>
-                                  <SelectTrigger className="h-6 text-[11px] border-0 bg-transparent p-0 gap-1 focus:ring-0 w-auto max-w-[160px]">
-                                    <SelectValue placeholder="Sin responsable" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none" className="text-xs text-muted-foreground">
-                                      Sin responsable
-                                    </SelectItem>
-                                    {colaboradores.map((c: any) => (
-                                      <SelectItem key={c.id} value={c.id} className="text-xs">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
-                                          {c.nombre}
-                                        </div>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
                                 </Select>
                               )}
-                            </div>
-
-                            {/* Duración estimada */}
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <Clock className="w-3 h-3 text-muted-foreground" />
-                              {readonly ? (
-                                <span className="text-[11px] text-muted-foreground">
-                                  {stage.duracion_estimada_dias
-                                    ? `${stage.duracion_estimada_dias}d estimados`
-                                    : "Sin duración"}
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    placeholder="—"
-                                    defaultValue={stage.duracion_estimada_dias ?? ""}
-                                    onBlur={e => handleStageDuracion(stage.id, e.target.value)}
-                                    onKeyDown={e => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-                                    className="h-6 w-14 text-[11px] text-center p-1"
-                                  />
-                                  <span className="text-[11px] text-muted-foreground">días</span>
-                                </div>
-                              )}
-                            </div>
                           </div>
 
+                          {/* Duración estimada */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Clock className="w-3 h-3 text-muted-foreground" />
+                            {readonly ? (
+                              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                {stage.duracion_estimada_dias ? `${stage.duracion_estimada_dias}d` : "—"}
+                              </span>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  placeholder="—"
+                                  defaultValue={stage.duracion_estimada_dias ?? ""}
+                                  onBlur={e => handleStageDuracion(stage.id, e.target.value)}
+                                  onKeyDown={e => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                                  className="h-6 w-12 text-[11px] text-center p-1"
+                                />
+                                <span className="text-[11px] text-muted-foreground">d</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Estado */}
+                          {readonly ? (
+                            <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium shrink-0", statusOpt?.className)}>
+                              {statusOpt?.label}
+                            </span>
+                          ) : (
+                            <Select value={stage.global_status}
+                              onValueChange={v => handleStageStatusChange(stage.id, v)}>
+                              <SelectTrigger className={cn("h-6 w-[100px] text-[10px] border shrink-0", statusOpt?.className)}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {STATUS_OPTIONS.map(o => (
+                                  <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+
+                          {/* Eliminar */}
+                          {!readonly && (
+                            <Button variant="ghost" size="sm"
+                              className="h-6 w-6 p-0 text-destructive hover:text-destructive shrink-0"
+                              onClick={() => handleDeleteStage(stage.id)}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          )}
                         </div>
                       );
                     })}
