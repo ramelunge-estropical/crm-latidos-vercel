@@ -27,6 +27,7 @@ interface BoardColumnProps {
   taskCountMap?: Record<string, { done: number; total: number }>;
   areasMap?: Record<string, { nombre: string; color: string }>;
   hasRules?: boolean;
+  canAdd?: boolean;
   onAddGestion: () => void;
   onEditGestion: (g: Gestion) => void;
 }
@@ -40,7 +41,7 @@ const statusColors: Record<string, string> = {
 
 export function BoardColumn({
   stageId, name, globalStatus, gestiones, progressMap,
-  taskCountMap, areasMap, hasRules, onAddGestion, onEditGestion,
+  taskCountMap, areasMap, hasRules, canAdd = true, onAddGestion, onEditGestion,
 }: BoardColumnProps) {
   return (
     <div className="flex flex-col w-72 flex-shrink-0 bg-muted/50 rounded-xl">
@@ -93,12 +94,14 @@ export function BoardColumn({
         )}
       </Droppable>
 
-      <button
-        onClick={onAddGestion}
-        className="flex items-center gap-1.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 rounded-b-xl transition-colors"
-      >
-        <Plus className="w-4 h-4" /> Agregar gestión
-      </button>
+      {canAdd && (
+        <button
+          onClick={onAddGestion}
+          className="flex items-center gap-1.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent/60 rounded-b-xl transition-colors"
+        >
+          <Plus className="w-4 h-4" /> Agregar gestión
+        </button>
+      )}
     </div>
   );
 }

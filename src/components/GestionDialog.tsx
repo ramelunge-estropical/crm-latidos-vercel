@@ -71,6 +71,15 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
   );
   const [loading, setLoading] = useState(false);
 
+  // Invalida todas las vistas que muestran gestiones
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["gestiones"] });
+    queryClient.invalidateQueries({ queryKey: ["mis-gestiones"] });
+    queryClient.invalidateQueries({ queryKey: ["gestiones-type"] });
+    queryClient.invalidateQueries({ queryKey: ["gestiones_cliente"] });
+    queryClient.invalidateQueries({ queryKey: ["gestion-detail"] });
+  };
+
   useEffect(() => {
     if (gestion) {
       setTitle(gestion.title || "");
@@ -126,7 +135,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
         toast.success("Gestión creada");
       }
 
-      queryClient.invalidateQueries({ queryKey: ["gestiones", processId] });
+      invalidateAll();
       onOpenChange(false);
       if (!isEdit) resetForm();
     } catch (err: any) {
@@ -143,7 +152,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
       const { error } = await (supabase as any).from("gestiones").delete().eq("id", gestion.id);
       if (error) throw error;
       toast.success("Gestión eliminada");
-      queryClient.invalidateQueries({ queryKey: ["gestiones", processId] });
+      invalidateAll();
       onOpenChange(false);
     } catch (err: any) {
       toast.error(err.message || "Error al eliminar");

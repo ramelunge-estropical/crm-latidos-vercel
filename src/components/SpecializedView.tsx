@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useColaboradores, useProcesses, useAllStages } from "@/hooks/useSharedQueries";
+import { useColaboradores, useProcesses, useAllStages, useCurrentUserRol } from "@/hooks/useSharedQueries";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { GestionDetailView } from "./GestionDetailView";
 import { GestionDialog } from "./GestionDialog";
@@ -66,6 +66,7 @@ type ViewMode = "grid" | "list" | "kanban";
 // ── Componente principal ────────────────────────────────
 export function SpecializedView({ type }: SpecializedViewProps) {
   const queryClient = useQueryClient();
+  const { isAdmin } = useCurrentUserRol();
   const config = typeConfig[type];
   const Icon = config.icon;
 
@@ -167,6 +168,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
 
   // ── Drag & drop (kanban) ─────────────────────────────
   const onDragEnd = async (result: DropResult) => {
+    if (!isAdmin) return;
     const { draggableId, destination } = result;
     if (!destination) return;
     const newStatus = destination.droppableId;
@@ -255,7 +257,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
               ))}
             </div>
 
-            {defaultProcess && defaultStage && (
+            {isAdmin && defaultProcess && defaultStage && (
               <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setShowCreate(true)}>
                 <Plus className="w-3.5 h-3.5" /> Nueva
               </Button>

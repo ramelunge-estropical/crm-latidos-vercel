@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useColaboradores } from "@/hooks/useSharedQueries";
+import { useColaboradores, useCurrentUserRol } from "@/hooks/useSharedQueries";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -53,6 +53,7 @@ const typeConfig: Record<string, { label: string; className: string }> = {
 
 export function GestionDetailView({ open, onOpenChange, gestionId, processId }: GestionDetailViewProps) {
   const queryClient = useQueryClient();
+  const { isAdmin } = useCurrentUserRol();
 
   // Title inline edit
   const [editingTitle, setEditingTitle] = useState(false);
@@ -301,7 +302,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 <Hash className="w-3 h-3" />{gestion.codigo}
               </span>
             )}
-            {editingTitle ? (
+            {isAdmin && editingTitle ? (
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
                 <Input
                   ref={titleInputRef}
@@ -317,7 +318,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                   <X className="w-4 h-4" />
                 </Button>
               </div>
-            ) : (
+            ) : isAdmin ? (
               <button
                 className="text-lg font-semibold text-foreground text-left hover:text-primary flex items-center gap-1.5 group flex-1 min-w-0"
                 onClick={() => { setTitleValue(gestion.title); setEditingTitle(true); }}
@@ -325,6 +326,10 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 <span className="truncate">{gestion.title}</span>
                 <Pencil className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
               </button>
+            ) : (
+              <span className="text-lg font-semibold text-foreground flex-1 min-w-0 truncate">
+                {gestion.title}
+              </span>
             )}
           </div>
 
@@ -401,9 +406,11 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 return (
                   <div key={stage.id} className="flex items-center flex-shrink-0">
                     <button
-                      onClick={() => handleStageChange(stage.id)}
+                      onClick={() => isAdmin && handleStageChange(stage.id)}
+                      disabled={!isAdmin}
                       className={cn(
                         "px-3 py-1.5 text-[11px] font-medium rounded transition-colors whitespace-nowrap",
+                        !isAdmin && "cursor-default",
                         isActive && "bg-primary text-primary-foreground shadow-sm",
                         isPast   && "bg-primary/20 text-primary hover:bg-primary/30",
                         !isActive && !isPast && "bg-muted/60 text-muted-foreground hover:bg-muted",
@@ -505,22 +512,24 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                         <span className={cn("text-sm flex-1", tarea.estado === "done" && "line-through text-muted-foreground")}>
                           {tarea.titulo}
                         </span>
-                        <Button
-                          variant="ghost" size="sm"
-                          aria-label="Eliminar tarea"
-                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handleDeleteTarea(tarea.id)}
-                        >
-                          <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
-                        </Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost" size="sm"
+                            aria-label="Eliminar tarea"
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => handleDeleteTarea(tarea.id)}
+                          >
+                            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                     {tareas.length === 0 && (
                       <p className="text-sm text-muted-foreground text-center py-4">Sin tareas. Agregá la primera tarea abajo.</p>
                     )}
                   </div>
-                  {/* Add task */}
-                  <div className="flex gap-2 mt-2">
+                  {/* Add task — solo admin */}
+                  {isAdmin && <div className="flex gap-2 mt-2">
                     <Input
                       placeholder="Nueva tarea..."
                       value={newTaskText}
@@ -531,7 +540,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                     <Button size="sm" className="h-8 gap-1" disabled={!newTaskText.trim() || addingTask} onClick={handleAddTarea}>
                       <Plus className="w-3.5 h-3.5" />Agregar
                     </Button>
-                  </div>
+                  </div>}
                 </TabsContent>
 
                 {/* ── Actividades ── */}
@@ -755,8 +764,9 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                     </div>
                   ) : (
                     <button
-                      onClick={() => setEditingResponsable(true)}
-                      className="w-full flex items-center gap-2 py-1.5 px-2 rounded-md hover:bg-muted transition-colors text-left"
+                      onClick={() => isAdmin && setEditingResponsable(true)}
+                      disabled={!isAdmin}
+                      className={cn("w-full flex items-center gap-2 py-1.5 px-2 rounded-md transition-colors text-left", isAdmin ? "hover:bg-muted" : "cursor-default")}
                     >
                       {currentColab ? (
                         <>
@@ -784,7 +794,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                   <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide block mb-1.5">
                     Etapa
                   </label>
-                  <Select value={gestion.stage_id} onValueChange={handleStageChange}>
+                  <Select value={gestion.stage_id} onValueChange={isAdmin ? handleStageChange : undefined} disabled={!isAdmin}>
                     <SelectTrigger className="h-7 text-xs w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {stages.map((s) => <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>)}
@@ -797,20 +807,26 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 {/* Acciones */}
                 <div className="space-y-1.5">
                   <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Acciones</p>
-                  <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
-                    onClick={() => setEditingResponsable(true)}>
-                    <UserCheck className="w-3.5 h-3.5" />Reasignar
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
-                    onClick={() => setActiveTab("checklist")}>
-                    <CheckSquare className="w-3.5 h-3.5" />Agregar tarea
-                  </Button>
-                  <label className="cursor-pointer w-full">
-                    <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs pointer-events-none" asChild>
-                      <span><Paperclip className="w-3.5 h-3.5" />Adjuntar doc.</span>
+                  {isAdmin && (
+                    <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
+                      onClick={() => setEditingResponsable(true)}>
+                      <UserCheck className="w-3.5 h-3.5" />Reasignar
                     </Button>
-                    <input type="file" className="hidden" onChange={handleFileUpload} />
-                  </label>
+                  )}
+                  {isAdmin && (
+                    <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
+                      onClick={() => setActiveTab("checklist")}>
+                      <CheckSquare className="w-3.5 h-3.5" />Agregar tarea
+                    </Button>
+                  )}
+                  {isAdmin && (
+                    <label className="cursor-pointer w-full">
+                      <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs pointer-events-none" asChild>
+                        <span><Paperclip className="w-3.5 h-3.5" />Adjuntar doc.</span>
+                      </Button>
+                      <input type="file" className="hidden" onChange={handleFileUpload} />
+                    </label>
+                  )}
                   <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs"
                     onClick={() => setActiveTab("comunicaciones")}>
                     <MessageSquare className="w-3.5 h-3.5" />Enviar mensaje

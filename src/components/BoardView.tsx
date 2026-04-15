@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAreasEmpresa } from "@/hooks/useSharedQueries";
+import { useAreasEmpresa, useCurrentUserRol } from "@/hooks/useSharedQueries";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
 import { BoardColumn } from "./BoardColumn";
 import { GestionDialog } from "./GestionDialog";
@@ -40,6 +40,7 @@ type GestionRow = {
 
 export function BoardView({ processId, processName }: BoardViewProps) {
   const queryClient = useQueryClient();
+  const { isAdmin } = useCurrentUserRol();
   const [createStageId, setCreateStageId] = useState<string | null>(null);
   const [editGestion, setEditGestion] = useState<any | null>(null);
   const [detailGestionId, setDetailGestionId] = useState<string | null>(null);
@@ -133,6 +134,7 @@ export function BoardView({ processId, processName }: BoardViewProps) {
   }, [gestiones, stages, getProgress]);
 
   const onDragEnd = async (result: DropResult) => {
+    if (!isAdmin) return;
     const { draggableId, destination } = result;
     if (!destination) return;
     const newStageId = destination.droppableId;
@@ -271,7 +273,8 @@ export function BoardView({ processId, processName }: BoardViewProps) {
                 taskCountMap={taskCountMap}
                 areasMap={areasMap}
                 hasRules={rules.some((r) => r.stage_id === stage.id)}
-                onAddGestion={() => setCreateStageId(stage.id)}
+                canAdd={isAdmin}
+                onAddGestion={() => isAdmin && setCreateStageId(stage.id)}
                 onEditGestion={(g) => setDetailGestionId(g.id)}
               />
             ))}

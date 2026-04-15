@@ -155,6 +155,31 @@ export function useProcessAreas() {
   });
 }
 
+export function useCurrentUserRol() {
+  const colaboradorId = typeof window !== "undefined"
+    ? localStorage.getItem("mis_gestiones_colaborador") || ""
+    : "";
+  const { data } = useQuery({
+    queryKey: ["current-user-rol", colaboradorId],
+    queryFn: async () => {
+      if (!colaboradorId) return null;
+      const { data } = await (supabase as any)
+        .from("colaboradores")
+        .select("id, nombre, rol, color")
+        .eq("id", colaboradorId)
+        .single();
+      return data as { id: string; nombre: string; rol: string; color: string } | null;
+    },
+    enabled: !!colaboradorId,
+    staleTime: STALE_5MIN,
+  });
+  return {
+    rol:     data?.rol || "colaborador",
+    user:    data,
+    isAdmin: data?.rol === "admin",
+  };
+}
+
 export function useAreasEmpresa() {
   return useQuery<AreaEmpresa[]>({
     queryKey: ["areas_empresa"],

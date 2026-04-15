@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import {
   Plus, Trash2, ChevronDown, ChevronRight, GripVertical,
-  ArrowUp, ArrowDown, Pencil, Check, X, FolderKanban
+  ArrowUp, ArrowDown, Pencil, Check, X, FolderKanban, Settings2
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -27,15 +27,21 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
   const { data: areas        = [] } = useAreasEmpresa();
   const { data: processAreas = [] } = useProcessAreas();
 
-  const [expandedId,    setExpandedId]    = useState<string | null>(null);
-  const [newStageName,  setNewStageName]  = useState<Record<string, string>>({});
-  const [newStageStatus,setNewStageStatus]= useState<Record<string, string>>({});
-  const [editingStage,  setEditingStage]  = useState<string | null>(null);
-  const [editStageName, setEditStageName] = useState("");
+  const [expandedId,     setExpandedId]     = useState<string | null>(null);
+  const [newStageName,   setNewStageName]   = useState<Record<string, string>>({});
+  const [newStageStatus, setNewStageStatus] = useState<Record<string, string>>({});
+  const [editingStage,   setEditingStage]   = useState<string | null>(null);
+  const [editStageName,  setEditStageName]  = useState("");
+
+  // Edición de proceso (nombre + áreas) inline desde Pipeline
+  const [editingProcId,   setEditingProcId]   = useState<string | null>(null);
+  const [editProcName,    setEditProcName]    = useState("");
+  const [editProcAreas,   setEditProcAreas]   = useState<string[]>([]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["processes"] });
     queryClient.invalidateQueries({ queryKey: ["all-stages"] });
+    queryClient.invalidateQueries({ queryKey: ["process-areas"] });
   };
 
   const stagesFor = (processId: string) =>
@@ -44,7 +50,35 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
   const areasForProcess = (processId: string) =>
     processAreas.filter(pa => pa.process_id === processId)
       .map(pa => areas.find((a: any) => a.id === pa.area_id))
-      .filter(Boolean);
+      .filter(Boolean) as any[];
+
+  const toggleArea = (areaId: string) => {
+    setEditProcAreas(prev =>
+      prev.includes(areaId) ? prev.filter(a => a !== areaId) : [...prev, areaId]
+    );
+  };
+
+  const openEditProc = (proc: any) => {
+    setEditingProcId(proc.id);
+    setEditProcName(proc.name);
+    setEditProcAreas(processAreas.filter(pa => pa.process_id === proc.id).map(pa => pa.area_id));
+  };
+
+  const handleSaveProc = async (procId: string) => {
+    if (!editProcName.trim()) { setEditingProcId(null); return; }
+    const { error } = await supabase.from("processes")
+      .update({ name: editProcName.trim() }).eq("id", procId);
+    if (error) { toast.error(error.message); return; }
+    // Sync areas
+    await (supabase as any).from("process_areas").delete().eq("process_id", procId);
+    if (editProcAreas.length > 0) {
+      await (supabase as any).from("process_areas").insert(
+        editProcAreas.map(area_id => ({ process_id: procId, area_id }))
+      );
+    }
+    invalidate(); setEditingProcId(null);
+    toast.success("Pipeline actualizado");
+  };
 
   // ── Stage CRUD ────────────────────────────────────────────
   const handleAddStage = async (processId: string) => {
@@ -95,53 +129,104 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {processes.length} proceso{processes.length !== 1 ? "s" : ""} — configurá sus etapas
+          {processes.length} proceso{processes.length !== 1 ? "s" : ""} — etapas de cada pipeline
         </p>
       </div>
 
       {processes.length === 0 && (
-        <div className="text-center py-8 text-sm text-muted-foreground">
+        <div className="text-center py-8 text-sm text-muted-foreground border border-dashed border-border rounded-xl">
           No hay procesos todavía. Creá uno primero en la sección <strong>Procesos</strong>.
         </div>
       )}
 
       <div className="space-y-2">
         {processes.map((proc: any) => {
-          const stages      = stagesFor(proc.id);
-          const procAreas   = areasForProcess(proc.id);
-          const isOpen      = expandedId === proc.id;
+          const stages    = stagesFor(proc.id);
+          const procAreas = areasForProcess(proc.id);
+          const isOpen    = expandedId === proc.id;
+          const isEditing = editingProcId === proc.id;
 
           return (
             <div key={proc.id} className="border border-border rounded-xl overflow-hidden">
-              {/* Header proceso */}
-              <button
-                onClick={() => setExpandedId(isOpen ? null : proc.id)}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-card text-left">
-                <FolderKanban className="w-4 h-4 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{proc.name}</p>
-                  {procAreas.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-0.5">
-                      {procAreas.map((a: any) => (
-                        <span key={a.id}
-                          className="inline-block px-1.5 py-0 rounded-full text-[10px] font-medium text-white"
-                          style={{ backgroundColor: a.color }}>
+
+              {/* Header proceso — con edición inline de nombre + áreas */}
+              {isEditing && !readonly ? (
+                <div className="px-4 py-3 bg-card space-y-3">
+                  <div className="flex items-center gap-2">
+                    <FolderKanban className="w-4 h-4 text-primary shrink-0" />
+                    <Input value={editProcName} onChange={e => setEditProcName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") handleSaveProc(proc.id); if (e.key === "Escape") setEditingProcId(null); }}
+                      className="h-7 text-sm flex-1" autoFocus />
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600"
+                      onClick={() => handleSaveProc(proc.id)}><Check className="w-3.5 h-3.5" /></Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                      onClick={() => setEditingProcId(null)}><X className="w-3.5 h-3.5" /></Button>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-1.5">Áreas asociadas a este proceso/pipeline</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {areas.map((a: any) => (
+                        <button key={a.id} type="button"
+                          onClick={() => toggleArea(a.id)}
+                          className={cn(
+                            "px-2.5 py-1 rounded-full text-xs border transition-colors",
+                            editProcAreas.includes(a.id)
+                              ? "text-white border-transparent"
+                              : "bg-card border-border text-muted-foreground hover:border-primary/40"
+                          )}
+                          style={editProcAreas.includes(a.id) ? { backgroundColor: a.color, borderColor: a.color } : {}}>
                           {a.nombre}
-                        </span>
+                        </button>
                       ))}
+                      {areas.length === 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          No hay áreas. Creá una en la sección Áreas.
+                        </span>
+                      )}
                     </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 px-4 py-3 bg-card">
+                  <button
+                    onClick={() => setExpandedId(isOpen ? null : proc.id)}
+                    className="flex items-center gap-2 flex-1 text-left min-w-0">
+                    <FolderKanban className="w-4 h-4 text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{proc.name}</p>
+                      {procAreas.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {procAreas.map((a: any) => (
+                            <span key={a.id}
+                              className="inline-block px-1.5 py-0 rounded-full text-[10px] font-medium text-white"
+                              style={{ backgroundColor: a.color }}>
+                              {a.nombre}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5">Sin áreas asociadas</p>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      {stages.length} etapa{stages.length !== 1 ? "s" : ""}
+                    </Badge>
+                    {isOpen
+                      ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                      : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+                  </button>
+                  {!readonly && (
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0"
+                      title="Editar nombre y áreas"
+                      onClick={() => openEditProc(proc)}>
+                      <Settings2 className="w-3.5 h-3.5" />
+                    </Button>
                   )}
                 </div>
-                <Badge variant="outline" className="text-[10px] shrink-0">
-                  {stages.length} etapa{stages.length !== 1 ? "s" : ""}
-                </Badge>
-                {isOpen
-                  ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                  : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
-              </button>
+              )}
 
               {/* Pipeline stages */}
-              {isOpen && (
+              {isOpen && !isEditing && (
                 <div className="border-t border-border bg-muted/20 p-4 space-y-3">
                   <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
                     Etapas del pipeline
@@ -149,7 +234,7 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
 
                   {stages.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-2">
-                      Sin etapas. Agregá la primera.
+                      Sin etapas. Agregá la primera abajo.
                     </p>
                   )}
 
@@ -199,7 +284,6 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
                             </button>
                           )}
 
-                          {/* Estado de la etapa */}
                           {readonly ? (
                             <span className={cn("px-2 py-0.5 rounded text-[10px] font-medium shrink-0", statusOpt?.className)}>
                               {statusOpt?.label}
@@ -230,7 +314,6 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
                     })}
                   </div>
 
-                  {/* Agregar etapa */}
                   {!readonly && (
                     <div className="flex gap-2 pt-1">
                       <Input
