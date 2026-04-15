@@ -2,7 +2,25 @@
 -- Fix: dedup colaboradores + unique constraint + gestiones de ejemplo
 -- ═══════════════════════════════════════════════════════
 
--- ── 1. Eliminar duplicados (quedarse con el más antiguo por email) ──
+-- ── 1. Redirigir gestiones que apuntan a duplicados ────
+-- Antes de borrar, actualizamos responsable_id al colaborador "canónico"
+-- (el más antiguo por email)
+UPDATE public.gestiones g
+SET
+  responsable_id     = canon.id,
+  responsable_nombre = canon.nombre
+FROM (
+  SELECT DISTINCT ON (email) id, nombre, email
+  FROM public.colaboradores
+  WHERE email IS NOT NULL
+  ORDER BY email, created_at ASC
+) AS canon
+JOIN public.colaboradores dup
+  ON dup.email = canon.email
+  AND dup.id  <> canon.id
+WHERE g.responsable_id = dup.id;
+
+-- ── 2. Eliminar duplicados (quedarse con el más antiguo por email) ──
 DELETE FROM public.colaboradores
 WHERE id NOT IN (
   SELECT DISTINCT ON (email) id
@@ -11,13 +29,13 @@ WHERE id NOT IN (
   ORDER BY email, created_at ASC
 );
 
--- ── 2. Unique constraint en email ─────────────────────
+-- ── 3. Unique constraint en email ─────────────────────
 ALTER TABLE public.colaboradores
   DROP CONSTRAINT IF EXISTS colaboradores_email_unique;
 ALTER TABLE public.colaboradores
   ADD CONSTRAINT colaboradores_email_unique UNIQUE (email);
 
--- ── 3. Gestiones de ejemplo para Roberto Amelunge ─────
+-- ── 4. Gestiones de ejemplo para Roberto Amelunge ─────
 DO $$
 DECLARE
   v_roberto  UUID;
@@ -54,6 +72,11 @@ BEGIN
   IF v_s_doing  IS NULL THEN v_s_doing  := v_s_todo; END IF;
   IF v_s_review IS NULL THEN v_s_review := v_s_todo; END IF;
   IF v_s_done   IS NULL THEN v_s_done   := v_s_todo; END IF;
+
+  IF v_roberto IS NULL THEN
+    RAISE NOTICE 'No se encontró roberto.amelunge@latidos.com en colaboradores.';
+    RETURN;
+  END IF;
 
   -- Gestiones para Roberto (comercial)
   INSERT INTO public.gestiones (title, description, priority, type, subtype, responsable_id, responsable_nombre, process_id, stage_id, due_date, cliente_nombre)
