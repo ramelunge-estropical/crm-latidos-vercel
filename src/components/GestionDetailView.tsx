@@ -292,10 +292,10 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-full sm:max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[90vh] flex flex-col p-0 gap-0 overflow-y-auto sm:overflow-hidden">
 
         {/* ── HEADER ─────────────────────────────────────────────────── */}
-        <div className="px-6 pt-5 pb-4 border-b border-border pr-14">
+        <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-4 border-b border-border pr-14">
           {/* Código + Título editable */}
           <div className="flex items-center gap-2 mb-3">
             {gestion.codigo && (
@@ -371,7 +371,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
           {/* ── Pipeline Global ────────────────────────────────────── */}
           <div className="mb-3">
             <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide mb-1.5">Pipeline Global</p>
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-0 overflow-x-auto pb-0.5">
               {GLOBAL_STEPS.map((step, idx) => {
                 const isActive  = idx === globalStepIndex;
                 const isPast    = idx < globalStepIndex;
@@ -432,13 +432,13 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
         </div>
 
         {/* ── BODY (main + sidebar) ──────────────────────────────────────── */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 md:min-h-0 md:overflow-hidden">
 
           {/* Main content */}
-          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-              <div className="px-4 pt-3 pb-0 shrink-0">
-                <TabsList>
+          <div className="flex-1 flex flex-col md:min-h-0 md:min-w-0 md:overflow-hidden">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col md:min-h-0">
+              <div className="px-4 pt-3 pb-0 shrink-0 overflow-x-auto">
+                <TabsList className="w-max">
                   <TabsTrigger value="resumen"        className="text-xs gap-1"><FileText className="w-3 h-3" />Resumen</TabsTrigger>
                   <TabsTrigger value="checklist"      className="text-xs gap-1">
                     <CheckSquare className="w-3 h-3" />Checklist
@@ -451,7 +451,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 </TabsList>
               </div>
 
-              <ScrollArea className="flex-1 px-4 py-4">
+              <ScrollArea className="md:flex-1 px-4 py-4">
 
                 {/* ── Resumen ── */}
                 <TabsContent value="resumen" className="mt-0 space-y-4">
@@ -722,13 +722,13 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
           </div>
 
           {/* ── SIDEBAR: Acciones Rápidas ────────────────────────────────── */}
-          <div className="w-60 border-l border-border flex flex-col shrink-0">
+          <div className="border-t md:border-t-0 md:border-l border-border flex flex-col md:w-60 md:shrink-0">
             <div className="px-4 py-3 border-b border-border">
               <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 <Zap className="w-3.5 h-3.5 text-primary" />Acciones rápidas
               </h3>
             </div>
-            <ScrollArea className="flex-1">
+            <ScrollArea className="md:flex-1">
               <div className="px-4 py-3 space-y-4">
 
                 {/* Responsable */}
