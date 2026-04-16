@@ -169,10 +169,10 @@ export function MisGestionesView() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border bg-card space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Mis Gestiones</h2>
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-card space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-semibold text-foreground">Mis Gestiones</h2>
             <p className="text-xs text-muted-foreground">
               {filtered.length}{filtered.length !== gestiones.length && ` de ${gestiones.length}`} gestiones asignadas
               {vencidas > 0 && (
@@ -182,7 +182,6 @@ export function MisGestionesView() {
               )}
             </p>
           </div>
-
           {/* Selector de colaborador */}
           <ColaboradorCombobox
             value={colaboradorId}
@@ -190,14 +189,14 @@ export function MisGestionesView() {
             colaboradores={colaboradores}
             showEmpty={false}
             placeholder="Seleccionar colaborador"
-            triggerClassName="w-[220px] h-9"
+            triggerClassName="h-9 min-w-[160px] max-w-[220px]"
           />
         </div>
 
         {/* Filtros */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="h-8 w-auto min-w-[140px] text-xs border-border">
+            <SelectTrigger className="h-8 text-xs border-border min-w-[120px] max-w-[150px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -210,7 +209,7 @@ export function MisGestionesView() {
           </Select>
 
           <Select value={filterPriority} onValueChange={setFilterPriority}>
-            <SelectTrigger className="h-8 w-auto min-w-[150px] text-xs border-border">
+            <SelectTrigger className="h-8 text-xs border-border min-w-[120px] max-w-[160px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -170,7 +170,7 @@ function PermisosInfo() {
         La aplicación de restricciones se activará con el sistema de autenticación.
         Los roles ya están definidos en la base de datos.
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {roles.map(r => (
           <div key={r.rol} className="p-4 rounded-xl border border-border bg-card">
             <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold mb-3 ${r.color}`}>

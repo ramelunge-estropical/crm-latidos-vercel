@@ -247,7 +247,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "" }: 
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-full sm:max-w-2xl max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {form.tipo_cliente === "juridica"
@@ -327,7 +327,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "" }: 
           {form.tipo_cliente === "juridica" && (
             <div className="space-y-4">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Datos de la empresa</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Razón social *">
                   <Input className="h-8 text-xs" value={form.razon_social} onChange={e => set("razon_social", e.target.value)} placeholder="Empresa S.R.L." />
                 </Field>
@@ -351,7 +351,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "" }: 
           {form.tipo_cliente === "natural" && (
             <div className="space-y-4">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Datos personales</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Nombre completo *">
                   <Input className="h-8 text-xs" value={form.nombre_completo} onChange={e => set("nombre_completo", e.target.value)} placeholder="Juan Pérez" />
                 </Field>
@@ -400,7 +400,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "" }: 
           {/* ── Contacto (ambos tipos) ── */}
           <div className="space-y-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Contacto y ubicación</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Teléfono principal">
                 <Input className="h-8 text-xs" value={form.telefono} onChange={e => set("telefono", e.target.value)} placeholder="+591 70012345" />
               </Field>
@@ -427,7 +427,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "" }: 
           {/* ── CRM ── */}
           <div className="space-y-4">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">CRM</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Estado">
                 <select
                   className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"

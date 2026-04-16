@@ -9,12 +9,27 @@ import { ResumenDiarioView } from "@/components/ResumenDiarioView";
 import { ConfiguracionesView } from "@/components/ConfiguracionesView";
 import { SpecializedView } from "@/components/SpecializedView";
 import { CreateProcessDialog } from "@/components/CreateProcessDialog";
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, Menu } from "lucide-react";
+import logoHeart from "@/assets/logo-heart.png";
+
+const VIEW_LABELS: Record<SidebarView, string> = {
+  process:          "Pipeline",
+  agenda:           "Agenda",
+  "cliente360":     "Cliente 360",
+  "mis-gestiones":  "Mis Gestiones",
+  resumen:          "Resumen Diario",
+  configuraciones:  "Configuraciones",
+  comercial:        "Comercial",
+  proyectos:        "Proyectos",
+  operativa:        "Operativa",
+  casos:            "Casos",
+};
 
 const Index = () => {
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [activeView, setActiveView] = useState<SidebarView>("process");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const { data: processes = [] } = useProcesses();
 
@@ -30,25 +45,29 @@ const Index = () => {
     if (view !== "process") setSelectedProcessId(null);
   };
 
+  const currentLabel = activeView === "process" && selectedProcess
+    ? selectedProcess.name
+    : VIEW_LABELS[activeView];
+
   const renderContent = () => {
     switch (activeView) {
-      case "agenda": return <AgendaView />;
-      case "cliente360": return <Cliente360View />;
-      case "mis-gestiones": return <MisGestionesView />;
-      case "resumen": return <ResumenDiarioView />;
+      case "agenda":          return <AgendaView />;
+      case "cliente360":      return <Cliente360View />;
+      case "mis-gestiones":   return <MisGestionesView />;
+      case "resumen":         return <ResumenDiarioView />;
       case "configuraciones": return <ConfiguracionesView />;
-      case "comercial": return <SpecializedView type="comercial" />;
-      case "proyectos": return <SpecializedView type="proyecto" />;
-      case "operativa": return <SpecializedView type="operativa" />;
-      case "casos": return <SpecializedView type="caso" />;
+      case "comercial":       return <SpecializedView type="comercial" />;
+      case "proyectos":       return <SpecializedView type="proyecto" />;
+      case "operativa":       return <SpecializedView type="operativa" />;
+      case "casos":           return <SpecializedView type="caso" />;
       case "process":
       default:
         if (selectedProcess) {
           return <BoardView processId={selectedProcess.id} processName={selectedProcess.name} />;
         }
         return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
+          <div className="flex-1 flex items-center justify-center p-6 text-center">
+            <div>
               <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                 <LayoutGrid className="w-8 h-8 text-primary" />
               </div>
@@ -62,15 +81,54 @@ const Index = () => {
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
-      <ProcessSidebar
-        processes={processes}
-        selectedProcessId={selectedProcessId}
-        activeView={activeView}
-        onSelectProcess={handleSelectProcess}
-        onCreateProcess={() => setShowCreateDialog(true)}
-        onChangeView={handleChangeView}
-      />
-      <div className="flex-1 flex flex-col min-w-0">{renderContent()}</div>
+      {/* Desktop sidebar — hidden on mobile */}
+      <div className="hidden md:flex">
+        <ProcessSidebar
+          processes={processes}
+          selectedProcessId={selectedProcessId}
+          activeView={activeView}
+          onSelectProcess={handleSelectProcess}
+          onCreateProcess={() => setShowCreateDialog(true)}
+          onChangeView={handleChangeView}
+        />
+      </div>
+
+      {/* Mobile sidebar drawer */}
+      <div className="md:hidden">
+        <ProcessSidebar
+          processes={processes}
+          selectedProcessId={selectedProcessId}
+          activeView={activeView}
+          onSelectProcess={handleSelectProcess}
+          onCreateProcess={() => { setShowCreateDialog(true); setMobileMenuOpen(false); }}
+          onChangeView={handleChangeView}
+          mobileOpen={mobileMenuOpen}
+          onMobileClose={() => setMobileMenuOpen(false)}
+        />
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+        {/* Mobile top bar */}
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-card shrink-0">
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-1.5 rounded-md hover:bg-accent transition-colors"
+            aria-label="Abrir menú"
+          >
+            <Menu className="w-5 h-5 text-foreground" />
+          </button>
+          <img src={logoHeart} alt="Latidos" className="w-6 h-6 rounded object-contain" />
+          <span className="text-sm font-semibold text-foreground truncate">{currentLabel}</span>
+        </div>
+
+        {/* View content */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {renderContent()}
+        </div>
+      </div>
+
       <CreateProcessDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
     </div>
   );

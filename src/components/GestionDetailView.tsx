@@ -460,7 +460,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                     <p className="text-sm text-foreground leading-relaxed">{gestion.description || "Sin descripción"}</p>
                   </div>
                   <Separator />
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-xs text-muted-foreground">Creada</span>
                       <p>{format(new Date(gestion.created_at), "dd MMM yyyy HH:mm", { locale: es })}</p>
@@ -668,7 +668,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 {/* ── Configuración ── */}
                 <TabsContent value="configuracion" className="mt-0">
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide block mb-1">Prioridad</label>
                         <Select value={gestion.priority || "medium"} onValueChange={(v) => handleUpdateField("priority", v)}>

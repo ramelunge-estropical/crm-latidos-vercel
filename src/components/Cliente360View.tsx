@@ -287,27 +287,29 @@ export function Cliente360View() {
     <div className="flex flex-col h-full">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <Users className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-semibold text-foreground">Cliente 360</h2>
-          {cliente && (
-            <Badge variant="outline" className="text-xs ml-1 truncate max-w-[180px]">
-              {cliente.nombre_completo}
-            </Badge>
-          )}
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-card flex-shrink-0 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Users className="w-5 h-5 text-primary shrink-0" />
+            <h2 className="text-base sm:text-lg font-semibold text-foreground truncate">Cliente 360</h2>
+            {cliente && (
+              <Badge variant="outline" className="text-xs ml-1 truncate max-w-[120px] hidden sm:inline-flex">
+                {cliente.nombre_completo}
+              </Badge>
+            )}
+          </div>
+          <button
+            onClick={() => { setCreateNombre(""); setShowCreate(true); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors shrink-0"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Nuevo cliente</span>
+            <span className="sm:hidden">Nuevo</span>
+          </button>
         </div>
 
-        <button
-          onClick={() => { setCreateNombre(""); setShowCreate(true); }}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors flex-shrink-0"
-        >
-          <Users className="w-3.5 h-3.5" />
-          Nuevo cliente
-        </button>
-
-        {/* Search */}
-        <div className="relative w-80">
+        {/* Search — full width below on mobile */}
+        <div className="relative w-full sm:max-w-sm">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Buscar por nombre, email o teléfono…"
@@ -386,12 +388,12 @@ export function Cliente360View() {
         </div>
 
       ) : (
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
 
           {/* ════════════════════════════════════════
               LEFT PANEL  (identity + score)
           ════════════════════════════════════════ */}
-          <div className="w-72 flex-shrink-0 border-r border-border flex flex-col overflow-y-auto bg-card/50">
+          <div className="md:w-72 md:flex-shrink-0 border-b md:border-b-0 md:border-r border-border flex flex-col overflow-y-auto bg-card/50 max-h-48 md:max-h-none">
 
             {/* Identity card */}
             <div className="p-4 border-b border-border">
@@ -515,7 +517,7 @@ export function Cliente360View() {
             </div>
 
             {/* Quick stats */}
-            <div className="p-4 grid grid-cols-2 gap-2">
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-2 gap-2">
               {[
                 { value: viajes.length,                                        label: "Viajes",    color: "" },
                 { value: referidos.filter(r => r.tipo === "saliente").length,  label: "Referidos", color: "" },
@@ -606,7 +608,7 @@ export function Cliente360View() {
                   </div>
 
                   {/* Último viaje + próxima idea */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="bg-muted/30 rounded-xl p-4">
                       <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Último viaje</p>
                       {viajes[0] ? (
@@ -668,7 +670,7 @@ export function Cliente360View() {
                     </div>
 
                     {cliente.tipo_cliente === "juridica" ? (
-                      <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
                         {[
                           { label: "Razón social",         value: cliente.razon_social },
                           { label: "NIT",                  value: cliente.nit },
@@ -688,7 +690,7 @@ export function Cliente360View() {
                         ))}
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
                         {[
                           { label: "Nombre completo",    value: cliente.nombre_completo },
                           { label: "Carnet de identidad",value: cliente.documento_numero ? `${cliente.documento_tipo ?? "CI"} ${cliente.documento_numero}`.trim() : null },

@@ -216,24 +216,23 @@ export function SpecializedView({ type }: SpecializedViewProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-3 border-b border-border bg-card space-y-3">
+      <div className="px-4 sm:px-6 py-3 border-b border-border bg-card space-y-2">
         {/* Fila 1: título + acciones */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center ${config.color}`}>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 ${config.color}`}>
               <Icon className="w-4 h-4" />
             </div>
-            <div>
-              <h2 className="text-base font-semibold text-foreground">{config.label}</h2>
-              <p className="text-xs text-muted-foreground">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-foreground truncate">{config.label}</h2>
+              <p className="text-xs text-muted-foreground truncate">
                 {filtered.length} de {gestiones.length} gestiones
-                {scope === "mine" ? " · asignadas a mí" : " · todo el equipo"}
-                {searchQuery && ` · "${searchQuery}"`}
+                {scope === "mine" ? " · míos" : " · equipo"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {/* Scope: mío / equipo — TODO(roles): auto con auth */}
             <div className="flex items-center border border-border rounded-lg overflow-hidden">
               <button onClick={() => setScope("mine")}
@@ -268,9 +267,9 @@ export function SpecializedView({ type }: SpecializedViewProps) {
 
         {/* Fila 2: buscador + filtros */}
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* Search */}
-            <div className="relative flex-1 max-w-sm">
+            <div className="relative flex-1 min-w-[160px] max-w-sm">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 value={searchQuery}
@@ -316,7 +315,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
             <div className="flex items-center gap-2 flex-wrap pt-1">
               {/* Prioridad */}
               <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="h-7 w-[130px] text-xs">
+                <SelectTrigger className="h-7 min-w-[110px] text-xs">
                   <SelectValue placeholder="Prioridad" />
                 </SelectTrigger>
                 <SelectContent>
@@ -330,7 +329,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
 
               {/* Estado global */}
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="h-7 w-[140px] text-xs">
+                <SelectTrigger className="h-7 min-w-[120px] text-xs">
                   <SelectValue placeholder="Estado" />
                 </SelectTrigger>
                 <SelectContent>
@@ -344,7 +343,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
 
               {/* Fecha */}
               <Select value={filterFecha} onValueChange={setFilterFecha}>
-                <SelectTrigger className="h-7 w-[150px] text-xs">
+                <SelectTrigger className="h-7 min-w-[120px] text-xs">
                   <Clock className="w-3 h-3 mr-1" /><SelectValue placeholder="Fecha" />
                 </SelectTrigger>
                 <SelectContent>
@@ -363,7 +362,7 @@ export function SpecializedView({ type }: SpecializedViewProps) {
                   colaboradores={colaboradores as any}
                   emptyLabel="Todos los responsables"
                   placeholder="Responsable"
-                  triggerClassName="h-7 w-[165px] text-xs"
+                  triggerClassName="h-7 min-w-[140px] text-xs"
                   size="sm"
                 />
               )}

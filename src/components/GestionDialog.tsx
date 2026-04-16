@@ -180,7 +180,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
             <Textarea id="g-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descripción..." rows={2} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Tipo</Label>
               <Select value={gestionType} onValueChange={(v) => { setGestionType(v); setSubtype(""); }}>
@@ -206,7 +206,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Área</Label>
               <Select value={areaId} onValueChange={setAreaId}>
@@ -225,7 +225,7 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Prioridad</Label>
               <Select value={priority} onValueChange={setPriority}>

@@ -113,8 +113,8 @@ export function ActivityTab({ gestionId }: ActivityTabProps) {
 
       {showForm && (
         <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/30">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
               <Input placeholder="Título de la actividad" value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
             <Select value={activityType} onValueChange={(v) => setActivityType(v as any)}>
@@ -128,7 +128,7 @@ export function ActivityTab({ gestionId }: ActivityTabProps) {
             <Input placeholder="Asignado a" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className="text-xs" />
           </div>
           <Textarea placeholder="Descripción (opcional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="text-xs" />
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className={cn("text-xs justify-start", !scheduledDate && "text-muted-foreground")}>
