@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
@@ -10,7 +10,7 @@ interface Process {
   area: string | null;
 }
 
-export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos";
+export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos" | "lat-bandeja" | "lat-dashboard" | "lat-funnel";
 
 interface ProcessSidebarProps {
   processes: Process[];
@@ -33,6 +33,12 @@ const specializedItems: { view: SidebarView; label: string; icon: typeof Calenda
   { view: "proyectos", label: "Proyectos", icon: FolderKanban },
   { view: "operativa", label: "Operativa", icon: Cog },
   { view: "casos",     label: "Casos",     icon: AlertCircle },
+];
+
+const latItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
+  { view: "lat-bandeja",   label: "Bandeja",   icon: MessageSquare },
+  { view: "lat-dashboard", label: "Dashboard", icon: TrendingUp },
+  { view: "lat-funnel",    label: "Funnel",    icon: GitBranch },
 ];
 
 const utilItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
@@ -122,6 +128,32 @@ export function ProcessSidebar({
             <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Vistas</span>
           )}
           {specializedItems.map((item) => (
+            <button
+              key={item.view}
+              onClick={() => handleNav(item.view)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+                activeView === item.view
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <item.icon className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span>{item.label}</span>}
+            </button>
+          ))}
+        </div>
+
+        <Separator className="my-2 mx-2 bg-sidebar-border" />
+
+        {/* LAT */}
+        <div className="px-2 space-y-0.5">
+          {!collapsed && (
+            <div className="flex items-center gap-1.5 px-3 py-1">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">LAT</span>
+              <span className="text-[8px] bg-primary/20 text-primary px-1 rounded font-medium">Live</span>
+            </div>
+          )}
+          {latItems.map((item) => (
             <button
               key={item.view}
               onClick={() => handleNav(item.view)}

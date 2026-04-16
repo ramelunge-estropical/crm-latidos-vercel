@@ -62,6 +62,20 @@
     --priority-medium: 234 73% 44%;
     --priority-high: 38 92% 50%;
     --priority-urgent: 347 100% 39%;
+
+    /* LAT channel/status colors */
+    --success: 142 60% 38%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 200 80% 46%;
+    --info-foreground: 0 0% 100%;
+    --urgent: 347 100% 39%;
+    --urgent-foreground: 0 0% 100%;
+    --whatsapp: 142 70% 42%;
+    --phone: 234 73% 44%;
+    --email: 38 92% 50%;
+    --sidebar-muted: 215 30% 46%;
   }
 
   .dark {
@@ -103,6 +117,20 @@
     --priority-medium: 234 73% 50%;
     --priority-high: 38 80% 45%;
     --priority-urgent: 347 80% 35%;
+
+    /* LAT channel/status colors (dark) */
+    --success: 142 50% 35%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 80% 45%;
+    --warning-foreground: 0 0% 100%;
+    --info: 200 70% 42%;
+    --info-foreground: 0 0% 100%;
+    --urgent: 347 80% 35%;
+    --urgent-foreground: 0 0% 100%;
+    --whatsapp: 142 60% 38%;
+    --phone: 234 73% 50%;
+    --email: 38 80% 45%;
+    --sidebar-muted: 215 20% 50%;
   }
 }
 
