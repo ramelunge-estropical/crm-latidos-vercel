@@ -151,10 +151,7 @@ export function ProcessSidebar({
           {/* LAT */}
           <div className="px-2 space-y-0.5">
             {!collapsed && (
-              <div className="flex items-center gap-1.5 px-3 py-1">
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">LAT</span>
-                <span className="text-[8px] bg-primary/20 text-primary px-1 rounded font-medium">Live</span>
-              </div>
+              <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">LAT</span>
             )}
             {latItems.map((item) => (
               <button
