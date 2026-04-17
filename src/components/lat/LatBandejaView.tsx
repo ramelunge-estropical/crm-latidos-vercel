@@ -1,20 +1,24 @@
 import { useState, useMemo } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { ConversacionList } from './ConversacionList';
 import { ConversacionPanel } from './ConversacionPanel';
 import { Cliente360Panel } from './Cliente360Panel';
 import { SoftphoneWidget } from './SoftphoneWidget';
 import { conversaciones, getCliente } from '@/data/latMockData';
 
+type MobileView = 'list' | 'chat';
+
 export function LatBandejaView() {
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
-  const [filtroCanal, setFiltroCanal] = useState<string>('todos');
-  const [filtroEstado, setFiltroEstado] = useState<string>('todos');
-  const [busqueda, setBusqueda] = useState('');
+  const [mobileView, setMobileView]         = useState<MobileView>('list');
+  const [filtroCanal, setFiltroCanal]       = useState<string>('todos');
+  const [filtroEstado, setFiltroEstado]     = useState<string>('todos');
+  const [busqueda, setBusqueda]             = useState('');
 
   const filteredConvs = useMemo(() => {
     let result = [...conversaciones];
-    if (filtroCanal !== 'todos') result = result.filter(c => c.canal === filtroCanal);
-    if (filtroEstado !== 'todos') result = result.filter(c => c.estado === filtroEstado);
+    if (filtroCanal  !== 'todos') result = result.filter(c => c.canal   === filtroCanal);
+    if (filtroEstado !== 'todos') result = result.filter(c => c.estado  === filtroEstado);
     if (busqueda) {
       const q = busqueda.toLowerCase();
       result = result.filter(c => {
@@ -26,31 +30,44 @@ export function LatBandejaView() {
         );
       });
     }
-    // Sort: urgente first, then by prioridad, then by time
     const prioMap: Record<string, number> = { urgente: 0, alta: 1, media: 2, baja: 3 };
     result.sort((a, b) => {
       const ea = a.estado === 'urgente' ? -1 : 0;
       const eb = b.estado === 'urgente' ? -1 : 0;
       if (ea !== eb) return ea - eb;
-      const pa = prioMap[a.prioridad] ?? 2;
-      const pb = prioMap[b.prioridad] ?? 2;
-      if (pa !== pb) return pa - pb;
-      return b.ultimaInteraccion.getTime() - a.ultimaInteraccion.getTime();
+      return (prioMap[a.prioridad] ?? 2) - (prioMap[b.prioridad] ?? 2) ||
+        b.ultimaInteraccion.getTime() - a.ultimaInteraccion.getTime();
     });
     return result;
   }, [filtroCanal, filtroEstado, busqueda]);
 
-  const selectedConv = conversaciones.find(c => c.id === selectedConvId);
+  const selectedConv    = conversaciones.find(c => c.id === selectedConvId) ?? null;
   const selectedCliente = selectedConv ? getCliente(selectedConv.clienteId) : null;
+
+  const handleSelect = (id: string) => {
+    setSelectedConvId(id);
+    setMobileView('chat');   // en mobile, cambia al panel de chat
+  };
+
+  const handleBack = () => {
+    setMobileView('list');
+  };
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left: Conversation List */}
-      <div className="w-72 sm:w-80 border-r border-border flex flex-col shrink-0 bg-card">
+
+      {/* ── Lista de conversaciones ─────────────────────────────────────
+          Mobile:  visible solo cuando mobileView==='list'
+          md+:     siempre visible, ancho fijo  */}
+      <div className={[
+        'border-r border-border flex flex-col shrink-0 bg-card',
+        'w-full md:w-72 lg:w-80',
+        mobileView === 'list' ? 'flex' : 'hidden md:flex',
+      ].join(' ')}>
         <ConversacionList
           conversaciones={filteredConvs}
           selectedId={selectedConvId}
-          onSelect={setSelectedConvId}
+          onSelect={handleSelect}
           filtroCanal={filtroCanal}
           onFiltroCanal={setFiltroCanal}
           filtroEstado={filtroEstado}
@@ -60,23 +77,43 @@ export function LatBandejaView() {
         />
       </div>
 
-      {/* Center: Conversation */}
-      <div className="flex-1 min-w-0 flex flex-col bg-background">
+      {/* ── Panel de conversación ────────────────────────────────────────
+          Mobile:  visible solo cuando mobileView==='chat'
+          md+:     siempre visible, toma el espacio restante  */}
+      <div className={[
+        'flex-1 min-w-0 flex flex-col bg-background',
+        mobileView === 'chat' ? 'flex' : 'hidden md:flex',
+      ].join(' ')}>
+
+        {/* Botón "Volver" solo en mobile cuando hay conversación abierta */}
+        {selectedConv && (
+          <button
+            onClick={handleBack}
+            className="md:hidden flex items-center gap-1.5 px-3 py-2 text-xs text-primary font-medium border-b border-border bg-card shrink-0"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Bandeja
+          </button>
+        )}
+
         {selectedConv ? (
           <ConversacionPanel conversacion={selectedConv} />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <p className="text-sm font-medium">Selecciona una conversación</p>
-              <p className="text-xs mt-1 text-muted-foreground">Elige una conversación del panel izquierdo para comenzar</p>
+            <div className="text-center px-6">
+              <p className="text-sm font-medium">Seleccioná una conversación</p>
+              <p className="text-xs mt-1 text-muted-foreground">
+                Elegí una del panel izquierdo para comenzar
+              </p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Right: Cliente 360 */}
+      {/* ── Panel Cliente 360 ────────────────────────────────────────────
+          Solo en lg+  */}
       {selectedConv && selectedCliente && (
-        <div className="hidden lg:block w-80 xl:w-96 border-l border-border shrink-0 bg-card overflow-y-auto scrollbar-thin">
+        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card overflow-y-auto scrollbar-thin">
           <Cliente360Panel
             cliente={selectedCliente}
             conversacion={selectedConv}
@@ -84,7 +121,6 @@ export function LatBandejaView() {
         </div>
       )}
 
-      {/* Softphone */}
       <SoftphoneWidget />
     </div>
   );
