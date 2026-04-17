@@ -1,57 +1,141 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
-  Send, Paperclip, FileText, StickyNote, AlertTriangle,
-  Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info
+  Send, Paperclip, StickyNote, AlertTriangle,
+  Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
+  ClipboardList, Plus, ChevronRight, User, Building2, Loader2,
 } from 'lucide-react';
-import { Conversacion, getMensajes, getCliente, Mensaje, plantillas } from '@/data/latMockData';
-import type { Canal, EstadoMensaje } from '@/data/latMockData';
+import { getCliente } from '@/data/latMockData';
+import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
+import { GestionDialog } from '@/components/GestionDialog';
+import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-const canalMeta: Record<Canal, { icon: typeof MessageSquare; label: string; color: string }> = {
+// ── Configs ───────────────────────────────────────────────────────────────────
+
+const canalMeta: Record<string, { icon: typeof MessageSquare; label: string; color: string }> = {
   whatsapp: { icon: MessageSquare, label: 'WhatsApp', color: 'text-whatsapp' },
-  phone: { icon: Phone, label: 'Llamada', color: 'text-phone' },
-  email: { icon: Mail, label: 'Correo', color: 'text-email' },
+  phone:    { icon: Phone,         label: 'Llamada',  color: 'text-phone'    },
+  email:    { icon: Mail,          label: 'Correo',   color: 'text-email'    },
 };
 
-const estadoIconMap: Record<EstadoMensaje, { icon: typeof Check; className: string }> = {
-  enviado: { icon: Check, className: 'text-muted-foreground' },
+const estadoIconMap: Record<string, { icon: typeof Check; className: string }> = {
+  enviado:   { icon: Check,      className: 'text-muted-foreground' },
   entregado: { icon: CheckCheck, className: 'text-muted-foreground' },
-  leido: { icon: CheckCheck, className: 'text-primary' },
-  fallido: { icon: XCircle, className: 'text-destructive' },
-  pendiente: { icon: Clock, className: 'text-warning' },
+  leido:     { icon: CheckCheck, className: 'text-primary'          },
+  fallido:   { icon: XCircle,    className: 'text-destructive'      },
+  pendiente: { icon: Clock,      className: 'text-warning'          },
 };
+
+const priorityCfg: Record<string, { label: string; className: string }> = {
+  urgent: { label: 'Urgente', className: 'bg-red-500/15 text-red-600'       },
+  high:   { label: 'Alta',    className: 'bg-orange-500/15 text-orange-600' },
+  medium: { label: 'Media',   className: 'bg-primary/10 text-primary'       },
+  low:    { label: 'Baja',    className: 'bg-muted text-muted-foreground'    },
+};
+
+const statusDot: Record<string, string> = {
+  to_do:  'bg-status-todo',
+  doing:  'bg-status-doing',
+  review: 'bg-status-review',
+  done:   'bg-status-done',
+};
+
+type ActiveTab = 'chat' | 'gestiones' | 'templates';
 
 interface ConversacionPanelProps {
-  conversacion: Conversacion;
+  conversacion: LatConversacion;
 }
 
 export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [inputValue, setInputValue] = useState('');
-  const [showNota, setShowNota] = useState(false);
-  const [activeTab, setActiveTab] = useState<'chat' | 'templates'>('chat');
+  const [showNota, setShowNota]     = useState(false);
+  const [activeTab, setActiveTab]   = useState<ActiveTab>('chat');
+  const [showCreateGestion, setShowCreateGestion] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const mensajes = getMensajes(conversacion.id);
-  const cliente = getCliente(conversacion.clienteId);
-  const canal = canalMeta[conversacion.canal];
+  const isMock = conversacion._source === 'mock';
+
+  // Para mock: buscar cliente del mock data por clienteId (la conv.id es el clienteId en mock)
+  const mockCliente = isMock ? getCliente(conversacion.id) : null;
+  const clienteNombre = conversacion.cliente_nombre ?? mockCliente?.nombre ?? 'Cliente';
+  const clienteId     = conversacion.cliente_id ?? null;
+
+  const canal = canalMeta[conversacion.canal] ?? canalMeta.whatsapp;
   const CanalIcon = canal.icon;
 
   const isOutOfWindow = conversacion.estado === 'fuera_ventana' ||
-    (conversacion.ventanaWhatsapp && conversacion.ventanaWhatsapp.getTime() < Date.now());
+    (conversacion.ventana_whatsapp && new Date(conversacion.ventana_whatsapp).getTime() < Date.now());
   const isWhatsapp = conversacion.canal === 'whatsapp';
 
+  // ── Mensajes ──────────────────────────────────────────────────────────────
+  const { data: mensajes, isLoading: loadingMsgs } = useLatMensajes(conversacion.id, isMock);
+  const { send, loading: sendingMsg } = useSendMensaje();
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [mensajes, activeTab]);
+
+  // ── Gestiones del cliente ─────────────────────────────────────────────────
+  const { data: gestiones = [], isLoading: loadingGest } = useQuery<any[]>({
+    queryKey: ['lat-gestiones-cliente', clienteId, clienteNombre],
+    queryFn: async () => {
+      try {
+        let q = (supabase as any)
+          .from('gestiones')
+          .select('id, title, priority, type, updated_at, pipeline_stages(name, global_status), processes(name)');
+        if (clienteId) {
+          q = q.eq('cliente_id', clienteId);
+        } else if (clienteNombre) {
+          q = q.ilike('cliente_nombre', `%${clienteNombre}%`);
+        } else {
+          return [];
+        }
+        const { data, error } = await q.order('updated_at', { ascending: false }).limit(30);
+        if (error) return [];
+        return data ?? [];
+      } catch { return []; }
+    },
+    enabled: !!(clienteId || clienteNombre),
+  });
+
+  const activeGestiones = gestiones.filter(g => g.pipeline_stages?.global_status !== 'done');
+
+  // ── Send ──────────────────────────────────────────────────────────────────
+  const handleSend = async () => {
+    if (!inputValue.trim()) return;
+    const tipo = showNota ? 'nota_interna' : 'outbound';
+    const result = await send(conversacion.id, inputValue, tipo, isMock);
+    if (result.ok) {
+      setInputValue('');
+      setShowNota(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="h-14 px-4 flex items-center justify-between border-b border-border shrink-0">
+
+      {/* ── Header ── */}
+      <div className="h-14 px-4 flex items-center justify-between border-b border-border shrink-0 gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <CanalIcon className={`w-4 h-4 shrink-0 ${canal.color}`} />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">{cliente?.nombre}</p>
+            <p className="text-sm font-medium text-foreground truncate">{clienteNombre}</p>
             <p className="text-[10px] text-muted-foreground truncate">{conversacion.asunto}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           {isWhatsapp && (
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
               isOutOfWindow ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success'
@@ -59,52 +143,70 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
           )}
+          {/* Tab buttons */}
           <button
-            onClick={() => setActiveTab(activeTab === 'templates' ? 'chat' : 'templates')}
-            className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
-            title="Plantillas"
+            onClick={() => setActiveTab('chat')}
+            title="Chat"
+            className={`p-1.5 rounded-md transition-colors ${activeTab === 'chat' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
           >
-            <FileText className="w-4 h-4" />
+            <MessageSquare className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setActiveTab('gestiones')}
+            title="Gestiones"
+            className={`p-1.5 rounded-md transition-colors relative ${activeTab === 'gestiones' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
+          >
+            <ClipboardList className="w-4 h-4" />
+            {activeGestiones.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center">
+                {activeGestiones.length > 9 ? '9+' : activeGestiones.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
 
-      {activeTab === 'chat' ? (
+      {/* ── Tab: CHAT ── */}
+      {activeTab === 'chat' && (
         <>
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-3">
-            {mensajes.map(msg => (
-              <MessageBubble key={msg.id} mensaje={msg} />
-            ))}
+            {loadingMsgs ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : mensajes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <MessageSquare className="w-8 h-8 text-muted-foreground/30 mb-3" />
+                <p className="text-sm text-muted-foreground">Sin mensajes aún</p>
+              </div>
+            ) : (
+              mensajes.map(msg => <MessageBubble key={msg.id} mensaje={msg} />)
+            )}
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Warning bar */}
           {isWhatsapp && isOutOfWindow && (
             <div className="px-4 py-2 bg-warning/10 border-t border-warning/20 flex items-center gap-2">
               <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
-              <span className="text-[11px] text-warning">
-                Ventana de 24h expirada. Solo puedes enviar plantillas aprobadas.
-              </span>
-              <button
-                onClick={() => setActiveTab('templates')}
-                className="text-[11px] font-medium text-warning underline ml-auto"
-              >
-                Ver plantillas
-              </button>
+              <span className="text-[11px] text-warning">Ventana de 24h expirada. Solo podés enviar plantillas aprobadas.</span>
             </div>
           )}
 
-          {/* Input */}
           <div className="border-t border-border px-4 py-3">
             {showNota && (
               <div className="mb-2 flex items-center gap-1.5 text-[10px] text-warning bg-warning/10 px-2 py-1 rounded">
-                <StickyNote className="w-3 h-3" /> Escribiendo nota interna
-                <button onClick={() => setShowNota(false)} className="ml-auto text-warning font-medium">Cancelar</button>
+                <StickyNote className="w-3 h-3" /> Nota interna
+                <button onClick={() => setShowNota(false)} className="ml-auto font-medium">Cancelar</button>
+              </div>
+            )}
+            {isMock && (
+              <div className="mb-2 text-[10px] text-muted-foreground bg-muted/30 px-2 py-1 rounded text-center">
+                Modo demo — los mensajes no se guardan. Conectá WhatsApp para activar el chat real.
               </div>
             )}
             <div className="flex items-end gap-2">
               <div className="flex gap-1">
-                <button className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground" title="Adjuntar">
+                <button className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground" title="Adjuntar (próximamente)">
                   <Paperclip className="w-4 h-4" />
                 </button>
                 <button
@@ -115,44 +217,132 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                   <StickyNote className="w-4 h-4" />
                 </button>
               </div>
-              <div className="flex-1 relative">
-                <textarea
-                  rows={1}
-                  value={inputValue}
-                  onChange={e => setInputValue(e.target.value)}
-                  placeholder={
-                    isWhatsapp && isOutOfWindow
-                      ? 'Texto libre no disponible. Usa una plantilla.'
-                      : showNota
-                      ? 'Escribe una nota interna...'
-                      : 'Escribe un mensaje...'
-                  }
-                  disabled={isWhatsapp && isOutOfWindow && !showNota}
-                  className="w-full bg-muted/50 text-sm rounded-lg px-3 py-2 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              </div>
+              <textarea
+                rows={1}
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={(isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                placeholder={
+                  isWhatsapp && isOutOfWindow && !showNota
+                    ? 'Ventana expirada. Usá una plantilla.'
+                    : showNota
+                    ? 'Nota interna...'
+                    : 'Escribí un mensaje... (Enter para enviar)'
+                }
+                className="flex-1 bg-muted/50 text-sm rounded-lg px-3 py-2 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
+              />
               <button
-                className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota)}
+                onClick={handleSend}
+                disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
               >
-                <Send className="w-4 h-4" />
+                {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
           </div>
         </>
-      ) : (
-        <TemplatesPanel canal={conversacion.canal} onBack={() => setActiveTab('chat')} />
       )}
+
+      {/* ── Tab: GESTIONES ── */}
+      {activeTab === 'gestiones' && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Subheader */}
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">Gestiones</p>
+              <p className="text-[10px] text-muted-foreground">
+                {activeGestiones.length} activa{activeGestiones.length !== 1 ? 's' : ''} · {gestiones.length} total
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCreateGestion(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Nueva gestión
+            </button>
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-2">
+            {loadingGest ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : gestiones.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <ClipboardList className="w-8 h-8 text-muted-foreground/30 mb-3" />
+                <p className="text-sm font-medium text-foreground">Sin gestiones</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                  {clienteNombre !== 'Cliente'
+                    ? `No hay gestiones asociadas a ${clienteNombre}.`
+                    : 'No hay cliente vinculado a esta conversación.'}
+                </p>
+                <button
+                  onClick={() => setShowCreateGestion(true)}
+                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Crear primera gestión
+                </button>
+              </div>
+            ) : (
+              gestiones.map((g: any) => {
+                const pCfg   = priorityCfg[g.priority] || priorityCfg.medium;
+                const status = g.pipeline_stages?.global_status || 'to_do';
+                const isDone = status === 'done';
+                return (
+                  <div
+                    key={g.id}
+                    className={`flex items-start gap-2.5 rounded-xl p-3 border transition-colors ${
+                      isDone ? 'bg-muted/20 border-border/50 opacity-60' : 'bg-card border-border hover:border-primary/30'
+                    }`}
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${statusDot[status] || 'bg-muted'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium leading-snug truncate">{g.title}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                        {g.processes?.name}
+                        {g.pipeline_stages?.name && ` · ${g.pipeline_stages.name}`}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${pCfg.className}`}>
+                          {pCfg.label}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {format(new Date(g.updated_at), 'dd MMM', { locale: es })}
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 mt-0.5" />
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── GestionDialog (nueva gestión desde chat) ── */}
+      <GestionDialog
+        open={showCreateGestion}
+        onOpenChange={setShowCreateGestion}
+        defaultClienteId={clienteId}
+        defaultClienteNombre={clienteNombre !== 'Cliente' ? clienteNombre : undefined}
+      />
     </div>
   );
 }
 
-function MessageBubble({ mensaje }: { mensaje: Mensaje }) {
+// ── MessageBubble ─────────────────────────────────────────────────────────────
+
+function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   const isOutbound = mensaje.tipo === 'outbound';
-  const isNota = mensaje.tipo === 'nota_interna';
-  const isSistema = mensaje.tipo === 'sistema';
+  const isNota     = mensaje.tipo === 'nota_interna';
+  const isSistema  = mensaje.tipo === 'sistema';
   const estadoIcon = isOutbound ? estadoIconMap[mensaje.estado] : null;
   const StatusIcon = estadoIcon?.icon;
+  const ts         = new Date(mensaje.created_at);
 
   if (isSistema) {
     return (
@@ -172,9 +362,8 @@ function MessageBubble({ mensaje }: { mensaje: Mensaje }) {
           <div className="flex items-center gap-1.5 mb-1">
             <StickyNote className="w-3 h-3" />
             <span className="font-medium">Nota interna</span>
-            <span className="text-[9px] ml-auto opacity-70">
-              {format(mensaje.timestamp, 'HH:mm', { locale: es })}
-            </span>
+            {mensaje.autor_nombre && <span className="opacity-70">· {mensaje.autor_nombre}</span>}
+            <span className="text-[9px] ml-auto opacity-70">{format(ts, 'HH:mm', { locale: es })}</span>
           </div>
           {mensaje.contenido}
         </div>
@@ -184,109 +373,26 @@ function MessageBubble({ mensaje }: { mensaje: Mensaje }) {
 
   return (
     <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[70%] rounded-2xl px-3.5 py-2 ${
-          isOutbound
-            ? 'bg-primary text-primary-foreground rounded-br-md'
-            : 'bg-muted text-foreground rounded-bl-md'
-        }`}
-      >
+      <div className={`max-w-[70%] rounded-2xl px-3.5 py-2 ${
+        isOutbound
+          ? 'bg-primary text-primary-foreground rounded-br-md'
+          : 'bg-muted text-foreground rounded-bl-md'
+      }`}>
         <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{mensaje.contenido}</p>
-        {mensaje.adjunto && (
+        {mensaje.adjunto_nombre && (
           <div className={`mt-1.5 flex items-center gap-1.5 text-[10px] ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'} bg-black/5 rounded px-2 py-1`}>
             <Paperclip className="w-3 h-3" />
-            {mensaje.adjunto.nombre}
-          </div>
-        )}
-        {mensaje.error && (
-          <div className="mt-1.5 flex items-center gap-1 text-[10px] text-destructive">
-            <XCircle className="w-3 h-3" /> {mensaje.error}
+            {mensaje.adjunto_nombre}
           </div>
         )}
         <div className={`flex items-center justify-end gap-1 mt-1 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
-          <span className="text-[9px]">{format(mensaje.timestamp, 'HH:mm', { locale: es })}</span>
-          {StatusIcon && <StatusIcon className={`w-3 h-3 ${isOutbound ? 'text-primary-foreground/60' : estadoIcon.className}`} />}
+          <span className="text-[9px]">{format(ts, 'HH:mm', { locale: es })}</span>
+          {StatusIcon && <StatusIcon className={`w-3 h-3 ${isOutbound ? 'text-primary-foreground/60' : estadoIcon!.className}`} />}
         </div>
       </div>
     </div>
   );
 }
 
-function TemplatesPanel({ canal, onBack }: { canal: Canal; onBack: () => void }) {
-  const [search, setSearch] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-
-  const filtered = plantillas.filter(p => {
-    if (search) {
-      const q = search.toLowerCase();
-      return p.nombre.toLowerCase().includes(q) || p.categoria.toLowerCase().includes(q);
-    }
-    return true;
-  });
-
-  const selected = plantillas.find(p => p.id === selectedTemplate);
-
-  // suppress unused variable warning for canal (available for future filtering)
-  void canal;
-
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="p-3 border-b border-border">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium">Plantillas</h3>
-          <button onClick={onBack} className="text-[11px] text-primary font-medium">Volver al chat</button>
-        </div>
-        <input
-          type="text"
-          placeholder="Buscar plantilla..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full bg-muted/50 text-xs rounded-md px-3 py-1.5 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        />
-      </div>
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1">
-        {filtered.map(pl => (
-          <button
-            key={pl.id}
-            onClick={() => setSelectedTemplate(pl.id)}
-            className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
-              selectedTemplate === pl.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium">{pl.nombre}</span>
-              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${
-                pl.estado === 'aprobada' ? 'bg-success/10 text-success' : pl.estado === 'pendiente' ? 'bg-warning/10 text-warning' : 'bg-destructive/10 text-destructive'
-              }`}>
-                {pl.estado}
-              </span>
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{pl.contenido}</p>
-          </button>
-        ))}
-      </div>
-      {selected && (
-        <div className="border-t border-border p-3 space-y-2">
-          <p className="text-[11px] font-medium">Preview</p>
-          <div className="bg-muted/50 rounded-lg p-2.5 text-xs text-foreground">{selected.contenido}</div>
-          {selected.variables.length > 0 && (
-            <div className="space-y-1.5">
-              {selected.variables.map(v => (
-                <div key={v}>
-                  <label className="text-[10px] text-muted-foreground">{`{{${v}}}`}</label>
-                  <input className="w-full bg-background text-xs rounded px-2 py-1 border border-border mt-0.5" placeholder={v} />
-                </div>
-              ))}
-            </div>
-          )}
-          <button
-            className="w-full py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
-            disabled={selected.estado !== 'aprobada'}
-          >
-            {selected.estado === 'aprobada' ? 'Enviar plantilla' : 'Plantilla no aprobada'}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
+// Suppress unused import warnings
+void User; void Building2;

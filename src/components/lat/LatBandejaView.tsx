@@ -4,7 +4,8 @@ import { ConversacionList } from './ConversacionList';
 import { ConversacionPanel } from './ConversacionPanel';
 import { Cliente360Panel } from './Cliente360Panel';
 import { SoftphoneWidget } from './SoftphoneWidget';
-import { conversaciones, getCliente } from '@/data/latMockData';
+import { getCliente } from '@/data/latMockData';
+import { useLatConversaciones } from '@/hooks/useLatData';
 
 type MobileView = 'list' | 'chat';
 
@@ -15,18 +16,22 @@ export function LatBandejaView() {
   const [filtroEstado, setFiltroEstado]     = useState<string>('todos');
   const [busqueda, setBusqueda]             = useState('');
 
+  // Datos reales desde Supabase (con fallback a mock si la tabla está vacía)
+  const { data: todasConversaciones } = useLatConversaciones();
+
   const filteredConvs = useMemo(() => {
-    let result = [...conversaciones];
+    let result = [...todasConversaciones];
     if (filtroCanal  !== 'todos') result = result.filter(c => c.canal   === filtroCanal);
     if (filtroEstado !== 'todos') result = result.filter(c => c.estado  === filtroEstado);
     if (busqueda) {
       const q = busqueda.toLowerCase();
       result = result.filter(c => {
-        const cliente = getCliente(c.clienteId);
+        const nombre = c.cliente_nombre ?? getCliente(c.id)?.nombre ?? '';
         return (
-          cliente?.nombre.toLowerCase().includes(q) ||
-          c.asunto.toLowerCase().includes(q) ||
-          c.ultimoMensaje.toLowerCase().includes(q)
+          nombre.toLowerCase().includes(q) ||
+          c.asunto?.toLowerCase().includes(q) ||
+          c.ultimo_mensaje?.toLowerCase().includes(q) ||
+          c.telefono?.includes(busqueda)
         );
       });
     }
@@ -36,17 +41,21 @@ export function LatBandejaView() {
       const eb = b.estado === 'urgente' ? -1 : 0;
       if (ea !== eb) return ea - eb;
       return (prioMap[a.prioridad] ?? 2) - (prioMap[b.prioridad] ?? 2) ||
-        b.ultimaInteraccion.getTime() - a.ultimaInteraccion.getTime();
+        new Date(b.ultima_interaccion).getTime() - new Date(a.ultima_interaccion).getTime();
     });
     return result;
-  }, [filtroCanal, filtroEstado, busqueda]);
+  }, [todasConversaciones, filtroCanal, filtroEstado, busqueda]);
 
-  const selectedConv    = conversaciones.find(c => c.id === selectedConvId) ?? null;
-  const selectedCliente = selectedConv ? getCliente(selectedConv.clienteId) : null;
+  const selectedConv    = todasConversaciones.find(c => c.id === selectedConvId) ?? null;
+
+  // Para el panel Cliente360 (sigue usando mock data para los que vienen de ahí)
+  const mockCliente = selectedConv?._source === 'mock'
+    ? getCliente(selectedConv.id) ?? null
+    : null;
 
   const handleSelect = (id: string) => {
     setSelectedConvId(id);
-    setMobileView('chat');   // en mobile, cambia al panel de chat
+    setMobileView('chat');
   };
 
   const handleBack = () => {
@@ -111,12 +120,12 @@ export function LatBandejaView() {
       </div>
 
       {/* ── Panel Cliente 360 ────────────────────────────────────────────
-          Solo en lg+  */}
-      {selectedConv && selectedCliente && (
+          Solo en lg+ y solo si viene de mock data (tiene el modelo Cliente)  */}
+      {selectedConv && mockCliente && (
         <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card overflow-y-auto scrollbar-thin">
           <Cliente360Panel
-            cliente={selectedCliente}
-            conversacion={selectedConv}
+            cliente={mockCliente}
+            conversacion={selectedConv as any}
           />
         </div>
       )}

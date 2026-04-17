@@ -28,6 +28,9 @@ interface GestionDialogProps {
   /** Omitir para habilitar el selector de proceso interno */
   processId?: string;
   stageId?: string;
+  /** Pre-llenar cliente desde contexto externo (ej. LAT chat) */
+  defaultClienteId?: string | null;
+  defaultClienteNombre?: string;
   gestion?: {
     id: string;
     title: string;
@@ -60,7 +63,7 @@ const SUBTYPES: Record<string, string[]> = {
   caso:      ["Incidencia", "Reclamo", "Consulta", "Solicitud"],
 };
 
-export function GestionDialog({ open, onOpenChange, processId, stageId, gestion }: GestionDialogProps) {
+export function GestionDialog({ open, onOpenChange, processId, stageId, gestion, defaultClienteId, defaultClienteNombre }: GestionDialogProps) {
   const isEdit = !!gestion;
   const queryClient = useQueryClient();
 
@@ -88,8 +91,8 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
   const [selectedStageId,   setSelectedStageId]   = useState("");
 
   // ── Client selection from DB ─────────────────────────────────────────────
-  const [clienteId,     setClienteId]     = useState<string | null>(gestion?.cliente_id || null);
-  const [clienteNombre, setClienteNombre] = useState(gestion?.cliente_nombre || "");
+  const [clienteId,     setClienteId]     = useState<string | null>(gestion?.cliente_id || defaultClienteId || null);
+  const [clienteNombre, setClienteNombre] = useState(gestion?.cliente_nombre || defaultClienteNombre || "");
   const [clienteSearch, setClienteSearch] = useState("");
   const [showClienteDrop, setShowClienteDrop] = useState(false);
   const clienteInputRef = useRef<HTMLInputElement>(null);
@@ -208,7 +211,9 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
     setTitle(""); setDescription(""); setPriority("medium");
     setResponsableId(localStorage.getItem("mis_gestiones_colaborador") || NO_AREA);
     setGestionType("operativa"); setSubtype(""); setAreaId(NO_AREA);
-    setClienteId(null); setClienteNombre(""); setClienteSearch("");
+    setClienteId(defaultClienteId || null);
+    setClienteNombre(defaultClienteNombre || "");
+    setClienteSearch("");
     setDueDate(undefined); setSubAreaId(""); setSelectedProcessId(""); setSelectedStageId("");
   };
 
