@@ -99,141 +99,148 @@ export function ProcessSidebar({
           </button>
         </div>
 
-        {/* Principal */}
-        <div className="px-2 pt-2 space-y-0.5">
-          {!collapsed && (
-            <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Principal</span>
-          )}
-          {mainItems.map((item) => (
-            <button
-              key={item.view}
-              onClick={() => handleNav(item.view)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
-                activeView === item.view
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-              }`}
-            >
-              <item.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
-            </button>
-          ))}
-        </div>
+        {/* Scrollable nav content */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
 
-        <Separator className="my-2 mx-2 bg-sidebar-border" />
-
-        {/* Vistas Especializadas */}
-        <div className="px-2 space-y-0.5">
-          {!collapsed && (
-            <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Vistas</span>
-          )}
-          {specializedItems.map((item) => (
-            <button
-              key={item.view}
-              onClick={() => handleNav(item.view)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
-                activeView === item.view
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-              }`}
-            >
-              <item.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
-            </button>
-          ))}
-        </div>
-
-        <Separator className="my-2 mx-2 bg-sidebar-border" />
-
-        {/* LAT */}
-        <div className="px-2 space-y-0.5">
-          {!collapsed && (
-            <div className="flex items-center gap-1.5 px-3 py-1">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">LAT</span>
-              <span className="text-[8px] bg-primary/20 text-primary px-1 rounded font-medium">Live</span>
-            </div>
-          )}
-          {latItems.map((item) => (
-            <button
-              key={item.view}
-              onClick={() => handleNav(item.view)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
-                activeView === item.view
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-              }`}
-            >
-              <item.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
-            </button>
-          ))}
-        </div>
-
-        <Separator className="my-2 mx-2 bg-sidebar-border" />
-
-        {/* Utilidades */}
-        <div className="px-2 space-y-0.5">
-          {!collapsed && (
-            <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Utilidades</span>
-          )}
-          {utilItems.map((item) => (
-            <button
-              key={item.view}
-              onClick={() => handleNav(item.view)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
-                activeView === item.view
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-              }`}
-            >
-              <item.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
-            </button>
-          ))}
-        </div>
-
-        {/* Process List */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
-          {!collapsed && (
-            <div className="flex items-center justify-between px-2 py-1.5 mb-1">
-              <span className="text-xs font-medium uppercase tracking-wider text-sidebar-foreground/50">Procesos</span>
-              <button onClick={onCreateProcess} className="p-1 rounded hover:bg-sidebar-accent transition-colors">
-                <Plus className="w-3.5 h-3.5 text-sidebar-foreground/60" />
+          {/* Principal */}
+          <div className="px-2 pt-2 space-y-0.5">
+            {!collapsed && (
+              <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Principal</span>
+            )}
+            {mainItems.map((item) => (
+              <button
+                key={item.view}
+                onClick={() => handleNav(item.view)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+                  activeView === item.view
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
               </button>
-            </div>
-          )}
+            ))}
+          </div>
 
-          {processes.map((process) => (
-            <button
-              key={process.id}
-              onClick={() => handleSelectProcess(process.id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors mb-0.5 ${
-                activeView === "process" && selectedProcessId === process.id
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-              }`}
-            >
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                activeView === "process" && selectedProcessId === process.id ? "bg-sidebar-primary" : "bg-sidebar-foreground/30"
-              }`} />
-              {!collapsed && (
-                <div className="min-w-0 flex-1">
-                  <p className="truncate">{process.name}</p>
-                  {process.area && <p className="text-xs text-sidebar-foreground/50 truncate">{process.area}</p>}
-                </div>
-              )}
-            </button>
-          ))}
+          <Separator className="my-2 mx-2 bg-sidebar-border" />
 
-          {processes.length === 0 && !collapsed && (
-            <div className="px-3 py-8 text-center">
-              <p className="text-xs text-sidebar-foreground/40">No hay procesos</p>
-              <Button variant="ghost" size="sm" onClick={onCreateProcess}
-                className="mt-2 text-xs text-sidebar-primary hover:text-sidebar-primary hover:bg-sidebar-accent">
-                <Plus className="w-3.5 h-3.5 mr-1" /> Crear proceso
-              </Button>
-            </div>
-          )}
+          {/* Vistas Especializadas */}
+          <div className="px-2 space-y-0.5">
+            {!collapsed && (
+              <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Vistas</span>
+            )}
+            {specializedItems.map((item) => (
+              <button
+                key={item.view}
+                onClick={() => handleNav(item.view)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+                  activeView === item.view
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
+              </button>
+            ))}
+          </div>
+
+          <Separator className="my-2 mx-2 bg-sidebar-border" />
+
+          {/* LAT */}
+          <div className="px-2 space-y-0.5">
+            {!collapsed && (
+              <div className="flex items-center gap-1.5 px-3 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">LAT</span>
+                <span className="text-[8px] bg-primary/20 text-primary px-1 rounded font-medium">Live</span>
+              </div>
+            )}
+            {latItems.map((item) => (
+              <button
+                key={item.view}
+                onClick={() => handleNav(item.view)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+                  activeView === item.view
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
+              </button>
+            ))}
+          </div>
+
+          <Separator className="my-2 mx-2 bg-sidebar-border" />
+
+          {/* Utilidades */}
+          <div className="px-2 space-y-0.5">
+            {!collapsed && (
+              <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Utilidades</span>
+            )}
+            {utilItems.map((item) => (
+              <button
+                key={item.view}
+                onClick={() => handleNav(item.view)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+                  activeView === item.view
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
+              </button>
+            ))}
+          </div>
+
+          <Separator className="my-2 mx-2 bg-sidebar-border" />
+
+          {/* Process List */}
+          <div className="p-2 pb-4">
+            {!collapsed && (
+              <div className="flex items-center justify-between px-2 py-1.5 mb-1">
+                <span className="text-xs font-medium uppercase tracking-wider text-sidebar-foreground/50">Procesos</span>
+                <button onClick={onCreateProcess} className="p-1 rounded hover:bg-sidebar-accent transition-colors">
+                  <Plus className="w-3.5 h-3.5 text-sidebar-foreground/60" />
+                </button>
+              </div>
+            )}
+
+            {processes.map((process) => (
+              <button
+                key={process.id}
+                onClick={() => handleSelectProcess(process.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors mb-0.5 ${
+                  activeView === "process" && selectedProcessId === process.id
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  activeView === "process" && selectedProcessId === process.id ? "bg-sidebar-primary" : "bg-sidebar-foreground/30"
+                }`} />
+                {!collapsed && (
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate">{process.name}</p>
+                    {process.area && <p className="text-xs text-sidebar-foreground/50 truncate">{process.area}</p>}
+                  </div>
+                )}
+              </button>
+            ))}
+
+            {processes.length === 0 && !collapsed && (
+              <div className="px-3 py-8 text-center">
+                <p className="text-xs text-sidebar-foreground/40">No hay procesos</p>
+                <Button variant="ghost" size="sm" onClick={onCreateProcess}
+                  className="mt-2 text-xs text-sidebar-primary hover:text-sidebar-primary hover:bg-sidebar-accent">
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Crear proceso
+                </Button>
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* Collapse toggle — desktop only */}
