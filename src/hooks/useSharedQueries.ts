@@ -33,6 +33,8 @@ export interface ClienteBasic {
   email: string | null;
   telefono: string | null;
   tipo_cliente: string;
+  documento_numero: string | null;
+  nit: string | null;
 }
 
 const STALE_5MIN  = 5  * 60 * 1000;
@@ -253,7 +255,7 @@ export function useClientes() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("clientes")
-        .select("id, nombre_completo, razon_social, email, telefono, tipo_cliente")
+        .select("id, nombre_completo, razon_social, email, telefono, tipo_cliente, documento_numero, nit")
         .order("nombre_completo");
       if (error) return [];
       return data as ClienteBasic[];

@@ -131,7 +131,9 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
           c.nombre_completo.toLowerCase().includes(q) ||
           c.razon_social?.toLowerCase().includes(q) ||
           c.email?.toLowerCase().includes(q) ||
-          c.telefono?.includes(clienteSearch)
+          c.telefono?.includes(clienteSearch) ||
+          c.documento_numero?.includes(clienteSearch) ||   // búsqueda por CI
+          c.nit?.includes(clienteSearch)                    // búsqueda por NIT
         );
       }).slice(0, 8)
     : [];
@@ -481,7 +483,10 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
                               {c.tipo_cliente === "juridica" ? (c.razon_social ?? c.nombre_completo) : c.nombre_completo}
                             </p>
                             <p className="text-[10px] text-muted-foreground truncate">
-                              {c.email ?? c.telefono ?? (c.tipo_cliente === "juridica" ? "Empresa" : "Sin contacto")}
+                              {c.tipo_cliente === "juridica"
+                                ? (c.nit ? `NIT: ${c.nit}` : c.email ?? "Empresa")
+                                : (c.documento_numero ? `CI: ${c.documento_numero}` : (c.email ?? c.telefono ?? "Sin contacto"))
+                              }
                             </p>
                           </div>
                           {c.tipo_cliente === "juridica"

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useColaboradores, useCurrentUserRol } from "@/hooks/useSharedQueries";
+import { useColaboradores, useCurrentUserRol, useClientes } from "@/hooks/useSharedQueries";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -100,6 +100,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
   });
 
   const { data: colaboradores = [] } = useColaboradores();
+  const { data: clientes = [] } = useClientes();
 
   const { data: tareas = [], refetch: refetchTareas } = useQuery({
     queryKey: ["gestion-tareas", gestionId],
@@ -639,30 +640,60 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
 
                 {/* ── Cliente ── */}
                 <TabsContent value="cliente" className="mt-0">
-                  {gestion.cliente_nombre ? (
-                    <div className="space-y-3">
-                      <div className="p-4 rounded-lg border border-border bg-muted/30 flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                          <Building2 className="w-5 h-5 text-primary" />
+                  {(() => {
+                    const clienteFull = gestion.cliente_id
+                      ? clientes.find((c: any) => c.id === gestion.cliente_id) ?? null
+                      : null;
+                    if (!gestion.cliente_nombre && !clienteFull) {
+                      return (
+                        <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                          <Building2 className="w-8 h-8 text-muted-foreground/40" />
+                          <div>
+                            <p className="text-sm font-medium text-foreground">Sin cliente asociado</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Esta gestión no tiene un cliente vinculado.
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-sm">{gestion.cliente_nombre}</p>
-                          {gestion.cliente_id && (
-                            <p className="text-[10px] text-muted-foreground font-mono mt-0.5">ID: {gestion.cliente_id}</p>
-                          )}
+                      );
+                    }
+                    const nombre = clienteFull
+                      ? (clienteFull.razon_social ?? clienteFull.nombre_completo)
+                      : gestion.cliente_nombre;
+                    return (
+                      <div className="space-y-3">
+                        <div className="p-4 rounded-lg border border-border bg-muted/30 flex items-start gap-3">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold ${clienteFull?.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600" : "bg-primary/10 text-primary"}`}>
+                            {clienteFull?.tipo_cliente === "juridica"
+                              ? <Building2 className="w-5 h-5" />
+                              : nombre?.charAt(0).toUpperCase()
+                            }
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="font-semibold text-sm">{nombre}</p>
+                            {clienteFull?.nombre_completo && clienteFull.razon_social && (
+                              <p className="text-xs text-muted-foreground">{clienteFull.nombre_completo}</p>
+                            )}
+                            {clienteFull?.documento_numero && (
+                              <p className="text-[11px] text-muted-foreground">CI: <span className="font-medium text-foreground">{clienteFull.documento_numero}</span></p>
+                            )}
+                            {clienteFull?.nit && (
+                              <p className="text-[11px] text-muted-foreground">NIT: <span className="font-medium text-foreground">{clienteFull.nit}</span></p>
+                            )}
+                            {clienteFull?.telefono && (
+                              <p className="text-[11px] text-muted-foreground">Tel: <span className="font-medium text-foreground">{clienteFull.telefono}</span></p>
+                            )}
+                            {clienteFull?.email && (
+                              <p className="text-[11px] text-muted-foreground">Email: <span className="font-medium text-foreground">{clienteFull.email}</span></p>
+                            )}
+                          </div>
                         </div>
+                        <p className="text-xs text-muted-foreground text-center">
+                          Para ver el perfil completo, buscá al cliente en la vista <strong>Cliente 360</strong>.
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground text-center">Para ver el perfil completo, buscá al cliente desde la vista Clientes.</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-                      <Building2 className="w-8 h-8 text-muted-foreground/40" />
-                      <div>
-                        <p className="text-sm font-medium text-foreground">Sin cliente asociado</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Esta gestión no tiene un cliente vinculado.</p>
-                      </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </TabsContent>
 
                 {/* ── Configuración ── */}
