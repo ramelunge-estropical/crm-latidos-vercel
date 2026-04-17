@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Settings, FolderKanban, Shield, Users,
+  Settings, Shield, Users,
   MapPin, MessageSquare, BarChart3, Puzzle, Sliders,
   ChevronLeft, ChevronRight, Lock, EyeOff,
   GitBranch, LayoutGrid
@@ -10,14 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { GestionesConfig }     from "./config/GestionesConfig";
-import { ProcesosConfig }      from "./config/ProcesosConfig";
 import { PipelinesConfig }     from "./config/PipelinesConfig";
 import { AreasConfig }         from "./config/AreasConfig";
 import { ColaboradoresConfig } from "./config/ColaboradoresConfig";
 
 type Section =
   | "gestiones"
-  | "procesos"
   | "pipelines"
   | "areas"
   | "colaboradores"
@@ -26,7 +24,6 @@ type Section =
 
 const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = {
   gestiones:     { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  procesos:      { canView: ["admin", "gerente"], canEdit: ["admin"] },
   pipelines:     { canView: ["admin", "gerente"], canEdit: ["admin"] },
   areas:         { canView: ["admin", "gerente"], canEdit: ["admin"] },
   colaboradores: { canView: ["admin", "gerente"], canEdit: ["admin"] },
@@ -42,18 +39,11 @@ const CARDS = [
     desc: "Estados, tipos y subtipos de gestiones",
   },
   {
-    id: "procesos" as Section,
-    icon: FolderKanban,
-    color: "bg-violet-500/10 text-violet-600",
-    title: "Procesos",
-    desc: "Procesos de negocio y sus áreas asociadas",
-  },
-  {
     id: "pipelines" as Section,
     icon: GitBranch,
     color: "bg-indigo-500/10 text-indigo-600",
     title: "Pipelines",
-    desc: "Etapas y flujos de trabajo por proceso",
+    desc: "Procesos por área, sub-áreas y etapas de trabajo",
   },
   {
     id: "areas" as Section,
@@ -108,7 +98,6 @@ const CARDS = [
 
 const SECTION_TITLES: Record<string, string> = {
   gestiones:     "Gestiones",
-  procesos:      "Procesos",
   pipelines:     "Pipelines",
   areas:         "Áreas",
   colaboradores: "Colaboradores",
@@ -317,7 +306,6 @@ export function ConfiguracionesView() {
         )}
 
         {active === "gestiones"     && <GestionesConfig     readonly={!canEdit("gestiones")} />}
-        {active === "procesos"      && <ProcesosConfig      readonly={!canEdit("procesos")} />}
         {active === "pipelines"     && <PipelinesConfig     readonly={!canEdit("pipelines")} />}
         {active === "areas"         && <AreasConfig         readonly={!canEdit("areas")} />}
         {active === "colaboradores" && <ColaboradoresConfig readonly={!canEdit("colaboradores")} />}
