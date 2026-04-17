@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useProcesses, useAllStages, useAreasEmpresa, useProcessAreas, useColaboradores } from "@/hooks/useSharedQueries";
+import {
+  useProcesses, useAllStages, useAreasEmpresa, useProcessAreas,
+  useColaboradores, useSubAreasEmpresa, useProcessSubAreas
+} from "@/hooks/useSharedQueries";
 import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Plus, Trash2, ChevronDown, ChevronRight, GripVertical,
   ArrowUp, ArrowDown, Pencil, Check, X, FolderKanban, MapPin,
-  User, Clock
+  User, Clock, Layers
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -24,11 +27,13 @@ const STATUS_OPTIONS = [
 
 export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
   const queryClient = useQueryClient();
-  const { data: processes       = [] } = useProcesses();
-  const { data: allStages       = [] } = useAllStages();
-  const { data: areas           = [] } = useAreasEmpresa();
-  const { data: processAreas    = [] } = useProcessAreas();
-  const { data: colaboradores   = [] } = useColaboradores();
+  const { data: processes        = [] } = useProcesses();
+  const { data: allStages        = [] } = useAllStages();
+  const { data: areas            = [] } = useAreasEmpresa();
+  const { data: processAreas     = [] } = useProcessAreas();
+  const { data: colaboradores    = [] } = useColaboradores();
+  const { data: subAreas         = [] } = useSubAreasEmpresa();
+  const { data: processSubAreas  = [] } = useProcessSubAreas();
 
   const [expandedId,      setExpandedId]      = useState<string | null>(null);
   const [areaPickerOpen,  setAreaPickerOpen]  = useState<string | null>(null); // process_id con selector de áreas abierto
@@ -43,6 +48,7 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
     queryClient.invalidateQueries({ queryKey: ["processes"] });
     queryClient.invalidateQueries({ queryKey: ["all-stages"] });
     queryClient.invalidateQueries({ queryKey: ["process-areas"] });
+    queryClient.invalidateQueries({ queryKey: ["process-sub-areas"] });
   };
 
   const stagesFor = (processId: string) =>
@@ -55,6 +61,24 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
     areaIdsForProcess(processId)
       .map(id => areas.find((a: any) => a.id === id))
       .filter(Boolean) as any[];
+
+  const subAreaIdsForProcess = (processId: string) =>
+    processSubAreas.filter(ps => ps.process_id === processId).map(ps => ps.sub_area_id);
+
+  const subAreasForArea = (areaId: string) =>
+    subAreas.filter(sa => sa.area_id === areaId).sort((a, b) => a.orden - b.orden);
+
+  const toggleSubArea = async (procId: string, subAreaId: string) => {
+    const current = subAreaIdsForProcess(procId);
+    if (current.includes(subAreaId)) {
+      await (supabase as any).from("process_sub_areas")
+        .delete().eq("process_id", procId).eq("sub_area_id", subAreaId);
+    } else {
+      await (supabase as any).from("process_sub_areas")
+        .insert({ process_id: procId, sub_area_id: subAreaId });
+    }
+    invalidate();
+  };
 
   // ── Nombre proceso ────────────────────────────────────────
   const handleSaveName = async (procId: string) => {
@@ -147,12 +171,13 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
 
       <div className="space-y-3">
         {processes.map((proc: any) => {
-          const stages      = stagesFor(proc.id);
-          const procAreas   = areaObjsForProcess(proc.id);
-          const procAreaIds = areaIdsForProcess(proc.id);
-          const isOpen      = expandedId === proc.id;
-          const pickerOpen  = areaPickerOpen === proc.id;
-          const editingName = editingNameId === proc.id;
+          const stages         = stagesFor(proc.id);
+          const procAreas      = areaObjsForProcess(proc.id);
+          const procAreaIds    = areaIdsForProcess(proc.id);
+          const procSubAreaIds = subAreaIdsForProcess(proc.id);
+          const isOpen         = expandedId === proc.id;
+          const pickerOpen     = areaPickerOpen === proc.id;
+          const editingName    = editingNameId === proc.id;
 
           return (
             <div key={proc.id} className="border border-border rounded-xl overflow-hidden">
@@ -203,74 +228,148 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
                   </button>
                 </div>
 
-                {/* Fila 2: áreas asociadas — siempre visible */}
-                <div className="flex items-center gap-1.5 flex-wrap pl-6">
-                  <MapPin className="w-3 h-3 text-muted-foreground shrink-0" />
+                {/* Fila 2: áreas + sub-áreas asociadas — siempre visible */}
+                <div className="pl-6 space-y-1.5">
 
-                  {procAreas.length === 0 && (
-                    <span className="text-[11px] text-muted-foreground/70">Sin áreas asociadas</span>
-                  )}
+                  {/* Áreas */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <MapPin className="w-3 h-3 text-muted-foreground shrink-0" />
 
-                  {procAreas.map((a: any) => (
-                    <span key={a.id}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-white"
-                      style={{ backgroundColor: a.color }}>
-                      {a.nombre}
-                      {!readonly && (
-                        <button onClick={() => toggleArea(proc.id, a.id)}
-                          className="hover:opacity-70 transition-opacity ml-0.5">
-                          <X className="w-2.5 h-2.5" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
+                    {procAreas.length === 0 && (
+                      <span className="text-[11px] text-muted-foreground/70">Sin áreas asociadas</span>
+                    )}
 
-                  {!readonly && (
-                    <button
-                      onClick={() => setAreaPickerOpen(pickerOpen ? null : proc.id)}
-                      className={cn(
-                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition-colors",
-                        pickerOpen
-                          ? "border-primary text-primary bg-primary/5"
-                          : "border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/50 hover:text-primary"
-                      )}>
-                      <Plus className="w-2.5 h-2.5" />
-                      {procAreas.length === 0 ? "Asociar área" : "Agregar área"}
-                    </button>
-                  )}
-                </div>
-
-                {/* Selector de áreas — se expande al hacer clic en "+ Asociar área" */}
-                {!readonly && pickerOpen && (
-                  <div className="pl-6 pt-1">
-                    <p className="text-[10px] text-muted-foreground mb-2">
-                      Seleccioná las áreas de la empresa a las que pertenece este pipeline:
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {areas.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">
-                          No hay áreas. Creá una en la sección <strong>Áreas</strong>.
-                        </span>
-                      ) : areas.map((a: any) => {
-                        const selected = procAreaIds.includes(a.id);
-                        return (
-                          <button key={a.id} type="button"
-                            onClick={() => toggleArea(proc.id, a.id)}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all",
-                              selected
-                                ? "text-white border-transparent shadow-sm"
-                                : "bg-card border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                            )}
-                            style={selected ? { backgroundColor: a.color, borderColor: a.color } : {}}>
-                            {selected && <Check className="w-2.5 h-2.5" />}
-                            {a.nombre}
+                    {procAreas.map((a: any) => (
+                      <span key={a.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-white"
+                        style={{ backgroundColor: a.color }}>
+                        {a.nombre}
+                        {!readonly && (
+                          <button onClick={() => toggleArea(proc.id, a.id)}
+                            className="hover:opacity-70 transition-opacity ml-0.5">
+                            <X className="w-2.5 h-2.5" />
                           </button>
+                        )}
+                      </span>
+                    ))}
+
+                    {!readonly && (
+                      <button
+                        onClick={() => setAreaPickerOpen(pickerOpen ? null : proc.id)}
+                        className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition-colors",
+                          pickerOpen
+                            ? "border-primary text-primary bg-primary/5"
+                            : "border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/50 hover:text-primary"
+                        )}>
+                        <Plus className="w-2.5 h-2.5" />
+                        {procAreas.length === 0 ? "Asociar área" : "Agregar área"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Sub-áreas seleccionadas (solo las de las áreas asociadas) */}
+                  {procSubAreaIds.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Layers className="w-3 h-3 text-muted-foreground shrink-0" />
+                      {procSubAreaIds.map(saId => {
+                        const sa = subAreas.find(s => s.id === saId);
+                        if (!sa) return null;
+                        return (
+                          <span key={saId}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium text-white border border-white/20"
+                            style={{ backgroundColor: sa.color }}>
+                            {sa.nombre}
+                            {!readonly && (
+                              <button onClick={() => toggleSubArea(proc.id, saId)}
+                                className="hover:opacity-70 transition-opacity ml-0.5">
+                                <X className="w-2 h-2" />
+                              </button>
+                            )}
+                          </span>
                         );
                       })}
                     </div>
+                  )}
+                </div>
+
+                {/* Selector de áreas + sub-áreas */}
+                {!readonly && pickerOpen && (
+                  <div className="pl-6 pt-1 space-y-3">
+
+                    {/* Picker de áreas */}
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-2">
+                        Áreas de la empresa:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {areas.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            No hay áreas. Creá una en la sección <strong>Áreas</strong>.
+                          </span>
+                        ) : areas.map((a: any) => {
+                          const selected = procAreaIds.includes(a.id);
+                          return (
+                            <button key={a.id} type="button"
+                              onClick={() => toggleArea(proc.id, a.id)}
+                              className={cn(
+                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border transition-all",
+                                selected
+                                  ? "text-white border-transparent shadow-sm"
+                                  : "bg-card border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                              )}
+                              style={selected ? { backgroundColor: a.color, borderColor: a.color } : {}}>
+                              {selected && <Check className="w-2.5 h-2.5" />}
+                              {a.nombre}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Picker de sub-áreas (solo las de las áreas seleccionadas) */}
+                    {procAreaIds.length > 0 && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-2">
+                          <Layers className="w-3 h-3 inline mr-1" />
+                          Sub-áreas (sub-procesos):
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {procAreaIds.flatMap(areaId => {
+                            const area  = areas.find((a: any) => a.id === areaId);
+                            const subs  = subAreasForArea(areaId);
+                            if (subs.length === 0) return [];
+                            return subs.map(sa => {
+                              const selected = procSubAreaIds.includes(sa.id);
+                              return (
+                                <button key={sa.id} type="button"
+                                  onClick={() => toggleSubArea(proc.id, sa.id)}
+                                  className={cn(
+                                    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border transition-all",
+                                    selected
+                                      ? "text-white border-transparent shadow-sm"
+                                      : "bg-card border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                  )}
+                                  style={selected ? { backgroundColor: sa.color, borderColor: sa.color } : {}}>
+                                  {selected && <Check className="w-2.5 h-2.5" />}
+                                  <span className="opacity-60 text-[9px]">{area?.nombre}</span>
+                                  <span>/ {sa.nombre}</span>
+                                </button>
+                              );
+                            });
+                          })}
+                          {procAreaIds.every(id => subAreasForArea(id).length === 0) && (
+                            <span className="text-xs text-muted-foreground">
+                              Las áreas seleccionadas no tienen sub-áreas configuradas.
+                              Agregá sub-áreas en la sección <strong>Áreas</strong>.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <button onClick={() => setAreaPickerOpen(null)}
-                      className="mt-2 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                      className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
                       Listo ✓
                     </button>
                   </div>

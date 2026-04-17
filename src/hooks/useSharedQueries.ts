@@ -18,6 +18,14 @@ export interface AreaEmpresa {
   color: string;
 }
 
+export interface SubAreaEmpresa {
+  id: string;
+  area_id: string;
+  nombre: string;
+  color: string;
+  orden: number;
+}
+
 const STALE_5MIN  = 5  * 60 * 1000;
 const STALE_10MIN = 10 * 60 * 1000;
 
@@ -178,6 +186,35 @@ export function useCurrentUserRol() {
     user:    data,
     isAdmin: data?.rol === "admin",
   };
+}
+
+export function useSubAreasEmpresa() {
+  return useQuery<SubAreaEmpresa[]>({
+    queryKey: ["sub_areas_empresa"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("sub_areas_empresa")
+        .select("id, area_id, nombre, color, orden")
+        .order("orden");
+      if (error) return [];
+      return data as SubAreaEmpresa[];
+    },
+    staleTime: STALE_10MIN,
+  });
+}
+
+export function useProcessSubAreas() {
+  return useQuery<{ process_id: string; sub_area_id: string }[]>({
+    queryKey: ["process-sub-areas"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("process_sub_areas")
+        .select("process_id, sub_area_id");
+      if (error) return [];
+      return data;
+    },
+    staleTime: STALE_5MIN,
+  });
 }
 
 export function useAreasEmpresa() {
