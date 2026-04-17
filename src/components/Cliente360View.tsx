@@ -12,7 +12,22 @@ import {
   MessageSquare, Heart, DollarSign, Wallet,
   CheckCircle2, Clock, Globe, Landmark,
   Sparkles, RefreshCw, Home, Tag, Building2, UserCircle,
+  ClipboardList,
 } from "lucide-react";
+
+const priorityConfig: Record<string, { label: string; className: string }> = {
+  urgent: { label: "Urgente", className: "bg-red-500/15 text-red-600"         },
+  high:   { label: "Alta",    className: "bg-orange-500/15 text-orange-600"   },
+  medium: { label: "Media",   className: "bg-primary/10 text-primary"         },
+  low:    { label: "Baja",    className: "bg-muted text-muted-foreground"      },
+};
+
+const statusDot: Record<string, string> = {
+  to_do:  "bg-status-todo",
+  doing:  "bg-status-doing",
+  review: "bg-status-review",
+  done:   "bg-status-done",
+};
 
 // ─── Local types (until Supabase types.ts regenerates after migration) ───────
 
@@ -259,14 +274,15 @@ export function Cliente360View() {
   });
 
   const { data: gestionesCliente = [] } = useQuery<any[]>({
-    queryKey: ["gestiones_cliente", selectedId, cliente?.nombre_completo],
-    enabled: !!selectedId && !!cliente,
+    queryKey: ["gestiones_cliente_id", selectedId],
+    enabled: !!selectedId,
     queryFn: () => safeQuery(async () => {
       const { data } = await (supabase as any)
         .from("gestiones")
-        .select("id, title, pipeline_stages(name, global_status), processes(name)")
-        .ilike("title", `%${cliente!.nombre_completo}%`)
-        .limit(10);
+        .select("id, title, priority, due_date, updated_at, pipeline_stages(name, global_status), processes(name), areas_empresa(nombre)")
+        .eq("cliente_id", selectedId)
+        .order("updated_at", { ascending: false })
+        .limit(50);
       return data ?? [];
     }),
   });
@@ -555,7 +571,7 @@ export function Cliente360View() {
                     { value: "familia",         label: "Familia & Referidos"},
                     { value: "viajes",          label: "Viajes"             },
                     { value: "finanzas",        label: "Finanzas"           },
-                    { value: "comunicaciones",  label: "Comunicaciones"     },
+                    { value: "comunicaciones",  label: gestionesCliente.length > 0 ? `Comunicaciones (${gestionesCliente.length})` : "Comunicaciones" },
                     { value: "lealtad",         label: "Fidelización"       },
                   ].map(t => (
                     <TabsTrigger
@@ -587,23 +603,50 @@ export function Cliente360View() {
                     </div>
                   )}
 
-                  {/* Gestiones activas */}
+                  {/* Gestiones */}
                   <div>
-                    <SectionTitle icon={Tag}>Gestiones activas</SectionTitle>
+                    <SectionTitle icon={ClipboardList}>
+                      Gestiones
+                      {gestionesCliente.length > 0 && (
+                        <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                          ({gestionesCliente.filter((g: any) => g.pipeline_stages?.global_status !== "done").length} activas)
+                        </span>
+                      )}
+                    </SectionTitle>
                     {gestionesCliente.length > 0 ? (
-                      <div className="space-y-2">
-                        {gestionesCliente.map((g: any) => (
-                          <div key={g.id} className="flex items-center gap-2.5 bg-muted/30 rounded-lg px-3 py-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium truncate">{g.title}</p>
-                              <p className="text-[10px] text-muted-foreground">{g.processes?.name}</p>
+                      <div className="space-y-1.5">
+                        {gestionesCliente.slice(0, 5).map((g: any) => {
+                          const pCfg = priorityConfig[g.priority] || priorityConfig.medium;
+                          const status = g.pipeline_stages?.global_status || "to_do";
+                          const isOverdue = g.due_date && new Date(g.due_date) < new Date() && status !== "done";
+                          return (
+                            <div key={g.id} className="flex items-center gap-2.5 bg-muted/30 rounded-lg px-3 py-2">
+                              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDot[status] || "bg-muted"}`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{g.title}</p>
+                                <p className="text-[10px] text-muted-foreground truncate">
+                                  {g.processes?.name}
+                                  {g.pipeline_stages?.name && ` · ${g.pipeline_stages.name}`}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${pCfg.className}`}>{pCfg.label}</span>
+                                {isOverdue && <AlertTriangle className="w-3 h-3 text-red-500" />}
+                              </div>
                             </div>
-                            <Badge variant="outline" className="text-[10px] flex-shrink-0">{g.pipeline_stages?.name}</Badge>
-                          </div>
-                        ))}
+                          );
+                        })}
+                        {gestionesCliente.length > 5 && (
+                          <button
+                            onClick={() => setActiveTab("comunicaciones")}
+                            className="text-[11px] text-primary hover:underline pl-1"
+                          >
+                            Ver todas ({gestionesCliente.length}) →
+                          </button>
+                        )}
                       </div>
                     ) : (
-                      <EmptySection icon={Tag} label="Sin gestiones activas relacionadas" />
+                      <EmptySection icon={ClipboardList} label="Sin gestiones asociadas a este cliente" />
                     )}
                   </div>
 
@@ -970,12 +1013,67 @@ export function Cliente360View() {
                 </TabsContent>
 
                 {/* ── COMUNICACIONES ── */}
-                <TabsContent value="comunicaciones" className="m-0 p-5">
-                  <SectionTitle icon={MessageSquare}>Comunicaciones</SectionTitle>
-                  <EmptySection
-                    icon={MessageSquare}
-                    label="El módulo de comunicaciones se habilitará próximamente. Aquí vas a poder ver leads asociados, campañas enviadas, historial de contacto e interacciones por distintos medios."
-                  />
+                <TabsContent value="comunicaciones" className="m-0 p-5 space-y-6">
+
+                  {/* Historial de gestiones */}
+                  <div>
+                    <SectionTitle icon={ClipboardList}>
+                      Historial de gestiones
+                      {gestionesCliente.length > 0 && (
+                        <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
+                          ({gestionesCliente.length})
+                        </span>
+                      )}
+                    </SectionTitle>
+                    {gestionesCliente.length === 0 ? (
+                      <EmptySection icon={ClipboardList} label="No hay gestiones asociadas a este cliente" />
+                    ) : (
+                      <div className="space-y-2">
+                        {gestionesCliente.map((g: any) => {
+                          const pCfg  = priorityConfig[g.priority] || priorityConfig.medium;
+                          const status = g.pipeline_stages?.global_status || "to_do";
+                          const statusLabel: Record<string, string> = { to_do: "Por hacer", doing: "En curso", review: "En revisión", done: "Completada" };
+                          const isOverdue = g.due_date && new Date(g.due_date) < new Date() && status !== "done";
+                          return (
+                            <div key={g.id} className="flex items-start gap-3 bg-muted/30 rounded-xl p-3">
+                              <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${statusDot[status] || "bg-muted"}`} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold truncate">{g.title}</p>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  {g.processes?.name}
+                                  {g.pipeline_stages?.name && <> · <span className="font-medium">{g.pipeline_stages.name}</span></>}
+                                  {g.areas_empresa?.nombre && <> · {g.areas_empresa.nombre}</>}
+                                </p>
+                                <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${pCfg.className}`}>{pCfg.label}</span>
+                                  <Badge variant="outline" className="text-[10px]">{statusLabel[status] ?? status}</Badge>
+                                  {g.due_date && (
+                                    <span className={`inline-flex items-center gap-1 text-[10px] ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+                                      <Calendar className="w-2.5 h-2.5" />
+                                      {fmtDate(g.due_date, { day: "2-digit", month: "short" })}
+                                      {isOverdue && " · Vencida"}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground flex-shrink-0">
+                                {fmtDate(g.updated_at, { day: "2-digit", month: "short" })}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Canales de comunicación - placeholder */}
+                  <div>
+                    <SectionTitle icon={MessageSquare}>Canales de comunicación</SectionTitle>
+                    <EmptySection
+                      icon={MessageSquare}
+                      label="Próximamente: historial de WhatsApp, email, llamadas y campañas enviadas al cliente."
+                    />
+                  </div>
                 </TabsContent>
 
                 {/* ── FIDELIZACIÓN ── */}

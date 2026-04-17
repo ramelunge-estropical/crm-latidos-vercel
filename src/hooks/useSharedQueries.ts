@@ -26,6 +26,15 @@ export interface SubAreaEmpresa {
   orden: number;
 }
 
+export interface ClienteBasic {
+  id: string;
+  nombre_completo: string;
+  razon_social: string | null;
+  email: string | null;
+  telefono: string | null;
+  tipo_cliente: string;
+}
+
 const STALE_5MIN  = 5  * 60 * 1000;
 const STALE_10MIN = 10 * 60 * 1000;
 
@@ -235,5 +244,20 @@ export function useAreasEmpresa() {
       });
     },
     staleTime: STALE_10MIN,
+  });
+}
+
+export function useClientes() {
+  return useQuery<ClienteBasic[]>({
+    queryKey: ["clientes"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("clientes")
+        .select("id, nombre_completo, razon_social, email, telefono, tipo_cliente")
+        .order("nombre_completo");
+      if (error) return [];
+      return data as ClienteBasic[];
+    },
+    staleTime: STALE_5MIN,
   });
 }
