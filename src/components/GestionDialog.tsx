@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useColaboradores, useAreasEmpresa } from "@/hooks/useSharedQueries";
+import { useColaboradores, useAreasEmpresa, useProcesses, useAllStages } from "@/hooks/useSharedQueries";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,8 @@ const NO_AREA = "__none__";
 interface GestionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  processId: string;
+  /** Omitir para habilitar el selector de proceso interno */
+  processId?: string;
   stageId?: string;
   gestion?: {
     id: string;
@@ -72,6 +73,33 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
   );
   const [loading, setLoading] = useState(false);
 
+  // Selector de proceso/etapa cuando no se pasa processId desde fuera
+  const [selectedProcessId, setSelectedProcessId] = useState("");
+  const [selectedStageId,   setSelectedStageId]   = useState("");
+
+  const { data: processes = [] } = useProcesses();
+  const { data: allStages  = [] } = useAllStages();
+
+  const stagesForProcess = allStages
+    .filter(s => s.process_id === selectedProcessId)
+    .sort((a, b) => a.order - b.order);
+
+  // Auto-seleccionar primera etapa cuando cambia el proceso
+  useEffect(() => {
+    if (!processId && selectedProcessId) {
+      const first = stagesForProcess[0];
+      setSelectedStageId(first?.id || "");
+    }
+  }, [selectedProcessId]);
+
+  // Resetear selector al cerrar
+  useEffect(() => {
+    if (!open) {
+      setSelectedProcessId("");
+      setSelectedStageId("");
+    }
+  }, [open]);
+
   // Invalida todas las vistas que muestran gestiones
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["gestiones"] });
@@ -106,8 +134,13 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
     setClienteNombre(""); setDueDate(undefined);
   };
 
+  const resolvedProcessId = processId || selectedProcessId;
+  const resolvedStageId   = stageId || selectedStageId || gestion?.stage_id || "";
+
   const handleSubmit = async () => {
     if (!title.trim()) return;
+    if (!resolvedProcessId) { toast.error("Seleccioná un proceso"); return; }
+    if (!resolvedStageId)   { toast.error("Seleccioná una etapa");   return; }
     setLoading(true);
     try {
       const selectedColab = colaboradores.find(c => c.id === responsableId);
@@ -120,8 +153,8 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
         responsable_nombre: selectedColab?.nombre || null,
         type:               gestionType,
         subtype:            subtype || null,
-        process_id:         processId,
-        stage_id:           gestion?.stage_id || stageId!,
+        process_id:         resolvedProcessId,
+        stage_id:           resolvedStageId,
         area_id:            areaId === NO_AREA ? null : areaId,
         cliente_nombre:     clienteNombre.trim() || null,
       };
@@ -169,6 +202,40 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion 
           <DialogTitle>{isEdit ? "Editar gestión" : "Nueva gestión"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
+
+          {/* Proceso + Etapa — solo cuando no viene de un board */}
+          {!processId && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label>Proceso *</Label>
+                <Select value={selectedProcessId} onValueChange={setSelectedProcessId}>
+                  <SelectTrigger><SelectValue placeholder="Seleccioná un proceso" /></SelectTrigger>
+                  <SelectContent>
+                    {processes.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Etapa inicial *</Label>
+                <Select
+                  value={selectedStageId}
+                  onValueChange={setSelectedStageId}
+                  disabled={!selectedProcessId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={selectedProcessId ? "Seleccioná" : "Primero el proceso"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stagesForProcess.map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           <div>
             <Label htmlFor="g-title">Título *</Label>

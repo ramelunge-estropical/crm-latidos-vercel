@@ -8,10 +8,12 @@ import { GestionDetailView } from "./GestionDetailView";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Hash, Tag, AlertCircle } from "lucide-react";
+import { Calendar, Hash, Tag, AlertCircle, Plus } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
+import { GestionDialog } from "./GestionDialog";
+import { Button } from "@/components/ui/button";
 
 const COLUMNS = [
   { id: "to_do",  label: "To Do",   dot: "bg-status-todo"   },
@@ -61,8 +63,9 @@ type GestionRow = {
 
 export function MisGestionesView() {
   const queryClient = useQueryClient();
-  const [detailGestionId, setDetailGestionId] = useState<string | null>(null);
-  const [detailProcessId, setDetailProcessId] = useState<string>("");
+  const [detailGestionId,  setDetailGestionId]  = useState<string | null>(null);
+  const [detailProcessId,  setDetailProcessId]  = useState<string>("");
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [colaboradorId, setColaboradorId] = useState<string>(
     () => localStorage.getItem("mis_gestiones_colaborador") || ""
   );
@@ -182,15 +185,21 @@ export function MisGestionesView() {
               )}
             </p>
           </div>
-          {/* Selector de colaborador */}
-          <ColaboradorCombobox
-            value={colaboradorId}
-            onValueChange={handleSelectColab}
-            colaboradores={colaboradores}
-            showEmpty={false}
-            placeholder="Seleccionar colaborador"
-            triggerClassName="h-9 min-w-[160px] max-w-[220px]"
-          />
+          <div className="flex items-center gap-2">
+            {/* Selector de colaborador */}
+            <ColaboradorCombobox
+              value={colaboradorId}
+              onValueChange={handleSelectColab}
+              colaboradores={colaboradores}
+              showEmpty={false}
+              placeholder="Seleccionar colaborador"
+              triggerClassName="h-9 min-w-[160px] max-w-[220px]"
+            />
+            <Button size="sm" className="h-9 gap-1.5 shrink-0" onClick={() => setShowCreateDialog(true)}>
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Nueva gestión</span>
+            </Button>
+          </div>
         </div>
 
         {/* Filtros */}
@@ -375,6 +384,11 @@ export function MisGestionesView() {
           processId={detailProcessId}
         />
       )}
+
+      <GestionDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+      />
     </div>
   );
 }
