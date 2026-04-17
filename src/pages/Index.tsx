@@ -34,7 +34,7 @@ const VIEW_LABELS: Record<SidebarView, string> = {
 const Index = () => {
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeView, setActiveView] = useState<SidebarView>("process");
+  const [activeView, setActiveView] = useState<SidebarView>("mis-gestiones");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const { data: processes = [] } = useProcesses();
