@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Send, Paperclip, StickyNote, AlertTriangle,
   Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
-  ClipboardList, Plus, ChevronRight, User, Building2, Loader2,
+  ClipboardList, Plus, ChevronRight, User, Building2, Loader2, Search, X,
 } from 'lucide-react';
 import { getCliente } from '@/data/latMockData';
 import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
@@ -11,6 +11,7 @@ import { GestionDialog } from '@/components/GestionDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useClientes } from '@/hooks/useSharedQueries';
 
 // ── Configs ───────────────────────────────────────────────────────────────────
 
@@ -42,18 +43,21 @@ const statusDot: Record<string, string> = {
   done:   'bg-status-done',
 };
 
-type ActiveTab = 'chat' | 'gestiones' | 'templates';
+type ActiveTab = 'chat' | 'gestiones' | 'cliente';
 
 interface ConversacionPanelProps {
   conversacion: LatConversacion;
 }
 
 export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
-  const [inputValue, setInputValue] = useState('');
-  const [showNota, setShowNota]     = useState(false);
-  const [activeTab, setActiveTab]   = useState<ActiveTab>('chat');
+  const [inputValue, setInputValue]         = useState('');
+  const [showNota, setShowNota]             = useState(false);
+  const [activeTab, setActiveTab]           = useState<ActiveTab>('chat');
   const [showCreateGestion, setShowCreateGestion] = useState(false);
+  const [vincularSearch, setVincularSearch] = useState('');
+  const [showVincular, setShowVincular]     = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
   const isMock = conversacion._source === 'mock';
 
@@ -103,6 +107,47 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   });
 
   const activeGestiones = gestiones.filter(g => g.pipeline_stages?.global_status !== 'done');
+
+  // ── Cliente desde BD ──────────────────────────────────────────────────────
+  const { data: clienteDB } = useQuery<any>({
+    queryKey: ['lat-cliente-db', clienteId],
+    queryFn: async () => {
+      if (!clienteId) return null;
+      const { data } = await (supabase as any)
+        .from('clientes')
+        .select('id, nombre_completo, razon_social, email, telefono, tipo_cliente, documento_numero, nit')
+        .eq('id', clienteId)
+        .single();
+      return data ?? null;
+    },
+    enabled: !!clienteId && !isMock,
+  });
+
+  const { data: todosClientes = [] } = useClientes();
+
+  const clientesFiltrados = vincularSearch.length >= 2
+    ? todosClientes.filter(c => {
+        const q = vincularSearch.toLowerCase();
+        return (
+          c.nombre_completo?.toLowerCase().includes(q) ||
+          c.razon_social?.toLowerCase().includes(q) ||
+          c.telefono?.includes(vincularSearch) ||
+          c.documento_numero?.includes(vincularSearch) ||
+          c.nit?.includes(vincularSearch)
+        );
+      }).slice(0, 8)
+    : [];
+
+  const handleVincularCliente = async (cId: string, cNombre: string) => {
+    await supabase
+      .from('lat_conversaciones')
+      .update({ cliente_id: cId, cliente_nombre: cNombre })
+      .eq('id', conversacion.id);
+    queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', cId] });
+    setShowVincular(false);
+    setVincularSearch('');
+  };
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = async () => {
@@ -161,6 +206,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center">
                 {activeGestiones.length > 9 ? '9+' : activeGestiones.length}
               </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('cliente')}
+            title="Cliente"
+            className={`p-1.5 rounded-md transition-colors relative ${activeTab === 'cliente' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
+          >
+            <User className="w-4 h-4" />
+            {!clienteId && !isMock && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-warning" />
             )}
           </button>
         </div>
@@ -323,6 +378,103 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </div>
       )}
 
+      {/* ── Tab: CLIENTE ── */}
+      {activeTab === 'cliente' && (
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
+          {isMock ? (
+            <div className="text-center py-8 text-muted-foreground text-xs">Disponible solo en modo real.</div>
+          ) : clienteDB ? (
+            <>
+              <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-xl">
+                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {clienteDB.nombre_completo ?? clienteDB.razon_social ?? '—'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground capitalize">{clienteDB.tipo_cliente ?? 'cliente'}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {(clienteDB.documento_numero || clienteDB.nit) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground w-16 shrink-0">CI / NIT</span>
+                    <span className="text-foreground">{clienteDB.documento_numero ?? clienteDB.nit}</span>
+                  </div>
+                )}
+                {clienteDB.telefono && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground w-16 shrink-0">Teléfono</span>
+                    <span className="text-foreground">{clienteDB.telefono}</span>
+                  </div>
+                )}
+                {clienteDB.email && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground w-16 shrink-0">Email</span>
+                    <span className="text-foreground truncate">{clienteDB.email}</span>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
+                <User className="w-5 h-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Cliente no registrado</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {conversacion.telefono ? `Número: ${conversacion.telefono}` : 'Sin número asociado'}
+                </p>
+              </div>
+              {!showVincular ? (
+                <button
+                  onClick={() => setShowVincular(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors"
+                >
+                  <Search className="w-3.5 h-3.5" /> Vincular a cliente existente
+                </button>
+              ) : (
+                <div className="w-full space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Nombre, CI, NIT o teléfono..."
+                      value={vincularSearch}
+                      onChange={e => setVincularSearch(e.target.value)}
+                      className="w-full bg-muted/50 text-xs rounded-lg pl-8 pr-8 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <button onClick={() => { setShowVincular(false); setVincularSearch(''); }} className="absolute right-2 top-1/2 -translate-y-1/2">
+                      <X className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                  </div>
+                  {clientesFiltrados.length > 0 && (
+                    <div className="border border-border rounded-lg overflow-hidden bg-card">
+                      {clientesFiltrados.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => handleVincularCliente(c.id, c.nombre_completo ?? c.razon_social ?? '')}
+                          className="w-full text-left px-3 py-2 hover:bg-accent/50 transition-colors border-b border-border/50 last:border-0"
+                        >
+                          <p className="text-xs font-medium truncate">{c.nombre_completo ?? c.razon_social}</p>
+                          <p className="text-[10px] text-muted-foreground">{c.telefono ?? c.email ?? (c.documento_numero ? `CI: ${c.documento_numero}` : '')}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {vincularSearch.length >= 2 && clientesFiltrados.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground text-center py-2">Sin resultados</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── GestionDialog (nueva gestión desde chat) ── */}
       <GestionDialog
         open={showCreateGestion}
@@ -394,5 +546,4 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   );
 }
 
-// Suppress unused import warnings
-void User; void Building2;
+void Building2;
