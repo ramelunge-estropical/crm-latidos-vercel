@@ -17,12 +17,17 @@ import {
   FileText, MessageSquare, Paperclip, History, Activity,
   User, Calendar, Tag, Upload, Send, Trash2, ArrowRight,
   Hash, CheckSquare, Plus, ChevronRight,
-  Zap, UserCheck, Pencil, X, Check, Link2, Building2, Settings
+  Zap, UserCheck, Pencil, X, Check, Link2, Building2, Settings,
+  MoreVertical, RefreshCw, Phone, Mail, ExternalLink
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
+import { ReactivarConversacionDialog } from "@/components/integration/ReactivarConversacionDialog";
 
 interface GestionDetailViewProps {
   open: boolean;
@@ -52,6 +57,19 @@ const typeConfig: Record<string, { label: string; className: string }> = {
   caso:      { label: "Caso",      className: "bg-emerald-500/10 text-emerald-600" },
 };
 
+const eventLabel = (t: string) => {
+  switch (t) {
+    case "gestion_created_from_conv": return "Gestión creada desde una conversación";
+    case "gestion_created_for_conv":  return "Conversación creada desde la gestión";
+    case "conv_linked":               return "Conversación vinculada";
+    case "conv_unlinked":             return "Conversación desvinculada";
+    case "conv_reactivated":          return "Conversación reactivada";
+    case "conv_reassigned":           return "Conversación reasignada";
+    case "derivacion_interna":        return "Derivación interna";
+    default:                          return t;
+  }
+};
+
 export function GestionDetailView({ open, onOpenChange, gestionId, processId }: GestionDetailViewProps) {
   const queryClient = useQueryClient();
   const { isAdmin } = useCurrentUserRol();
@@ -75,6 +93,9 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
   // New task
   const [newTaskText, setNewTaskText]   = useState("");
   const [addingTask,  setAddingTask]    = useState(false);
+
+  // Integración Bandeja <-> Mis Gestiones
+  const [reactivarOpen, setReactivarOpen] = useState(false);
 
   // ── Queries ────────────────────────────────────────────────────────────
   const { data: gestion, isLoading } = useQuery({
@@ -140,6 +161,34 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
       if (error) throw error;
       return data;
     },
+  });
+
+  // Conversaciones vinculadas a esta gestión (1:N)
+  const { data: linkedConvs = [] } = useQuery({
+    queryKey: ["gestion-linked-convs", gestionId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("lat_conversaciones")
+        .select("id, canal, asunto, estado, ultima_interaccion, ultimo_mensaje, responsable_nombre")
+        .eq("gestion_id", gestionId)
+        .order("ultima_interaccion", { ascending: false });
+      return (data as any[]) || [];
+    },
+    enabled: !!gestionId,
+  });
+
+  // Eventos de auditoría entre módulos
+  const { data: convEvents = [] } = useQuery({
+    queryKey: ["gestion-conv-events", gestionId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("gestion_conversation_events")
+        .select("*")
+        .eq("gestion_id", gestionId)
+        .order("created_at", { ascending: false });
+      return (data as any[]) || [];
+    },
+    enabled: !!gestionId,
   });
 
   // ── Derived state ──────────────────────────────────────────────────────
@@ -332,6 +381,33 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 {gestion.title}
               </span>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  title="Más acciones"
+                  aria-label="Más acciones"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem onClick={() => setReactivarOpen(true)} className="text-xs gap-2">
+                  <RefreshCw className="w-3.5 h-3.5" /> Reactivar / crear comunicación
+                </DropdownMenuItem>
+                {linkedConvs.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setActiveTab("comunicaciones")}
+                      className="text-xs gap-2"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" /> Ver comunicaciones vinculadas ({linkedConvs.length})
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Badges row */}
@@ -551,7 +627,52 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
 
                 {/* ── Comunicaciones ── */}
                 <TabsContent value="comunicaciones" className="mt-0">
-                  <div className="space-y-3">
+                  <div className="space-y-4">
+                    {/* Comunicaciones vinculadas (Bandeja) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Vinculadas desde Bandeja
+                        </h4>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => setReactivarOpen(true)}>
+                          <RefreshCw className="w-3 h-3" /> Reactivar / crear
+                        </Button>
+                      </div>
+                      {linkedConvs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-3 border border-dashed border-border rounded-md">
+                          Sin comunicaciones vinculadas
+                        </p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {linkedConvs.map((c: any) => {
+                            const Icon = c.canal === "phone" ? Phone : c.canal === "email" ? Mail : MessageSquare;
+                            return (
+                              <div key={c.id} className="flex items-center gap-2 p-2 rounded-md border border-border bg-muted/30">
+                                <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium truncate">{c.asunto || "(sin asunto)"}</p>
+                                  <p className="text-[10px] text-muted-foreground truncate">
+                                    {c.estado}{c.responsable_nombre ? ` · ${c.responsable_nombre}` : ""}
+                                    {c.ultima_interaccion ? ` · ${format(new Date(c.ultima_interaccion), "dd MMM HH:mm", { locale: es })}` : ""}
+                                  </p>
+                                </div>
+                                <Badge variant="outline" className="text-[9px] capitalize">{c.canal}</Badge>
+                                <a
+                                  href={`#bandeja:${c.id}`}
+                                  className="p-1 rounded hover:bg-accent/50 text-muted-foreground"
+                                  title="Abrir en Bandeja"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Comentarios internos (existente) */}
+                    <div className="space-y-3 pt-2 border-t border-border">
                     <div className="flex gap-2">
                       <Input placeholder="Tu nombre" value={authorName} onChange={(e) => setAuthorName(e.target.value)} className="w-32 text-xs h-8" />
                       <Input placeholder="Escribí un comentario..." value={commentText}
@@ -573,6 +694,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                         </div>
                       ))}
                       {comments.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin comentarios</p>}
+                    </div>
                     </div>
                   </div>
                 </TabsContent>
@@ -610,6 +732,18 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 {/* ── Historial ── */}
                 <TabsContent value="historial" className="mt-0">
                   <div className="space-y-2">
+                    {convEvents.map((e: any) => (
+                      <div key={e.id} className="flex items-center gap-2 p-2 rounded-lg border border-border text-sm">
+                        <Link2 className="w-4 h-4 text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs">{eventLabel(e.event_type)}</span>
+                          <p className="text-[10px] text-muted-foreground">
+                            {format(new Date(e.created_at), "dd MMM yyyy HH:mm", { locale: es })}
+                            {e.actor_name ? ` · ${e.actor_name}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                     {history.map((h: any) => (
                       <div key={h.id} className="flex items-center gap-2 p-2 rounded-lg border border-border text-sm">
                         <ArrowRight className="w-4 h-4 text-primary shrink-0" />
@@ -619,7 +753,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                         </div>
                       </div>
                     ))}
-                    {history.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin historial</p>}
+                    {history.length === 0 && convEvents.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin historial</p>}
                   </div>
                 </TabsContent>
 
@@ -867,6 +1001,14 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
 
         </div>
       </DialogContent>
+      <ReactivarConversacionDialog
+        open={reactivarOpen}
+        onOpenChange={setReactivarOpen}
+        gestionId={gestionId}
+        clienteId={gestion.cliente_id}
+        clienteNombre={gestion.cliente_nombre}
+        onDone={() => queryClient.invalidateQueries({ queryKey: ["gestion-linked-convs", gestionId] })}
+      />
     </Dialog>
   );
 }

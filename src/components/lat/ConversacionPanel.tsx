@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import {
   Send, Paperclip, FileText, StickyNote, AlertTriangle,
-  Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info
+  Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
+  MoreVertical, Link2, Plus, ExternalLink
 } from 'lucide-react';
 import { Conversacion, getMensajes, getCliente, Mensaje, plantillas } from '@/data/latMockData';
 import type { Canal, EstadoMensaje } from '@/data/latMockData';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu';
+import { LinkGestionDialog } from '@/components/integration/LinkGestionDialog';
+import { Badge } from '@/components/ui/badge';
 
 const canalMeta: Record<Canal, { icon: typeof MessageSquare; label: string; color: string }> = {
   whatsapp: { icon: MessageSquare, label: 'WhatsApp', color: 'text-whatsapp' },
@@ -30,6 +36,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [showNota, setShowNota] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'templates'>('chat');
+  const [linkOpen, setLinkOpen] = useState(false);
+  // Vínculo simulado en mock: si la conversación-mock quedó vinculada en esta sesión, lo recordamos en memoria.
+  const [linkedGestionId, setLinkedGestionId] = useState<string | null>(null);
 
   const mensajes = getMensajes(conversacion.id);
   const cliente = getCliente(conversacion.clienteId);
@@ -52,6 +61,11 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {linkedGestionId && (
+            <Badge variant="outline" className="text-[9px] gap-1 h-5">
+              <Link2 className="w-2.5 h-2.5" /> Gestión vinculada
+            </Badge>
+          )}
           {isWhatsapp && (
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
               isOutOfWindow ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success'
@@ -66,8 +80,50 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           >
             <FileText className="w-4 h-4" />
           </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+                title="Más acciones"
+                aria-label="Más acciones"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => setLinkOpen(true)} className="text-xs gap-2">
+                <Plus className="w-3.5 h-3.5" /> Crear gestión desde esta conversación
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLinkOpen(true)} className="text-xs gap-2">
+                <Link2 className="w-3.5 h-3.5" /> Vincular a gestión existente
+              </DropdownMenuItem>
+              {linkedGestionId && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-xs gap-2" disabled>
+                    <ExternalLink className="w-3.5 h-3.5" /> Abrir gestión vinculada
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
+
+      <LinkGestionDialog
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+        conversation={{
+          id: conversacion.id,
+          canal: conversacion.canal,
+          cliente_id: null,
+          cliente_nombre: cliente?.nombre || null,
+          asunto: conversacion.asunto,
+          ultimo_mensaje: conversacion.ultimoMensaje,
+          __mock: true,
+        }}
+        onLinked={(id) => setLinkedGestionId(id)}
+      />
 
       {activeTab === 'chat' ? (
         <>
