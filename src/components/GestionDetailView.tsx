@@ -28,7 +28,7 @@ interface GestionDetailViewProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gestionId: string;
-  processId: string;
+  processId?: string;
 }
 
 const GLOBAL_STEPS = [

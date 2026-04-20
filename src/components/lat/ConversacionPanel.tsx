@@ -8,6 +8,7 @@ import {
 import { getCliente } from '@/data/latMockData';
 import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
 import { GestionDialog } from '@/components/GestionDialog';
+import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
@@ -55,9 +56,10 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [showNota, setShowNota]             = useState(false);
   const [activeTab, setActiveTab]           = useState<ActiveTab>('cliente');
   const [showCreateGestion, setShowCreateGestion] = useState(false);
-  const [vincularSearch, setVincularSearch]   = useState('');
-  const [showVincular, setShowVincular]       = useState(false);
+  const [vincularSearch, setVincularSearch]     = useState('');
+  const [showVincular, setShowVincular]         = useState(false);
   const [showCrearCliente, setShowCrearCliente] = useState(false);
+  const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -393,8 +395,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 return (
                   <div
                     key={g.id}
-                    className={`flex items-start gap-2.5 rounded-xl p-3 border transition-colors ${
-                      isDone ? 'bg-muted/20 border-border/50 opacity-60' : 'bg-card border-border hover:border-primary/30'
+                    onClick={() => setSelectedGestionId(g.id)}
+                    className={`flex items-start gap-2.5 rounded-xl p-3 border transition-colors cursor-pointer ${
+                      isDone ? 'bg-muted/20 border-border/50 opacity-60 hover:opacity-80' : 'bg-card border-border hover:border-primary/30 hover:bg-accent/30'
                     }`}
                   >
                     <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${statusDot[status] || 'bg-muted'}`} />
@@ -552,6 +555,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         onOpenChange={setShowCreateGestion}
         defaultClienteId={clienteId}
         defaultClienteNombre={clienteNombre !== 'Cliente' ? clienteNombre : undefined}
+      />
+
+      <GestionDetailView
+        open={!!selectedGestionId}
+        onOpenChange={(o) => { if (!o) setSelectedGestionId(null); }}
+        gestionId={selectedGestionId ?? ''}
       />
 
       <CreateClienteDialog
