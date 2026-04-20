@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import {
   Send, Paperclip, FileText, StickyNote, AlertTriangle,
-  Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info
+  Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
+  MoreVertical, Link2, Plus, ExternalLink
 } from 'lucide-react';
 import { Conversacion, getMensajes, getCliente, Mensaje, plantillas } from '@/data/latMockData';
 import type { Canal, EstadoMensaje } from '@/data/latMockData';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator
+} from '@/components/ui/dropdown-menu';
+import { LinkGestionDialog } from '@/components/integration/LinkGestionDialog';
+import { Badge } from '@/components/ui/badge';
 
 const canalMeta: Record<Canal, { icon: typeof MessageSquare; label: string; color: string }> = {
   whatsapp: { icon: MessageSquare, label: 'WhatsApp', color: 'text-whatsapp' },
