@@ -206,14 +206,10 @@ export function useSendMensaje() {
     try {
       if (tipo === "outbound") {
         // Enviar via Edge Function (llama a Gupshup + guarda en BD)
-        const { data: { session } } = await supabase.auth.getSession();
-        const supabaseUrl = (supabase as any).supabaseUrl as string;
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
         const res = await fetch(`${supabaseUrl}/functions/v1/wpp-send`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversacion_id: conversacionId,
             contenido: contenido.trim(),
