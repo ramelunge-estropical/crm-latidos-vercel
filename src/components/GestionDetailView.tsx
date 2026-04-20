@@ -682,6 +682,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                       ))}
                       {comments.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin comentarios</p>}
                     </div>
+                    </div>
                   </div>
                 </TabsContent>
 
