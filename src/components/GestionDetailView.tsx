@@ -368,6 +368,33 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 {gestion.title}
               </span>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  title="Más acciones"
+                  aria-label="Más acciones"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuItem onClick={() => setReactivarOpen(true)} className="text-xs gap-2">
+                  <RefreshCw className="w-3.5 h-3.5" /> Reactivar / crear comunicación
+                </DropdownMenuItem>
+                {linkedConvs.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => setActiveTab("comunicaciones")}
+                      className="text-xs gap-2"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" /> Ver comunicaciones vinculadas ({linkedConvs.length})
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {/* Badges row */}
