@@ -719,6 +719,18 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 {/* ── Historial ── */}
                 <TabsContent value="historial" className="mt-0">
                   <div className="space-y-2">
+                    {convEvents.map((e: any) => (
+                      <div key={e.id} className="flex items-center gap-2 p-2 rounded-lg border border-border text-sm">
+                        <Link2 className="w-4 h-4 text-primary shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs">{eventLabel(e.event_type)}</span>
+                          <p className="text-[10px] text-muted-foreground">
+                            {format(new Date(e.created_at), "dd MMM yyyy HH:mm", { locale: es })}
+                            {e.actor_name ? ` · ${e.actor_name}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                     {history.map((h: any) => (
                       <div key={h.id} className="flex items-center gap-2 p-2 rounded-lg border border-border text-sm">
                         <ArrowRight className="w-4 h-4 text-primary shrink-0" />
@@ -728,7 +740,7 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                         </div>
                       </div>
                     ))}
-                    {history.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin historial</p>}
+                    {history.length === 0 && convEvents.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Sin historial</p>}
                   </div>
                 </TabsContent>
 
@@ -976,6 +988,14 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
 
         </div>
       </DialogContent>
+      <ReactivarConversacionDialog
+        open={reactivarOpen}
+        onOpenChange={setReactivarOpen}
+        gestionId={gestionId}
+        clienteId={gestion.cliente_id}
+        clienteNombre={gestion.cliente_nombre}
+        onDone={() => queryClient.invalidateQueries({ queryKey: ["gestion-linked-convs", gestionId] })}
+      />
     </Dialog>
   );
 }
