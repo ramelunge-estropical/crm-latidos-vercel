@@ -146,7 +146,7 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
     if (!name) return;
     const stages = stagesFor(processId);
     const order  = stages.length > 0 ? Math.max(...stages.map(s => s.order)) + 1 : 0;
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from("pipeline_stages").insert({ process_id: processId, name, order, global_status: status });
     if (error) { toast.error(error.message); return; }
     invalidate();

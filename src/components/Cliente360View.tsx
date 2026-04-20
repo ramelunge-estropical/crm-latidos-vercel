@@ -59,7 +59,7 @@ type Documento = {
 };
 
 type Banco       = { id: string; banco: string; tipo_cuenta: string | null; observaciones: string | null };
-type Lealtad     = { id: string; programa: string; numero_membresia: string | null; estado: string | null; nivel: string | null; millas_acumuladas: number | null };
+type Lealtad     = { id: string; programa: string; numero_membresia: string | null; estado: string | null; nivel: string | null; millas_acumuladas: number | null; observaciones: string | null };
 type Viaje       = { id: string; destino: string; fecha_salida: string | null; fecha_regreso: string | null; tipo_viaje: string | null; estado: string | null; monto: number | null };
 type IdeaViaje   = { id: string; destino: string; notas: string | null; prioridad: string | null };
 type Referido    = { id: string; referido_nombre: string | null; tipo: string; fecha: string | null; observaciones: string | null };
