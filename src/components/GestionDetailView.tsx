@@ -17,12 +17,17 @@ import {
   FileText, MessageSquare, Paperclip, History, Activity,
   User, Calendar, Tag, Upload, Send, Trash2, ArrowRight,
   Hash, CheckSquare, Plus, ChevronRight,
-  Zap, UserCheck, Pencil, X, Check, Link2, Building2, Settings
+  Zap, UserCheck, Pencil, X, Check, Link2, Building2, Settings,
+  MoreVertical, RefreshCw, Phone, Mail, ExternalLink
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
+import { ReactivarConversacionDialog } from "@/components/integration/ReactivarConversacionDialog";
 
 interface GestionDetailViewProps {
   open: boolean;
