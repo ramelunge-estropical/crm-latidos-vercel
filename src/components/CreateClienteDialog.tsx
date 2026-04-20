@@ -136,11 +136,12 @@ interface CreateClienteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialNombre?: string;
+  initialTelefono?: string;
 }
 
-export function CreateClienteDialog({ open, onOpenChange, initialNombre = "" }: CreateClienteDialogProps) {
+export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "" }: CreateClienteDialogProps) {
   const queryClient = useQueryClient();
-  const [form, setForm]           = useState<FormData>({ ...EMPTY_FORM, nombre_completo: initialNombre });
+  const [form, setForm]           = useState<FormData>({ ...EMPTY_FORM, nombre_completo: initialNombre, telefono: initialTelefono });
   const [saving, setSaving]       = useState(false);
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);

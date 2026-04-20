@@ -8,6 +8,7 @@ import {
 import { getCliente } from '@/data/latMockData';
 import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
 import { GestionDialog } from '@/components/GestionDialog';
+import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -54,8 +55,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [showNota, setShowNota]             = useState(false);
   const [activeTab, setActiveTab]           = useState<ActiveTab>('chat');
   const [showCreateGestion, setShowCreateGestion] = useState(false);
-  const [vincularSearch, setVincularSearch] = useState('');
-  const [showVincular, setShowVincular]     = useState(false);
+  const [vincularSearch, setVincularSearch]   = useState('');
+  const [showVincular, setShowVincular]       = useState(false);
+  const [showCrearCliente, setShowCrearCliente] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -429,12 +431,20 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 </p>
               </div>
               {!showVincular ? (
-                <button
-                  onClick={() => setShowVincular(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors"
-                >
-                  <Search className="w-3.5 h-3.5" /> Vincular a cliente existente
-                </button>
+                <div className="flex flex-col gap-2 w-full">
+                  <button
+                    onClick={() => setShowCrearCliente(true)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Crear cliente
+                  </button>
+                  <button
+                    onClick={() => setShowVincular(true)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors"
+                  >
+                    <Search className="w-3.5 h-3.5" /> Vincular a cliente existente
+                  </button>
+                </div>
               ) : (
                 <div className="w-full space-y-2">
                   <div className="relative">
@@ -475,12 +485,24 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </div>
       )}
 
-      {/* ── GestionDialog (nueva gestión desde chat) ── */}
       <GestionDialog
         open={showCreateGestion}
         onOpenChange={setShowCreateGestion}
         defaultClienteId={clienteId}
         defaultClienteNombre={clienteNombre !== 'Cliente' ? clienteNombre : undefined}
+      />
+
+      <CreateClienteDialog
+        open={showCrearCliente}
+        onOpenChange={(open) => {
+          setShowCrearCliente(open);
+          if (!open) {
+            queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
+            queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', clienteId] });
+          }
+        }}
+        initialTelefono={conversacion.telefono ?? ''}
+        initialNombre={conversacion.cliente_nombre ?? ''}
       />
     </div>
   );
