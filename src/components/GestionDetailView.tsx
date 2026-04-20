@@ -150,6 +150,34 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
     },
   });
 
+  // Conversaciones vinculadas a esta gestión (1:N)
+  const { data: linkedConvs = [] } = useQuery({
+    queryKey: ["gestion-linked-convs", gestionId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("lat_conversaciones")
+        .select("id, canal, asunto, estado, ultima_interaccion, ultimo_mensaje, responsable_nombre")
+        .eq("gestion_id", gestionId)
+        .order("ultima_interaccion", { ascending: false });
+      return (data as any[]) || [];
+    },
+    enabled: !!gestionId,
+  });
+
+  // Eventos de auditoría entre módulos
+  const { data: convEvents = [] } = useQuery({
+    queryKey: ["gestion-conv-events", gestionId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("gestion_conversation_events")
+        .select("*")
+        .eq("gestion_id", gestionId)
+        .order("created_at", { ascending: false });
+      return (data as any[]) || [];
+    },
+    enabled: !!gestionId,
+  });
+
   // ── Derived state ──────────────────────────────────────────────────────
   const currentStage    = stages.find((s) => s.id === gestion?.stage_id);
   const currentGlobal   = currentStage?.global_status || "to_do";
