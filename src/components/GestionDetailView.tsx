@@ -81,6 +81,9 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
   const [newTaskText, setNewTaskText]   = useState("");
   const [addingTask,  setAddingTask]    = useState(false);
 
+  // Integración Bandeja <-> Mis Gestiones
+  const [reactivarOpen, setReactivarOpen] = useState(false);
+
   // ── Queries ────────────────────────────────────────────────────────────
   const { data: gestion, isLoading } = useQuery({
     queryKey: ["gestion-detail", gestionId],
