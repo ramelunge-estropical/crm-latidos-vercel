@@ -200,19 +200,41 @@ export function useSendMensaje() {
     autorNombre?: string,
   ) => {
     if (isMock) {
-      // En modo mock: solo simulamos (no persiste)
       return { ok: true, simulated: true };
     }
     setLoading(true);
     try {
-      const { error } = await (supabase as any).from("lat_mensajes").insert({
-        conversacion_id: conversacionId,
-        tipo,
-        contenido: contenido.trim(),
-        estado: "enviado",
-        autor_nombre: autorNombre ?? null,
-      });
-      if (error) throw error;
+      if (tipo === "outbound") {
+        // Enviar via Edge Function (llama a Gupshup + guarda en BD)
+        const { data: { session } } = await supabase.auth.getSession();
+        const supabaseUrl = (supabase as any).supabaseUrl as string;
+        const res = await fetch(`${supabaseUrl}/functions/v1/wpp-send`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {}),
+          },
+          body: JSON.stringify({
+            conversacion_id: conversacionId,
+            contenido: contenido.trim(),
+            autor_nombre: autorNombre ?? null,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.error ?? "Error al enviar mensaje");
+        }
+      } else {
+        // Nota interna: directo a BD
+        const { error } = await (supabase as any).from("lat_mensajes").insert({
+          conversacion_id: conversacionId,
+          tipo,
+          contenido: contenido.trim(),
+          estado: "enviado",
+          autor_nombre: autorNombre ?? null,
+        });
+        if (error) throw error;
+      }
       queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] });
       return { ok: true };
     } catch (err: any) {
