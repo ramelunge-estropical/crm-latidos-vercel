@@ -53,7 +53,7 @@ interface ConversacionPanelProps {
 export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [inputValue, setInputValue]         = useState('');
   const [showNota, setShowNota]             = useState(false);
-  const [activeTab, setActiveTab]           = useState<ActiveTab>('chat');
+  const [activeTab, setActiveTab]           = useState<ActiveTab>('cliente');
   const [showCreateGestion, setShowCreateGestion] = useState(false);
   const [vincularSearch, setVincularSearch]   = useState('');
   const [showVincular, setShowVincular]       = useState(false);
@@ -111,19 +111,33 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const activeGestiones = gestiones.filter(g => g.pipeline_stages?.global_status !== 'done');
 
   // ── Cliente desde BD ──────────────────────────────────────────────────────
-  const { data: clienteDB } = useQuery<any>({
-    queryKey: ['lat-cliente-db', clienteId],
+  const telefono = conversacion.telefono ?? '';
+
+  const { data: clienteDBResult } = useQuery<any[]>({
+    queryKey: ['lat-cliente-db', clienteId, telefono],
     queryFn: async () => {
-      if (!clienteId) return null;
+      if (clienteId) {
+        const { data } = await (supabase as any)
+          .from('clientes')
+          .select('id, nombre_completo, razon_social, email, telefono, tipo_cliente, documento_numero, nit')
+          .eq('id', clienteId);
+        return data ?? [];
+      }
+      if (!telefono) return [];
+      // Buscar por teléfono (con y sin +)
+      const phone = telefono.replace(/\D/g, '');
       const { data } = await (supabase as any)
         .from('clientes')
         .select('id, nombre_completo, razon_social, email, telefono, tipo_cliente, documento_numero, nit')
-        .eq('id', clienteId)
-        .single();
-      return data ?? null;
+        .or(`telefono.eq.${phone},telefono.eq.+${phone},telefono.ilike.%${phone}%`);
+      return data ?? [];
     },
-    enabled: !!clienteId && !isMock,
+    enabled: !isMock && (!!clienteId || !!telefono),
   });
+
+  const clientesEncontrados = clienteDBResult ?? [];
+  const clienteDB           = clientesEncontrados[0] ?? null;
+  const hayDuplicados       = clientesEncontrados.length > 1;
 
   const { data: todosClientes = [] } = useClientes();
 
@@ -141,12 +155,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     : [];
 
   const handleVincularCliente = async (cId: string, cNombre: string) => {
-    await supabase
+    await (supabase as any)
       .from('lat_conversaciones')
       .update({ cliente_id: cId, cliente_nombre: cNombre })
       .eq('id', conversacion.id);
     queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
-    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', cId] });
+    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', cId, telefono] });
     setShowVincular(false);
     setVincularSearch('');
   };
@@ -387,11 +401,19 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             <div className="text-center py-8 text-muted-foreground text-xs">Disponible solo en modo real.</div>
           ) : clienteDB ? (
             <>
+              {hayDuplicados && (
+                <div className="flex items-center gap-2 bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
+                  <p className="text-[11px] text-warning">
+                    Se encontraron {clientesEncontrados.length} clientes con este número. Mostrando el primero.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-xl">
                 <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                   <User className="w-4 h-4 text-primary" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-foreground truncate">
                     {clienteDB.nombre_completo ?? clienteDB.razon_social ?? '—'}
                   </p>
@@ -418,6 +440,15 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                   </div>
                 )}
               </div>
+              <button
+                onClick={() => {
+                  const event = new CustomEvent('navigate-to-cliente360', { detail: { clienteId: clienteDB.id } });
+                  window.dispatchEvent(event);
+                }}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 border border-border text-muted-foreground rounded-lg text-xs hover:bg-accent/50 transition-colors mt-2"
+              >
+                <ChevronRight className="w-3.5 h-3.5" /> Ver perfil completo en Cliente 360
+              </button>
             </>
           ) : (
             <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
@@ -428,6 +459,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 <p className="text-sm font-medium text-foreground">Cliente no registrado</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {conversacion.telefono ? `Número: ${conversacion.telefono}` : 'Sin número asociado'}
+                </p>
+                <p className="text-[11px] text-muted-foreground/70 mt-1">
+                  Creá el cliente para poder gestionar sus datos y vincular gestiones.
                 </p>
               </div>
               {!showVincular ? (
@@ -440,9 +474,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                   </button>
                   <button
                     onClick={() => setShowVincular(true)}
-                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors"
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-border text-muted-foreground rounded-lg text-xs font-medium hover:bg-accent/50 transition-colors"
                   >
-                    <Search className="w-3.5 h-3.5" /> Vincular a cliente existente
+                    <Search className="w-3.5 h-3.5" /> Ya existe, vincular
                   </button>
                 </div>
               ) : (

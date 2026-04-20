@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ConversacionList } from './ConversacionList';
 import { ConversacionPanel } from './ConversacionPanel';
 import { Cliente360Panel } from './Cliente360Panel';
+import { ClienteDBPanel } from './ClienteDBPanel';
 import { SoftphoneWidget } from './SoftphoneWidget';
 import { getCliente } from '@/data/latMockData';
 import { useLatConversaciones } from '@/hooks/useLatData';
@@ -125,13 +126,17 @@ export function LatBandejaView() {
         )}
       </div>
 
-      {/* ── Panel Cliente 360 ────────────────────────────────────────────
-          Solo en lg+ y solo si viene de mock data (tiene el modelo Cliente)  */}
+      {/* ── Panel Cliente 360 ── */}
       {selectedConv && mockCliente && (
         <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card overflow-y-auto scrollbar-thin">
-          <Cliente360Panel
-            cliente={mockCliente}
-            conversacion={selectedConv as any}
+          <Cliente360Panel cliente={mockCliente} conversacion={selectedConv as any} />
+        </div>
+      )}
+      {selectedConv && !mockCliente && selectedConv.cliente_id && (
+        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card">
+          <ClienteDBPanel
+            clienteId={selectedConv.cliente_id}
+            conversacion={selectedConv}
           />
         </div>
       )}
