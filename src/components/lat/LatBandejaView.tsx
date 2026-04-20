@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { ConversacionList } from './ConversacionList';
 import { ConversacionPanel } from './ConversacionPanel';
 import { Cliente360Panel } from './Cliente360Panel';
@@ -56,6 +57,11 @@ export function LatBandejaView() {
   const handleSelect = (id: string) => {
     setSelectedConvId(id);
     setMobileView('chat');
+    // Marcar como leída
+    const conv = todasConversaciones.find(c => c.id === id);
+    if (conv?._source === 'db' && conv.no_leidos > 0) {
+      (supabase as any).from('lat_conversaciones').update({ no_leidos: 0 }).eq('id', id);
+    }
   };
 
   const handleBack = () => {

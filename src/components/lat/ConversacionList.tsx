@@ -109,6 +109,7 @@ export function ConversacionList({
           const CanalIcon  = canal.icon;
           const badge      = estadoBadge[conv.estado] ?? estadoBadge.en_seguimiento;
           const isSelected = conv.id === selectedId;
+          const hasUnread  = conv.no_leidos > 0;
           const timeAgo    = formatDistanceToNow(new Date(conv.ultima_interaccion), { addSuffix: false, locale: es });
 
           return (
@@ -116,28 +117,31 @@ export function ConversacionList({
               key={conv.id}
               onClick={() => onSelect(conv.id)}
               className={`w-full text-left p-3 border-b border-border/50 hover:bg-accent/50 transition-colors ${
-                isSelected ? 'bg-accent/70' : ''
+                isSelected ? 'bg-accent/70' : hasUnread ? 'bg-primary/5' : ''
               }`}
             >
               <div className="flex items-start gap-2.5">
-                <div className="mt-0.5 shrink-0">
+                <div className="mt-0.5 shrink-0 relative">
                   <CanalIcon className={`w-4 h-4 ${canal.color}`} />
+                  {hasUnread && !isSelected && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-primary" />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${prioridadDot[conv.prioridad] ?? 'bg-muted-foreground'}`} />
-                      <span className="text-xs font-medium text-foreground truncate">{nombre}</span>
+                      <span className={`text-xs truncate ${hasUnread ? 'font-bold text-foreground' : 'font-medium text-foreground'}`}>{nombre}</span>
                     </div>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo}</span>
+                    <span className={`text-[10px] shrink-0 ${hasUnread ? 'text-primary font-medium' : 'text-muted-foreground'}`}>{timeAgo}</span>
                   </div>
 
                   {conv.asunto && (
                     <p className="text-[11px] text-foreground/80 truncate mt-0.5">{conv.asunto}</p>
                   )}
                   {conv.ultimo_mensaje && (
-                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{conv.ultimo_mensaje}</p>
+                    <p className={`text-[10px] truncate mt-0.5 ${hasUnread ? 'text-foreground/70 font-medium' : 'text-muted-foreground'}`}>{conv.ultimo_mensaje}</p>
                   )}
                   {conv.telefono && conv._source === 'db' && (
                     <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">{conv.telefono}</p>
@@ -147,9 +151,9 @@ export function ConversacionList({
                     <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${badge.className}`}>
                       {badge.label}
                     </span>
-                    {conv.no_leidos > 0 && (
-                      <span className="bg-primary text-primary-foreground text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                        {conv.no_leidos}
+                    {hasUnread && (
+                      <span className="bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center justify-center">
+                        {conv.no_leidos > 9 ? '9+' : conv.no_leidos} nuevo{conv.no_leidos !== 1 ? 's' : ''}
                       </span>
                     )}
                     {conv.proxima_accion && (
