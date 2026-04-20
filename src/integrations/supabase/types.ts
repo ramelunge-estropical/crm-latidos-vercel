@@ -661,6 +661,51 @@ export type Database = {
           },
         ]
       }
+      gestion_conversation_events: {
+        Row: {
+          actor_name: string | null
+          conversacion_id: string | null
+          created_at: string
+          event_data: Json
+          event_type: string
+          gestion_id: string | null
+          id: string
+        }
+        Insert: {
+          actor_name?: string | null
+          conversacion_id?: string | null
+          created_at?: string
+          event_data?: Json
+          event_type: string
+          gestion_id?: string | null
+          id?: string
+        }
+        Update: {
+          actor_name?: string | null
+          conversacion_id?: string | null
+          created_at?: string
+          event_data?: Json
+          event_type?: string
+          gestion_id?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestion_conversation_events_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "lat_conversaciones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestion_conversation_events_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gestion_subtipos: {
         Row: {
           activo: boolean
@@ -776,9 +821,11 @@ export type Database = {
       gestiones: {
         Row: {
           area_id: string | null
+          canal_origen: string | null
           cliente_id: string | null
           cliente_nombre: string | null
           codigo: string | null
+          conversacion_id_origen: string | null
           created_at: string
           description: string | null
           due_date: string | null
@@ -797,9 +844,11 @@ export type Database = {
         }
         Insert: {
           area_id?: string | null
+          canal_origen?: string | null
           cliente_id?: string | null
           cliente_nombre?: string | null
           codigo?: string | null
+          conversacion_id_origen?: string | null
           created_at?: string
           description?: string | null
           due_date?: string | null
@@ -818,9 +867,11 @@ export type Database = {
         }
         Update: {
           area_id?: string | null
+          canal_origen?: string | null
           cliente_id?: string | null
           cliente_nombre?: string | null
           codigo?: string | null
+          conversacion_id_origen?: string | null
           created_at?: string
           description?: string | null
           due_date?: string | null
@@ -850,6 +901,13 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestiones_conversacion_id_origen_fkey"
+            columns: ["conversacion_id_origen"]
+            isOneToOne: false
+            referencedRelation: "lat_conversaciones"
             referencedColumns: ["id"]
           },
           {
@@ -883,6 +941,7 @@ export type Database = {
           cliente_nombre: string | null
           created_at: string | null
           estado: string
+          gestion_id: string | null
           id: string
           no_leidos: number | null
           prioridad: string | null
@@ -903,6 +962,7 @@ export type Database = {
           cliente_nombre?: string | null
           created_at?: string | null
           estado?: string
+          gestion_id?: string | null
           id?: string
           no_leidos?: number | null
           prioridad?: string | null
@@ -923,6 +983,7 @@ export type Database = {
           cliente_nombre?: string | null
           created_at?: string | null
           estado?: string
+          gestion_id?: string | null
           id?: string
           no_leidos?: number | null
           prioridad?: string | null
@@ -942,6 +1003,13 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lat_conversaciones_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
             referencedColumns: ["id"]
           },
           {
