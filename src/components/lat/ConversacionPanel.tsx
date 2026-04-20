@@ -369,12 +369,21 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                     ? `No hay gestiones asociadas a ${clienteNombre}.`
                     : 'No hay cliente vinculado a esta conversación.'}
                 </p>
-                <button
-                  onClick={() => setShowCreateGestion(true)}
-                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Crear primera gestión
-                </button>
+                {clienteId ? (
+                  <button
+                    onClick={() => setShowCreateGestion(true)}
+                    className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-primary text-primary rounded-lg text-xs font-medium hover:bg-primary/5 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Crear primera gestión
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setActiveTab('cliente')}
+                    className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-warning/40 text-warning rounded-lg text-xs font-medium hover:bg-warning/10 transition-colors"
+                  >
+                    <User className="w-3.5 h-3.5" /> Registrar cliente primero
+                  </button>
+                )}
               </div>
             ) : (
               gestiones.map((g: any) => {
