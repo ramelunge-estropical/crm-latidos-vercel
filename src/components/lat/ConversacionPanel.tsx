@@ -36,12 +36,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [showNota, setShowNota] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'templates'>('chat');
-
-  const [inputValue, setInputValue] = useState('');
-  const [showNota, setShowNota] = useState(false);
-  const [activeTab, setActiveTab] = useState<'chat' | 'templates'>('chat');
   const [linkOpen, setLinkOpen] = useState(false);
-  // Vínculo simulado en mock: si la conversación-mock ya quedó vinculada en esta sesión, lo recordamos en memoria.
+  // Vínculo simulado en mock: si la conversación-mock quedó vinculada en esta sesión, lo recordamos en memoria.
   const [linkedGestionId, setLinkedGestionId] = useState<string | null>(null);
 
   const mensajes = getMensajes(conversacion.id);
