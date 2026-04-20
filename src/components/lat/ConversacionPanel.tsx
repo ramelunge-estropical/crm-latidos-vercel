@@ -326,14 +326,33 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 {activeGestiones.length} activa{activeGestiones.length !== 1 ? 's' : ''} · {gestiones.length} total
               </p>
             </div>
-            <button
-              onClick={() => setShowCreateGestion(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Nueva gestión
-            </button>
+            {clienteId ? (
+              <button
+                onClick={() => setShowCreateGestion(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Nueva gestión
+              </button>
+            ) : (
+              <button
+                onClick={() => setActiveTab('cliente')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-warning/10 text-warning border border-warning/30 rounded-lg text-xs font-medium hover:bg-warning/20 transition-colors shrink-0"
+              >
+                <User className="w-3.5 h-3.5" />
+                Registrar cliente
+              </button>
+            )}
           </div>
+
+          {!clienteId && !isMock && (
+            <div className="mx-4 mt-3 flex items-start gap-2 bg-warning/10 border border-warning/20 rounded-lg px-3 py-2.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
+              <p className="text-[11px] text-warning leading-snug">
+                Para crear gestiones, primero registrá o vinculá al cliente en el tab <strong>Cliente</strong>.
+              </p>
+            </div>
+          )}
 
           {/* List */}
           <div className="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-2">
