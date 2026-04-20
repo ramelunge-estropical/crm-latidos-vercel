@@ -57,6 +57,19 @@ const typeConfig: Record<string, { label: string; className: string }> = {
   caso:      { label: "Caso",      className: "bg-emerald-500/10 text-emerald-600" },
 };
 
+const eventLabel = (t: string) => {
+  switch (t) {
+    case "gestion_created_from_conv": return "Gestión creada desde una conversación";
+    case "gestion_created_for_conv":  return "Conversación creada desde la gestión";
+    case "conv_linked":               return "Conversación vinculada";
+    case "conv_unlinked":             return "Conversación desvinculada";
+    case "conv_reactivated":          return "Conversación reactivada";
+    case "conv_reassigned":           return "Conversación reasignada";
+    case "derivacion_interna":        return "Derivación interna";
+    default:                          return t;
+  }
+};
+
 export function GestionDetailView({ open, onOpenChange, gestionId, processId }: GestionDetailViewProps) {
   const queryClient = useQueryClient();
   const { isAdmin } = useCurrentUserRol();
