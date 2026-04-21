@@ -49,6 +49,9 @@ type Cliente = {
   nacionalidad: string | null;
   ciudad: string | null;
   pais: string | null;
+  instagram: string | null;
+  facebook: string | null;
+  tiktok: string | null;
   estado: string;
   profesion: string | null;
   estado_civil: string | null;
@@ -724,6 +727,9 @@ export function Cliente360View() {
                           { label: "Email principal",      value: cliente.email },
                           { label: "Email secundario",     value: cliente.email_secundario },
                           { label: "Ciudad / País",        value: [cliente.ciudad, cliente.pais].filter(Boolean).join(" / ") || null },
+                          { label: "Instagram",            value: cliente.instagram },
+                          { label: "Facebook",             value: cliente.facebook },
+                          { label: "TikTok",               value: cliente.tiktok },
                           { label: "Asesor asignado",      value: cliente.asesor_nombre },
                         ].map(({ label, value }) => (
                           <div key={label}>
@@ -745,6 +751,9 @@ export function Cliente360View() {
                           { label: "Nacionalidad",       value: cliente.nacionalidad },
                           { label: "Ciudad / País",      value: [cliente.ciudad, cliente.pais].filter(Boolean).join(" / ") || null },
                           { label: "Profesión",          value: cliente.profesion },
+                          { label: "Instagram",          value: cliente.instagram },
+                          { label: "Facebook",           value: cliente.facebook },
+                          { label: "TikTok",             value: cliente.tiktok },
                           { label: "Estado civil",       value: cliente.estado_civil },
                           { label: "Asesor asignado",    value: cliente.asesor_nombre },
                         ].map(({ label, value }) => (

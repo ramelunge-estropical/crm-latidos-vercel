@@ -27,6 +27,9 @@ interface FormData {
   email_secundario: string;
   telefono: string;
   telefono_secundario: string;
+  instagram: string;
+  facebook: string;
+  tiktok: string;
   fecha_nacimiento: string;
   nacionalidad: string;
   ciudad: string;
@@ -60,6 +63,9 @@ const EMPTY_FORM: FormData = {
   email_secundario:    "",
   telefono:            "",
   telefono_secundario: "",
+  instagram:           "",
+  facebook:            "",
+  tiktok:              "",
   fecha_nacimiento:    "",
   nacionalidad:        "Boliviana",
   ciudad:              "",
@@ -237,6 +243,9 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
         email_secundario:    form.email_secundario || null,
         telefono:            form.telefono         || null,
         telefono_secundario: form.telefono_secundario || null,
+        instagram:           form.instagram  || null,
+        facebook:            form.facebook   || null,
+        tiktok:              form.tiktok     || null,
         fecha_nacimiento:    form.fecha_nacimiento || null,
         nacionalidad:        form.nacionalidad     || null,
         ciudad:              form.ciudad           || null,
@@ -470,6 +479,19 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
               </Field>
               <Field label="País">
                 <Input className="h-8 text-xs" value={form.pais} onChange={e => set("pais", e.target.value)} placeholder="Bolivia" />
+              </Field>
+            </div>
+
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mt-3 mb-1">Redes sociales</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Instagram">
+                <Input className="h-8 text-xs" value={form.instagram} onChange={e => set("instagram", e.target.value)} placeholder="@usuario" />
+              </Field>
+              <Field label="Facebook">
+                <Input className="h-8 text-xs" value={form.facebook} onChange={e => set("facebook", e.target.value)} placeholder="@usuario o URL" />
+              </Field>
+              <Field label="TikTok">
+                <Input className="h-8 text-xs" value={form.tiktok} onChange={e => set("tiktok", e.target.value)} placeholder="@usuario" />
               </Field>
             </div>
           </div>
