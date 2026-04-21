@@ -14,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useClientes } from '@/hooks/useSharedQueries';
+import { toast } from 'sonner';
 
 // ── Configs ───────────────────────────────────────────────────────────────────
 
@@ -181,6 +182,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     if (result.ok) {
       setInputValue('');
       setShowNota(false);
+    } else {
+      toast.error(result.error ?? 'Error al enviar el mensaje');
     }
   };
 
