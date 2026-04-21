@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateClienteDialog } from "@/components/CreateClienteDialog";
+import { GestionDetailView } from "@/components/GestionDetailView";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUserRol } from "@/hooks/useSharedQueries";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -201,7 +202,8 @@ export function Cliente360View() {
   const [showEdit,     setShowEdit]     = useState(false);
   const [editDoc,      setEditDoc]      = useState<Documento & { _new?: boolean } | null>(null);
   const [editLealtad,   setEditLealtad]   = useState<Lealtad   & { _new?: boolean } | null>(null);
-  const [editCobranza,  setEditCobranza]  = useState<Cobranza  & { _new?: boolean } | null>(null);
+  const [editCobranza,   setEditCobranza]   = useState<Cobranza  & { _new?: boolean } | null>(null);
+  const [openGestionId,  setOpenGestionId]  = useState<string | null>(null);
   const { isAdmin } = useCurrentUserRol();
   const queryClient = useQueryClient();
 
@@ -1422,7 +1424,11 @@ export function Cliente360View() {
                           const statusLabel: Record<string, string> = { to_do: "Por hacer", doing: "En curso", review: "En revisión", done: "Completada" };
                           const isOverdue = g.due_date && new Date(g.due_date) < new Date() && status !== "done";
                           return (
-                            <div key={g.id} className="flex items-start gap-3 bg-muted/30 rounded-xl p-3">
+                            <div
+                              key={g.id}
+                              onClick={() => setOpenGestionId(g.id)}
+                              className="flex items-start gap-3 bg-muted/30 rounded-xl p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                            >
                               <div className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${statusDot[status] || "bg-muted"}`} />
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-semibold truncate">{g.title}</p>
@@ -1594,6 +1600,14 @@ export function Cliente360View() {
           onOpenChange={setShowEdit}
           clienteId={cliente.id}
           clienteData={cliente}
+        />
+      )}
+
+      {openGestionId && (
+        <GestionDetailView
+          open={!!openGestionId}
+          onOpenChange={open => { if (!open) setOpenGestionId(null); }}
+          gestionId={openGestionId}
         />
       )}
     </div>
