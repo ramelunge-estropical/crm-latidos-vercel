@@ -1,1 +1,7 @@
 project_id = "qadfjbgfdejmhblgvaef"
+
+[functions.gupshup-templates]
+verify_jwt = false
+
+[functions.wpp-template-suggest]
+verify_jwt = false
