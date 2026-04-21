@@ -936,7 +936,6 @@ export function Cliente360View() {
                             {Object.entries(docLabels).map(([k, v]) => (
                               <option key={k} value={k}>{v}</option>
                             ))}
-                            <option value="otro">Otro</option>
                           </select>
                         </div>
                         <div className="space-y-1">
