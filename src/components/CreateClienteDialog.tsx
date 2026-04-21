@@ -151,9 +151,12 @@ interface CreateClienteDialogProps {
   initialNombre?: string;
   initialTelefono?: string;
   initialCanal?: string;
+  clienteId?: string;
+  clienteData?: Record<string, any>;
 }
 
-export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "" }: CreateClienteDialogProps) {
+export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "", clienteId, clienteData }: CreateClienteDialogProps) {
+  const isEditMode = !!clienteId;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormData>({
     ...EMPTY_FORM,
@@ -163,12 +166,45 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
   });
   useEffect(() => {
     if (open) {
-      setForm({
-        ...EMPTY_FORM,
-        nombre_completo: initialNombre,
-        telefono:        initialTelefono,
-        canal_contacto:  initialCanal,
-      });
+      if (isEditMode && clienteData) {
+        setForm({
+          tipo_cliente:        clienteData.tipo_cliente        ?? "natural",
+          canal_contacto:      clienteData.canal_contacto      ?? "",
+          nombre_completo:     clienteData.nombre_completo     ?? "",
+          razon_social:        clienteData.razon_social        ?? "",
+          nit:                 clienteData.nit                 ?? "",
+          contacto_nombre:     clienteData.contacto_nombre     ?? "",
+          contacto_cargo:      clienteData.contacto_cargo      ?? "",
+          documento_tipo:      clienteData.documento_tipo      ?? "CI",
+          documento_numero:    clienteData.documento_numero    ?? "",
+          email:               clienteData.email               ?? "",
+          email_secundario:    clienteData.email_secundario    ?? "",
+          telefono:            clienteData.telefono            ?? "",
+          telefono_secundario: clienteData.telefono_secundario ?? "",
+          instagram:           clienteData.instagram           ?? "",
+          facebook:            clienteData.facebook            ?? "",
+          tiktok:              clienteData.tiktok              ?? "",
+          fecha_nacimiento:    clienteData.fecha_nacimiento    ?? "",
+          nacionalidad:        clienteData.nacionalidad        ?? "Boliviana",
+          ciudad:              clienteData.ciudad              ?? "",
+          pais:                clienteData.pais                ?? "Bolivia",
+          estado:              clienteData.estado              ?? "activo",
+          profesion:           clienteData.profesion           ?? "",
+          estado_civil:        clienteData.estado_civil        ?? "",
+          asesor_nombre:       clienteData.asesor_nombre       ?? "",
+          club_viajes:         clienteData.club_viajes         ?? false,
+          espacio_a_bordo:     clienteData.espacio_a_bordo     ?? false,
+          pases_a_bordo:       String(clienteData.pases_a_bordo ?? "0"),
+          notas_rapidas:       clienteData.notas_rapidas       ?? "",
+        });
+      } else {
+        setForm({
+          ...EMPTY_FORM,
+          nombre_completo: initialNombre,
+          telefono:        initialTelefono,
+          canal_contacto:  initialCanal,
+        });
+      }
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -261,10 +297,15 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
         score_valor:         0,
       };
 
-      const { error } = await (supabase as any).from("clientes").insert(payload);
+      let error: any;
+      if (isEditMode) {
+        ({ error } = await (supabase as any).from("clientes").update(payload).eq("id", clienteId));
+      } else {
+        ({ error } = await (supabase as any).from("clientes").insert(payload));
+      }
       if (error) throw error;
 
-      toast.success("Cliente creado correctamente");
+      toast.success(isEditMode ? "Cliente actualizado correctamente" : "Cliente creado correctamente");
       queryClient.invalidateQueries({ queryKey: ["clientes"] });
       setForm({ ...EMPTY_FORM });
       setTranscript(null);
@@ -293,7 +334,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
               ? <Building2 className="w-4 h-4 text-violet-600" />
               : <User className="w-4 h-4 text-primary" />
             }
-            Nuevo cliente
+            {isEditMode ? "Editar cliente" : "Nuevo cliente"}
           </DialogTitle>
         </DialogHeader>
 
@@ -557,7 +598,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1" />}
-            Guardar cliente
+            {isEditMode ? "Guardar cambios" : "Guardar cliente"}
           </Button>
         </div>
       </DialogContent>

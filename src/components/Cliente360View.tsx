@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CreateClienteDialog } from "@/components/CreateClienteDialog";
 import { supabase } from "@/integrations/supabase/client";
+import { useCurrentUserRol } from "@/hooks/useSharedQueries";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,7 @@ import {
   MessageSquare, Heart, DollarSign, Wallet,
   CheckCircle2, Clock, Globe, Landmark,
   Sparkles, RefreshCw, Home, Tag, Building2, UserCircle,
-  ClipboardList,
+  ClipboardList, Pencil,
 } from "lucide-react";
 
 const priorityConfig: Record<string, { label: string; className: string }> = {
@@ -176,6 +177,8 @@ export function Cliente360View() {
   const [activeTab,    setActiveTab]    = useState("resumen");
   const [showCreate,   setShowCreate]   = useState(false);
   const [createNombre, setCreateNombre] = useState("");
+  const [showEdit,     setShowEdit]     = useState(false);
+  const { isAdmin } = useCurrentUserRol();
 
   // ── Clientes list ──
   const { data: clientes = [] } = useQuery<Cliente[]>({
@@ -706,13 +709,24 @@ export function Cliente360View() {
 
                   {/* Info básica */}
                   <div>
-                    <div className="flex items-center gap-2 mb-4">
-                      <SectionTitle icon={cliente.tipo_cliente === "juridica" ? Building2 : User}>
-                        {cliente.tipo_cliente === "juridica" ? "Datos de la empresa" : "Información básica"}
-                      </SectionTitle>
-                      <Badge variant="outline" className={`text-[10px] mb-3 ${cliente.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600 border-violet-200" : "bg-blue-500/10 text-blue-600 border-blue-200"}`}>
-                        {cliente.tipo_cliente === "juridica" ? "Persona jurídica" : "Persona natural"}
-                      </Badge>
+                    <div className="flex items-center justify-between gap-2 mb-4">
+                      <div className="flex items-center gap-2">
+                        <SectionTitle icon={cliente.tipo_cliente === "juridica" ? Building2 : User}>
+                          {cliente.tipo_cliente === "juridica" ? "Datos de la empresa" : "Información básica"}
+                        </SectionTitle>
+                        <Badge variant="outline" className={`text-[10px] mb-3 ${cliente.tipo_cliente === "juridica" ? "bg-violet-500/10 text-violet-600 border-violet-200" : "bg-blue-500/10 text-blue-600 border-blue-200"}`}>
+                          {cliente.tipo_cliente === "juridica" ? "Persona jurídica" : "Persona natural"}
+                        </Badge>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => setShowEdit(true)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 mb-3 bg-muted hover:bg-muted/80 border border-border rounded-md text-xs font-medium transition-colors shrink-0"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Editar perfil
+                        </button>
+                      )}
                     </div>
 
                     {cliente.tipo_cliente === "juridica" ? (
@@ -1131,6 +1145,15 @@ export function Cliente360View() {
         onOpenChange={setShowCreate}
         initialNombre={createNombre}
       />
+
+      {cliente && (
+        <CreateClienteDialog
+          open={showEdit}
+          onOpenChange={setShowEdit}
+          clienteId={cliente.id}
+          clienteData={cliente}
+        />
+      )}
     </div>
   );
 }
