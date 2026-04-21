@@ -4,12 +4,14 @@ import {
   Send, Paperclip, StickyNote, AlertTriangle,
   Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
   ClipboardList, Plus, ChevronRight, User, Building2, Loader2, Search, X,
+  Unlink, FileText, Sparkles,
 } from 'lucide-react';
 import { getCliente } from '@/data/latMockData';
 import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
 import { GestionDialog } from '@/components/GestionDialog';
 import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
+import { WppTemplatePicker, WppTemplate } from '@/components/lat/WppTemplatePicker';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -69,8 +71,20 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [showCrearCliente, setShowCrearCliente]   = useState(false);
   const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
   const [mostrarTodasGest, setMostrarTodasGest]   = useState(true);
+  const [showTemplates, setShowTemplates]         = useState(false);
+  const [liberando, setLiberando]                 = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  const invalidateConvAndCliente = (cId?: string | null) => {
+    queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-gestiones-cliente'] });
+    if (cId) {
+      queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', cId, telefonoRef] });
+    }
+  };
 
   const isMock = conversacion._source === 'mock';
 
