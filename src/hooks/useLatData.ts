@@ -31,6 +31,8 @@ export interface LatConversacion {
   proxima_accion: string | null;
   ventana_whatsapp: string | null;
   wpp_contact_id: string | null;
+  gestion_id: string | null;
+  en_foco: boolean;
   created_at: string;
   updated_at: string;
   // Source flag (para saber si es real o mock)
