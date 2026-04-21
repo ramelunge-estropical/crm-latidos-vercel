@@ -118,7 +118,9 @@ export function useLatConversaciones() {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [queryClient]);
 
   return { data: data ?? [], isLoading, error };
