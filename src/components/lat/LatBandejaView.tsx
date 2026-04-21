@@ -113,7 +113,7 @@ export function LatBandejaView() {
         )}
 
         {selectedConv ? (
-          <ConversacionPanel conversacion={selectedConv} />
+          <ConversacionPanel key={selectedConv.id} conversacion={selectedConv} />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             <div className="text-center px-6">
