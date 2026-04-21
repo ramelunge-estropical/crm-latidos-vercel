@@ -110,6 +110,21 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     }
   }, [mensajes, activeTab]);
 
+  // Marcar como leído al abrir la conversación (real)
+  useEffect(() => {
+    if (isMock) return;
+    if ((conversacion.no_leidos ?? 0) > 0) {
+      (supabase as any)
+        .from('lat_conversaciones')
+        .update({ no_leidos: 0 })
+        .eq('id', conversacion.id)
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversacion.id]);
+
   // ── Gestiones del cliente ─────────────────────────────────────────────────
   const { data: gestiones = [], isLoading: loadingGest } = useQuery<any[]>({
     queryKey: ['lat-gestiones-cliente', clienteId, clienteNombre],
