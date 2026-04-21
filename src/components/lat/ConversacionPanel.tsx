@@ -76,14 +76,11 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
-  const invalidateConvAndCliente = (cId?: string | null) => {
+  const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
     queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
     queryClient.invalidateQueries({ queryKey: ['lat-cliente-db'] });
     queryClient.invalidateQueries({ queryKey: ['lat-gestiones-cliente'] });
-    if (cId) {
-      queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', cId, telefonoRef] });
-    }
   };
 
   const isMock = conversacion._source === 'mock';
