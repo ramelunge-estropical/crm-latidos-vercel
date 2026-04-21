@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreateClienteDialog } from "@/components/CreateClienteDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUserRol } from "@/hooks/useSharedQueries";
@@ -182,6 +182,7 @@ export function Cliente360View() {
   const [createNombre, setCreateNombre] = useState("");
   const [showEdit,     setShowEdit]     = useState(false);
   const { isAdmin } = useCurrentUserRol();
+  const queryClient = useQueryClient();
 
   // ── Clientes list ──
   const { data: clientes = [] } = useQuery<Cliente[]>({
@@ -295,6 +296,28 @@ export function Cliente360View() {
       return data ?? [];
     }),
   });
+
+  // ── Bank toggle handlers ──
+  const toggleBanco = async (banco: string) => {
+    if (!selectedId) return;
+    const existing = bancos.find(b => b.banco === banco);
+    if (existing) {
+      await (supabase as any).from("cliente_bancos").delete().eq("id", existing.id);
+    } else {
+      await (supabase as any).from("cliente_bancos").insert({ cliente_id: selectedId, banco, tipo_cuenta: null });
+    }
+    queryClient.invalidateQueries({ queryKey: ["cliente_bancos", selectedId] });
+  };
+
+  const toggleTipoBanco = async (banco: string, tipo: string) => {
+    if (!selectedId) return;
+    const existing = bancos.find(b => b.banco === banco);
+    if (!existing) return;
+    const tipos = (existing.tipo_cuenta ?? "").split("|").filter(Boolean);
+    const newTipos = tipos.includes(tipo) ? tipos.filter(t => t !== tipo) : [...tipos, tipo];
+    await (supabase as any).from("cliente_bancos").update({ tipo_cuenta: newTipos.join("|") || null }).eq("id", existing.id);
+    queryClient.invalidateQueries({ queryKey: ["cliente_bancos", selectedId] });
+  };
 
   // ── Summary stats ──
   const totalPagado     = pagos.filter(p => p.tipo === "pago").reduce((a, b) => a + b.monto, 0);
@@ -813,17 +836,42 @@ export function Cliente360View() {
                       <p className="text-xs font-medium text-foreground mb-2.5 flex items-center gap-1.5">
                         <Landmark className="w-3.5 h-3.5 text-muted-foreground" />
                         Bancos con los que trabaja el cliente
+                        {isAdmin && <span className="ml-1 text-[10px] text-muted-foreground font-normal">(clic para editar)</span>}
                       </p>
                       <div className="grid grid-cols-3 gap-2">
                         {BANCOS_BOLIVIA.map(banco => {
-                          const activo = bancos.some(b => b.banco === banco);
+                          const rec    = bancos.find(b => b.banco === banco);
+                          const activo = !!rec;
+                          const tipos  = (rec?.tipo_cuenta ?? "").split("|").filter(Boolean);
                           return (
-                            <div key={banco} className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-[11px] transition-colors ${activo ? "bg-emerald-500/10 border-emerald-200 text-emerald-700 font-medium" : "bg-muted/20 border-border text-muted-foreground"}`}>
-                              {activo
-                                ? <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
-                                : <div className="w-3 h-3 rounded-full border border-muted-foreground/30 flex-shrink-0" />
-                              }
-                              {banco}
+                            <div key={banco} className={`rounded-lg border transition-colors ${activo ? "bg-emerald-500/10 border-emerald-200" : "bg-muted/20 border-border"}`}>
+                              <button
+                                onClick={() => isAdmin && toggleBanco(banco)}
+                                className={`w-full flex items-center gap-1.5 px-2.5 py-2 text-[11px] text-left ${activo ? "text-emerald-700 font-medium" : "text-muted-foreground"} ${isAdmin ? "cursor-pointer" : "cursor-default"}`}
+                              >
+                                {activo
+                                  ? <CheckCircle2 className="w-3 h-3 flex-shrink-0 text-emerald-600" />
+                                  : <div className="w-3 h-3 rounded-full border border-muted-foreground/30 flex-shrink-0" />
+                                }
+                                {banco}
+                              </button>
+                              {activo && (
+                                <div className="flex gap-1 px-2 pb-2">
+                                  {(["Cuenta", "TC", "TD"] as const).map(t => {
+                                    const key = t.toLowerCase();
+                                    const on  = tipos.includes(key);
+                                    return (
+                                      <button
+                                        key={t}
+                                        onClick={() => isAdmin && toggleTipoBanco(banco, key)}
+                                        className={`text-[9px] px-1.5 py-0.5 rounded font-medium border transition-colors ${on ? "bg-emerald-600 text-white border-emerald-600" : "bg-background text-muted-foreground border-border"} ${isAdmin ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+                                      >
+                                        {t}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1005,6 +1053,29 @@ export function Cliente360View() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Bancos del cliente */}
+                  {bancos.length > 0 && (
+                    <div className="mb-5">
+                      <SectionTitle icon={Landmark}>Bancos del cliente</SectionTitle>
+                      <div className="flex flex-wrap gap-2">
+                        {bancos.map(b => {
+                          const tipos = (b.tipo_cuenta ?? "").split("|").filter(Boolean);
+                          return (
+                            <div key={b.id} className="flex items-center gap-1.5 bg-muted/30 border border-border rounded-lg px-3 py-2">
+                              <Landmark className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                              <span className="text-xs font-medium">{b.banco}</span>
+                              {tipos.map(t => (
+                                <span key={t} className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 uppercase">
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <SectionTitle icon={DollarSign}>Movimientos</SectionTitle>
                   {pagos.length === 0 ? (
