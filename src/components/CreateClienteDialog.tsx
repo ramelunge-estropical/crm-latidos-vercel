@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -158,6 +158,15 @@ interface CreateClienteDialogProps {
 export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "", clienteId, clienteData }: CreateClienteDialogProps) {
   const isEditMode = !!clienteId;
   const queryClient = useQueryClient();
+
+  const { data: colaboradores = [] } = useQuery<{ id: string; nombre: string }[]>({
+    queryKey: ["colaboradores-list"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("colaboradores").select("id, nombre").order("nombre");
+      return data ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
   const [form, setForm] = useState<FormData>({
     ...EMPTY_FORM,
     nombre_completo: initialNombre,
@@ -259,7 +268,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
       toast.error("Ingresá al menos el nombre o razón social");
       return;
     }
-    if (!form.canal_contacto) {
+    if (!isEditMode && !form.canal_contacto) {
       toast.error("Seleccioná el canal de contacto");
       return;
     }
@@ -556,7 +565,16 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
                 </select>
               </Field>
               <Field label="Asesor asignado">
-                <Input className="h-8 text-xs" value={form.asesor_nombre} onChange={e => set("asesor_nombre", e.target.value)} placeholder="Nombre del asesor" />
+                <select
+                  className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                  value={form.asesor_nombre}
+                  onChange={e => set("asesor_nombre", e.target.value)}
+                >
+                  <option value="">— Sin asesor —</option>
+                  {colaboradores.map(c => (
+                    <option key={c.id} value={c.nombre}>{c.nombre}</option>
+                  ))}
+                </select>
               </Field>
             </div>
 
