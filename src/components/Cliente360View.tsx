@@ -121,7 +121,10 @@ function docVigencia(fecha: string | null): { label: string; className: string }
 
 function fmtDate(iso: string | null, opts?: Intl.DateTimeFormatOptions) {
   if (!iso) return null;
-  return new Date(iso).toLocaleDateString("es-AR", opts ?? { day: "2-digit", month: "short", year: "numeric" });
+  // Append T00:00:00 for date-only strings (YYYY-MM-DD) so JS parses as
+  // local midnight instead of UTC midnight (avoids off-by-one day in UTC-N zones)
+  const d = iso.length === 10 ? new Date(`${iso}T00:00:00`) : new Date(iso);
+  return d.toLocaleDateString("es-AR", opts ?? { day: "2-digit", month: "short", year: "numeric" });
 }
 
 async function safeQuery<T>(fn: () => Promise<T[]>): Promise<T[]> {
