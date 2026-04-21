@@ -28,11 +28,24 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { conversacion_id, contenido, autor_nombre } = await req.json();
+    const body = await req.json();
+    const {
+      conversacion_id,
+      contenido,
+      autor_nombre,
+      // Soporte para plantilla aprobada Gupshup:
+      template_name,           // string
+      template_language,       // string (ej: "es")
+      template_variables,      // string[] en orden {{1}} {{2}} ...
+      template_body_preview,   // string para guardar como contenido legible
+    } = body;
 
-    if (!conversacion_id || !contenido) {
+    const isTemplate = !!template_name;
+    const messageContent = isTemplate ? (template_body_preview ?? contenido ?? template_name) : contenido;
+
+    if (!conversacion_id || (!isTemplate && !contenido)) {
       return new Response(
-        JSON.stringify({ error: "conversacion_id y contenido son requeridos" }),
+        JSON.stringify({ error: "conversacion_id y contenido (o template_name) son requeridos" }),
         { status: 400, headers: { ...CORS, "Content-Type": "application/json" } },
       );
     }
@@ -71,7 +84,8 @@ Deno.serve(async (req: Request) => {
     const source  = Deno.env.get("GUPSHUP_NUMBER")   ?? "";
     const appName = Deno.env.get("GUPSHUP_APP_NAME") ?? "";
 
-    console.log("wpp-send: enviando a", destination, "desde", source, "app", appName);
+    console.log("wpp-send: enviando a", destination, "desde", source, "app", appName, "template?", isTemplate);
+
     console.log("wpp-send: apiKey (primeros 8 chars):", apiKey.slice(0, 8));
 
     // ── Llamada a Gupshup ────────────────────────────────────────────────────
