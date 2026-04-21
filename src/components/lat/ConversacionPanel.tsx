@@ -569,11 +569,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           setShowCrearCliente(open);
           if (!open) {
             queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
-            queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', clienteId] });
+            queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', clienteId, telefono] });
           }
         }}
         initialTelefono={conversacion.telefono ?? ''}
         initialNombre={conversacion.cliente_nombre ?? ''}
+        initialCanal="WhatsApp"
       />
     </div>
   );

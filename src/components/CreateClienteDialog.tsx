@@ -15,6 +15,7 @@ type TipoCliente = "natural" | "juridica";
 
 interface FormData {
   tipo_cliente: TipoCliente;
+  canal_contacto: string;
   nombre_completo: string;
   razon_social: string;
   nit: string;
@@ -40,8 +41,14 @@ interface FormData {
   notas_rapidas: string;
 }
 
+const CANALES_CONTACTO = [
+  'WhatsApp', 'Telefonía', 'Instagram', 'Facebook',
+  'Messenger', 'Tik Tok', 'Correo', 'Presencial',
+];
+
 const EMPTY_FORM: FormData = {
   tipo_cliente:        "natural",
+  canal_contacto:      "",
   nombre_completo:     "",
   razon_social:        "",
   nit:                 "",
@@ -137,11 +144,17 @@ interface CreateClienteDialogProps {
   onOpenChange: (open: boolean) => void;
   initialNombre?: string;
   initialTelefono?: string;
+  initialCanal?: string;
 }
 
-export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "" }: CreateClienteDialogProps) {
+export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "" }: CreateClienteDialogProps) {
   const queryClient = useQueryClient();
-  const [form, setForm]           = useState<FormData>({ ...EMPTY_FORM, nombre_completo: initialNombre, telefono: initialTelefono });
+  const [form, setForm] = useState<FormData>({
+    ...EMPTY_FORM,
+    nombre_completo: initialNombre,
+    telefono:        initialTelefono,
+    canal_contacto:  initialCanal,
+  });
   const [saving, setSaving]       = useState(false);
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -193,10 +206,15 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
       toast.error("Ingresá al menos el nombre o razón social");
       return;
     }
+    if (!form.canal_contacto) {
+      toast.error("Seleccioná el canal de contacto");
+      return;
+    }
     setSaving(true);
     try {
       const payload: Record<string, any> = {
         tipo_cliente:        form.tipo_cliente,
+        canal_contacto:      form.canal_contacto,
         nombre_completo:     form.nombre_completo || form.razon_social,
         razon_social:        form.razon_social     || null,
         nit:                 form.nit              || null,
@@ -282,6 +300,28 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* ── Canal de contacto (obligatorio) ── */}
+          <div>
+            <Label className="text-xs text-muted-foreground mb-2 block">
+              Canal de contacto <span className="text-destructive">*</span>
+            </Label>
+            <select
+              className={`w-full h-9 text-sm rounded-md border px-3 bg-background ${
+                !form.canal_contacto ? 'border-destructive/50 bg-destructive/5' : 'border-input'
+              }`}
+              value={form.canal_contacto}
+              onChange={e => set("canal_contacto", e.target.value)}
+            >
+              <option value="">— Seleccioná el canal —</option>
+              {CANALES_CONTACTO.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            {!form.canal_contacto && (
+              <p className="text-[10px] text-destructive mt-1">Campo obligatorio</p>
+            )}
           </div>
 
           {/* ── AI Voice button ── */}
