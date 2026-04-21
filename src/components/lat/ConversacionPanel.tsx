@@ -722,15 +722,23 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         open={showCrearCliente}
         onOpenChange={(open) => {
           setShowCrearCliente(open);
-          if (!open) {
-            queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
-            queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', clienteId, telefono] });
-          }
+          if (!open) invalidateAll();
         }}
         initialTelefono={conversacion.telefono ?? ''}
         initialNombre={conversacion.cliente_nombre ?? ''}
-        initialCanal="WhatsApp"
+        initialCanal={conversacion.canal === 'whatsapp' ? 'WhatsApp' : conversacion.canal === 'phone' ? 'Telefonía' : 'Correo'}
+        onCreated={handleAutoVincularCreado}
       />
+
+      {isWhatsapp && !isMock && (
+        <WppTemplatePicker
+          open={showTemplates}
+          onOpenChange={setShowTemplates}
+          conversacionId={conversacion.id}
+          clienteNombre={clienteNombre}
+          onSend={handleSendTemplate}
+        />
+      )}
     </div>
   );
 }
