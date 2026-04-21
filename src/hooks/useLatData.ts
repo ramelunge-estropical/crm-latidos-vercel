@@ -74,6 +74,8 @@ function adaptMockConv(c: (typeof mockConvs)[0]): LatConversacion {
     proxima_accion:      c.proximaAccion,
     ventana_whatsapp:    c.ventanaWhatsapp?.toISOString() ?? null,
     wpp_contact_id:      null,
+    gestion_id:          null,
+    en_foco:             true,
     created_at:          c.ultimaInteraccion.toISOString(),
     updated_at:          c.ultimaInteraccion.toISOString(),
     _source:             "mock",
