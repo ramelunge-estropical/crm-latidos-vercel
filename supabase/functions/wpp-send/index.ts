@@ -75,7 +75,7 @@ Deno.serve(async (req: Request) => {
     console.log("wpp-send: apiKey (primeros 8 chars):", apiKey.slice(0, 8));
 
     // ── Llamada a Gupshup ────────────────────────────────────────────────────
-    const body = new URLSearchParams({
+    const formBody = new URLSearchParams({
       channel:     "whatsapp",
       source:      source,
       destination: destination,
@@ -83,14 +83,32 @@ Deno.serve(async (req: Request) => {
       "src.name":  appName,
     });
 
-    const gupshupRes = await fetch("https://api.gupshup.io/sm/api/v1/msg", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "apikey": apiKey,
-      },
-      body: body.toString(),
-    });
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+    let gupshupRes: Response;
+    try {
+      gupshupRes = await fetch("https://api.gupshup.io/sm/api/v1/msg", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "apikey": apiKey,
+        },
+        body: formBody.toString(),
+        signal: controller.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      const msg = fetchErr?.name === "AbortError"
+        ? "Timeout: Gupshup no respondió en 8 segundos"
+        : `Error de red al llamar Gupshup: ${fetchErr?.message}`;
+      console.error(msg);
+      return new Response(
+        JSON.stringify({ error: msg }),
+        { status: 502, headers: { ...CORS, "Content-Type": "application/json" } },
+      );
+    }
+    clearTimeout(timeoutId);
 
     const gupshupText = await gupshupRes.text();
     console.log("Gupshup status:", gupshupRes.status);
