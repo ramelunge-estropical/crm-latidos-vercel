@@ -46,10 +46,10 @@ const statusDot: Record<string, string> = {
 };
 
 const statusLabel: Record<string, { label: string; className: string }> = {
-  to_do:  { label: 'Pendiente',  className: 'bg-muted text-muted-foreground'         },
-  doing:  { label: 'En curso',   className: 'bg-blue-500/15 text-blue-600'           },
-  review: { label: 'En revisión',className: 'bg-yellow-500/15 text-yellow-600'       },
-  done:   { label: 'Finalizado', className: 'bg-green-500/15 text-green-700'         },
+  to_do:  { label: 'Pendiente',   className: 'bg-muted text-muted-foreground'   },
+  doing:  { label: 'En curso',    className: 'bg-blue-500/15 text-blue-600'     },
+  review: { label: 'En revisión', className: 'bg-yellow-500/15 text-yellow-600' },
+  done:   { label: 'Finalizado',  className: 'bg-green-500/15 text-green-700'   },
 };
 
 type ActiveTab = 'chat' | 'gestiones' | 'cliente';
@@ -59,13 +59,13 @@ interface ConversacionPanelProps {
 }
 
 export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
-  const [inputValue, setInputValue]         = useState('');
-  const [showNota, setShowNota]             = useState(false);
-  const [activeTab, setActiveTab]           = useState<ActiveTab>('cliente');
+  const [inputValue, setInputValue]               = useState('');
+  const [showNota, setShowNota]                   = useState(false);
+  const [activeTab, setActiveTab]                 = useState<ActiveTab>('cliente');
   const [showCreateGestion, setShowCreateGestion] = useState(false);
-  const [vincularSearch, setVincularSearch]     = useState('');
-  const [showVincular, setShowVincular]         = useState(false);
-  const [showCrearCliente, setShowCrearCliente] = useState(false);
+  const [vincularSearch, setVincularSearch]       = useState('');
+  const [showVincular, setShowVincular]           = useState(false);
+  const [showCrearCliente, setShowCrearCliente]   = useState(false);
   const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
   const [mostrarTodasGest, setMostrarTodasGest]   = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -73,7 +73,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
   const isMock = conversacion._source === 'mock';
 
-  // Para mock: buscar cliente del mock data por clienteId (la conv.id es el clienteId en mock)
   const mockCliente = isMock ? getCliente(conversacion.id) : null;
   const clienteNombre = conversacion.cliente_nombre ?? mockCliente?.nombre ?? 'Cliente';
   const clienteId     = conversacion.cliente_id ?? null;
@@ -134,7 +133,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         return data ?? [];
       }
       if (!telefono) return [];
-      // Buscar por teléfono (con y sin +)
       const phone = telefono.replace(/\D/g, '');
       const { data } = await (supabase as any)
         .from('clientes')
@@ -214,7 +212,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
           )}
-          {/* Tab buttons */}
           <button
             onClick={() => setActiveTab('chat')}
             title="Chat"
@@ -407,10 +404,10 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               </div>
             ) : (
               (mostrarTodasGest ? gestiones : activeGestiones).map((g: any) => {
-                const pCfg    = priorityCfg[g.priority] || priorityCfg.medium;
-                const status  = g.pipeline_stages?.global_status || 'to_do';
-                const isDone  = status === 'done';
-                const sLabel  = statusLabel[status] || statusLabel.to_do;
+                const pCfg   = priorityCfg[g.priority] || priorityCfg.medium;
+                const status = g.pipeline_stages?.global_status || 'to_do';
+                const isDone = status === 'done';
+                const sLabel = statusLabel[status] || statusLabel.to_do;
                 return (
                   <div
                     key={g.id}
@@ -626,7 +623,7 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   if (isNota) {
     return (
       <div className="flex justify-center">
-        <div className="bg-warning/10 border border-warning/20 text-[11px] text-warning px-3 py-2 rounded-lg max-w-md">
+        <div className="bg-warning/10 border border-warning/20 text-[11px] text-warning px-3 py-2 rounded-lg max-md">
           <div className="flex items-center gap-1.5 mb-1">
             <StickyNote className="w-3 h-3" />
             <span className="font-medium">Nota interna</span>

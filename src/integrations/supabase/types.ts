@@ -67,6 +67,524 @@ export type Database = {
           },
         ]
       }
+      areas_empresa: {
+        Row: {
+          color: string
+          created_at: string | null
+          icono: string | null
+          id: string
+          nombre: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string | null
+          icono?: string | null
+          id?: string
+          nombre: string
+        }
+        Update: {
+          color?: string
+          created_at?: string | null
+          icono?: string | null
+          id?: string
+          nombre?: string
+        }
+        Relationships: []
+      }
+      cliente_bancos: {
+        Row: {
+          banco: string
+          cliente_id: string
+          created_at: string
+          id: string
+          observaciones: string | null
+          tipo_cuenta: string | null
+        }
+        Insert: {
+          banco: string
+          cliente_id: string
+          created_at?: string
+          id?: string
+          observaciones?: string | null
+          tipo_cuenta?: string | null
+        }
+        Update: {
+          banco?: string
+          cliente_id?: string
+          created_at?: string
+          id?: string
+          observaciones?: string | null
+          tipo_cuenta?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_bancos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_documentos: {
+        Row: {
+          cliente_id: string
+          created_at: string
+          fecha_emision: string | null
+          fecha_vencimiento: string | null
+          id: string
+          numero: string | null
+          observaciones: string | null
+          pais_emisor: string | null
+          tipo: string
+        }
+        Insert: {
+          cliente_id: string
+          created_at?: string
+          fecha_emision?: string | null
+          fecha_vencimiento?: string | null
+          id?: string
+          numero?: string | null
+          observaciones?: string | null
+          pais_emisor?: string | null
+          tipo: string
+        }
+        Update: {
+          cliente_id?: string
+          created_at?: string
+          fecha_emision?: string | null
+          fecha_vencimiento?: string | null
+          id?: string
+          numero?: string | null
+          observaciones?: string | null
+          pais_emisor?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_documentos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_familiar: {
+        Row: {
+          cliente_id: string
+          created_at: string
+          documento_numero: string | null
+          familiar_cliente_id: string | null
+          fecha_nacimiento: string | null
+          id: string
+          nombre: string
+          observaciones: string | null
+          relacion: string
+        }
+        Insert: {
+          cliente_id: string
+          created_at?: string
+          documento_numero?: string | null
+          familiar_cliente_id?: string | null
+          fecha_nacimiento?: string | null
+          id?: string
+          nombre: string
+          observaciones?: string | null
+          relacion: string
+        }
+        Update: {
+          cliente_id?: string
+          created_at?: string
+          documento_numero?: string | null
+          familiar_cliente_id?: string | null
+          fecha_nacimiento?: string | null
+          id?: string
+          nombre?: string
+          observaciones?: string | null
+          relacion?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_familiar_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cliente_familiar_familiar_cliente_id_fkey"
+            columns: ["familiar_cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_ideas_viaje: {
+        Row: {
+          cliente_id: string
+          created_at: string
+          destino: string
+          id: string
+          notas: string | null
+          prioridad: string | null
+        }
+        Insert: {
+          cliente_id: string
+          created_at?: string
+          destino: string
+          id?: string
+          notas?: string | null
+          prioridad?: string | null
+        }
+        Update: {
+          cliente_id?: string
+          created_at?: string
+          destino?: string
+          id?: string
+          notas?: string | null
+          prioridad?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_ideas_viaje_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_lealtad: {
+        Row: {
+          cliente_id: string
+          created_at: string
+          estado: string | null
+          id: string
+          millas_acumuladas: number | null
+          nivel: string | null
+          numero_membresia: string | null
+          observaciones: string | null
+          programa: string
+        }
+        Insert: {
+          cliente_id: string
+          created_at?: string
+          estado?: string | null
+          id?: string
+          millas_acumuladas?: number | null
+          nivel?: string | null
+          numero_membresia?: string | null
+          observaciones?: string | null
+          programa: string
+        }
+        Update: {
+          cliente_id?: string
+          created_at?: string
+          estado?: string | null
+          id?: string
+          millas_acumuladas?: number | null
+          nivel?: string | null
+          numero_membresia?: string | null
+          observaciones?: string | null
+          programa?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_lealtad_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_pagos: {
+        Row: {
+          cliente_id: string
+          concepto: string | null
+          created_at: string
+          estado: string | null
+          fecha: string | null
+          id: string
+          moneda: string | null
+          monto: number
+          referencia: string | null
+          tipo: string
+        }
+        Insert: {
+          cliente_id: string
+          concepto?: string | null
+          created_at?: string
+          estado?: string | null
+          fecha?: string | null
+          id?: string
+          moneda?: string | null
+          monto: number
+          referencia?: string | null
+          tipo: string
+        }
+        Update: {
+          cliente_id?: string
+          concepto?: string | null
+          created_at?: string
+          estado?: string | null
+          fecha?: string | null
+          id?: string
+          moneda?: string | null
+          monto?: number
+          referencia?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_pagos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_referidos: {
+        Row: {
+          cliente_id: string
+          created_at: string
+          fecha: string | null
+          id: string
+          observaciones: string | null
+          referido_id: string | null
+          referido_nombre: string | null
+          tipo: string
+        }
+        Insert: {
+          cliente_id: string
+          created_at?: string
+          fecha?: string | null
+          id?: string
+          observaciones?: string | null
+          referido_id?: string | null
+          referido_nombre?: string | null
+          tipo?: string
+        }
+        Update: {
+          cliente_id?: string
+          created_at?: string
+          fecha?: string | null
+          id?: string
+          observaciones?: string | null
+          referido_id?: string | null
+          referido_nombre?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_referidos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cliente_referidos_referido_id_fkey"
+            columns: ["referido_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_viajes: {
+        Row: {
+          cliente_id: string
+          created_at: string
+          destino: string
+          estado: string | null
+          fecha_regreso: string | null
+          fecha_salida: string | null
+          id: string
+          monto: number | null
+          observaciones: string | null
+          tipo_viaje: string | null
+        }
+        Insert: {
+          cliente_id: string
+          created_at?: string
+          destino: string
+          estado?: string | null
+          fecha_regreso?: string | null
+          fecha_salida?: string | null
+          id?: string
+          monto?: number | null
+          observaciones?: string | null
+          tipo_viaje?: string | null
+        }
+        Update: {
+          cliente_id?: string
+          created_at?: string
+          destino?: string
+          estado?: string | null
+          fecha_regreso?: string | null
+          fecha_salida?: string | null
+          id?: string
+          monto?: number | null
+          observaciones?: string | null
+          tipo_viaje?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_viajes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clientes: {
+        Row: {
+          asesor_nombre: string | null
+          ciudad: string | null
+          club_viajes: boolean
+          contacto_cargo: string | null
+          contacto_nombre: string | null
+          created_at: string
+          documento_numero: string | null
+          documento_tipo: string | null
+          email: string | null
+          email_secundario: string | null
+          espacio_a_bordo: boolean
+          estado: string
+          estado_civil: string | null
+          fecha_nacimiento: string | null
+          id: string
+          nacionalidad: string | null
+          nit: string | null
+          nombre_completo: string
+          notas_rapidas: string | null
+          pais: string | null
+          pases_a_bordo: number
+          profesion: string | null
+          razon_social: string | null
+          score_etiqueta: string | null
+          score_valor: number
+          telefono: string | null
+          telefono_secundario: string | null
+          tipo_cliente: string
+          updated_at: string
+        }
+        Insert: {
+          asesor_nombre?: string | null
+          ciudad?: string | null
+          club_viajes?: boolean
+          contacto_cargo?: string | null
+          contacto_nombre?: string | null
+          created_at?: string
+          documento_numero?: string | null
+          documento_tipo?: string | null
+          email?: string | null
+          email_secundario?: string | null
+          espacio_a_bordo?: boolean
+          estado?: string
+          estado_civil?: string | null
+          fecha_nacimiento?: string | null
+          id?: string
+          nacionalidad?: string | null
+          nit?: string | null
+          nombre_completo: string
+          notas_rapidas?: string | null
+          pais?: string | null
+          pases_a_bordo?: number
+          profesion?: string | null
+          razon_social?: string | null
+          score_etiqueta?: string | null
+          score_valor?: number
+          telefono?: string | null
+          telefono_secundario?: string | null
+          tipo_cliente?: string
+          updated_at?: string
+        }
+        Update: {
+          asesor_nombre?: string | null
+          ciudad?: string | null
+          club_viajes?: boolean
+          contacto_cargo?: string | null
+          contacto_nombre?: string | null
+          created_at?: string
+          documento_numero?: string | null
+          documento_tipo?: string | null
+          email?: string | null
+          email_secundario?: string | null
+          espacio_a_bordo?: boolean
+          estado?: string
+          estado_civil?: string | null
+          fecha_nacimiento?: string | null
+          id?: string
+          nacionalidad?: string | null
+          nit?: string | null
+          nombre_completo?: string
+          notas_rapidas?: string | null
+          pais?: string | null
+          pases_a_bordo?: number
+          profesion?: string | null
+          razon_social?: string | null
+          score_etiqueta?: string | null
+          score_valor?: number
+          telefono?: string | null
+          telefono_secundario?: string | null
+          tipo_cliente?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      colaboradores: {
+        Row: {
+          activo: boolean
+          area_id: string | null
+          cargo: string | null
+          color: string
+          created_at: string | null
+          email: string | null
+          id: string
+          nombre: string
+          rol: string
+          user_id: string | null
+        }
+        Insert: {
+          activo?: boolean
+          area_id?: string | null
+          cargo?: string | null
+          color?: string
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          nombre: string
+          rol?: string
+          user_id?: string | null
+        }
+        Update: {
+          activo?: boolean
+          area_id?: string | null
+          cargo?: string | null
+          color?: string
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          nombre?: string
+          rol?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colaboradores_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gestion_attachments: {
         Row: {
           created_at: string
@@ -143,8 +661,171 @@ export type Database = {
           },
         ]
       }
+      gestion_conversation_events: {
+        Row: {
+          actor_name: string | null
+          conversacion_id: string | null
+          created_at: string
+          event_data: Json
+          event_type: string
+          gestion_id: string | null
+          id: string
+        }
+        Insert: {
+          actor_name?: string | null
+          conversacion_id?: string | null
+          created_at?: string
+          event_data?: Json
+          event_type: string
+          gestion_id?: string | null
+          id?: string
+        }
+        Update: {
+          actor_name?: string | null
+          conversacion_id?: string | null
+          created_at?: string
+          event_data?: Json
+          event_type?: string
+          gestion_id?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestion_conversation_events_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "lat_conversaciones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestion_conversation_events_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gestion_subtipos: {
+        Row: {
+          activo: boolean
+          created_at: string | null
+          id: string
+          nombre: string
+          orden: number
+          tipo_id: string
+        }
+        Insert: {
+          activo?: boolean
+          created_at?: string | null
+          id?: string
+          nombre: string
+          orden?: number
+          tipo_id: string
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string | null
+          id?: string
+          nombre?: string
+          orden?: number
+          tipo_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestion_subtipos_tipo_id_fkey"
+            columns: ["tipo_id"]
+            isOneToOne: false
+            referencedRelation: "gestion_tipos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gestion_tareas: {
+        Row: {
+          asignado_a: string | null
+          created_at: string | null
+          descripcion: string | null
+          estado: string
+          fecha_limite: string | null
+          gestion_id: string
+          id: string
+          orden: number | null
+          titulo: string
+          updated_at: string | null
+        }
+        Insert: {
+          asignado_a?: string | null
+          created_at?: string | null
+          descripcion?: string | null
+          estado?: string
+          fecha_limite?: string | null
+          gestion_id: string
+          id?: string
+          orden?: number | null
+          titulo: string
+          updated_at?: string | null
+        }
+        Update: {
+          asignado_a?: string | null
+          created_at?: string | null
+          descripcion?: string | null
+          estado?: string
+          fecha_limite?: string | null
+          gestion_id?: string
+          id?: string
+          orden?: number | null
+          titulo?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gestion_tareas_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gestion_tipos: {
+        Row: {
+          activo: boolean
+          color: string
+          created_at: string | null
+          id: string
+          nombre: string
+          orden: number
+          valor: string
+        }
+        Insert: {
+          activo?: boolean
+          color?: string
+          created_at?: string | null
+          id?: string
+          nombre: string
+          orden?: number
+          valor: string
+        }
+        Update: {
+          activo?: boolean
+          color?: string
+          created_at?: string | null
+          id?: string
+          nombre?: string
+          orden?: number
+          valor?: string
+        }
+        Relationships: []
+      }
       gestiones: {
         Row: {
+          area_id: string | null
+          canal_origen: string | null
+          cliente_id: string | null
+          cliente_nombre: string | null
+          codigo: string | null
+          conversacion_id_origen: string | null
           created_at: string
           description: string | null
           due_date: string | null
@@ -153,6 +834,7 @@ export type Database = {
           owner_id: string | null
           priority: Database["public"]["Enums"]["gestion_priority"]
           process_id: string
+          responsable_id: string | null
           responsable_nombre: string | null
           stage_id: string
           subtype: string | null
@@ -161,6 +843,12 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          area_id?: string | null
+          canal_origen?: string | null
+          cliente_id?: string | null
+          cliente_nombre?: string | null
+          codigo?: string | null
+          conversacion_id_origen?: string | null
           created_at?: string
           description?: string | null
           due_date?: string | null
@@ -169,6 +857,7 @@ export type Database = {
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["gestion_priority"]
           process_id: string
+          responsable_id?: string | null
           responsable_nombre?: string | null
           stage_id: string
           subtype?: string | null
@@ -177,6 +866,12 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          area_id?: string | null
+          canal_origen?: string | null
+          cliente_id?: string | null
+          cliente_nombre?: string | null
+          codigo?: string | null
+          conversacion_id_origen?: string | null
           created_at?: string
           description?: string | null
           due_date?: string | null
@@ -185,6 +880,7 @@ export type Database = {
           owner_id?: string | null
           priority?: Database["public"]["Enums"]["gestion_priority"]
           process_id?: string
+          responsable_id?: string | null
           responsable_nombre?: string | null
           stage_id?: string
           subtype?: string | null
@@ -194,10 +890,38 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "gestiones_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestiones_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestiones_conversacion_id_origen_fkey"
+            columns: ["conversacion_id_origen"]
+            isOneToOne: false
+            referencedRelation: "lat_conversaciones"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "gestiones_process_id_fkey"
             columns: ["process_id"]
             isOneToOne: false
             referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gestiones_responsable_id_fkey"
+            columns: ["responsable_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
             referencedColumns: ["id"]
           },
           {
@@ -209,32 +933,176 @@ export type Database = {
           },
         ]
       }
+      lat_conversaciones: {
+        Row: {
+          asunto: string | null
+          canal: string
+          cliente_id: string | null
+          cliente_nombre: string | null
+          created_at: string | null
+          estado: string
+          gestion_id: string | null
+          id: string
+          no_leidos: number | null
+          prioridad: string | null
+          proxima_accion: string | null
+          responsable_id: string | null
+          responsable_nombre: string | null
+          telefono: string | null
+          ultima_interaccion: string | null
+          ultimo_mensaje: string | null
+          updated_at: string | null
+          ventana_whatsapp: string | null
+          wpp_contact_id: string | null
+        }
+        Insert: {
+          asunto?: string | null
+          canal?: string
+          cliente_id?: string | null
+          cliente_nombre?: string | null
+          created_at?: string | null
+          estado?: string
+          gestion_id?: string | null
+          id?: string
+          no_leidos?: number | null
+          prioridad?: string | null
+          proxima_accion?: string | null
+          responsable_id?: string | null
+          responsable_nombre?: string | null
+          telefono?: string | null
+          ultima_interaccion?: string | null
+          ultimo_mensaje?: string | null
+          updated_at?: string | null
+          ventana_whatsapp?: string | null
+          wpp_contact_id?: string | null
+        }
+        Update: {
+          asunto?: string | null
+          canal?: string
+          cliente_id?: string | null
+          cliente_nombre?: string | null
+          created_at?: string | null
+          estado?: string
+          gestion_id?: string | null
+          id?: string
+          no_leidos?: number | null
+          prioridad?: string | null
+          proxima_accion?: string | null
+          responsable_id?: string | null
+          responsable_nombre?: string | null
+          telefono?: string | null
+          ultima_interaccion?: string | null
+          ultimo_mensaje?: string | null
+          updated_at?: string | null
+          ventana_whatsapp?: string | null
+          wpp_contact_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lat_conversaciones_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lat_conversaciones_gestion_id_fkey"
+            columns: ["gestion_id"]
+            isOneToOne: false
+            referencedRelation: "gestiones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lat_conversaciones_responsable_id_fkey"
+            columns: ["responsable_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lat_mensajes: {
+        Row: {
+          adjunto_nombre: string | null
+          adjunto_tipo: string | null
+          adjunto_url: string | null
+          autor_nombre: string | null
+          contenido: string
+          conversacion_id: string
+          created_at: string | null
+          estado: string | null
+          id: string
+          tipo: string
+          wpp_message_id: string | null
+        }
+        Insert: {
+          adjunto_nombre?: string | null
+          adjunto_tipo?: string | null
+          adjunto_url?: string | null
+          autor_nombre?: string | null
+          contenido: string
+          conversacion_id: string
+          created_at?: string | null
+          estado?: string | null
+          id?: string
+          tipo?: string
+          wpp_message_id?: string | null
+        }
+        Update: {
+          adjunto_nombre?: string | null
+          adjunto_tipo?: string | null
+          adjunto_url?: string | null
+          autor_nombre?: string | null
+          contenido?: string
+          conversacion_id?: string
+          created_at?: string | null
+          estado?: string | null
+          id?: string
+          tipo?: string
+          wpp_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lat_mensajes_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "lat_conversaciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           created_at: string
+          duracion_estimada_dias: number | null
           global_status: Database["public"]["Enums"]["global_status"]
           id: string
           name: string
           order: number
           process_id: string
+          responsable_id: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
+          duracion_estimada_dias?: number | null
           global_status?: Database["public"]["Enums"]["global_status"]
           id?: string
           name: string
           order?: number
           process_id: string
+          responsable_id?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
+          duracion_estimada_dias?: number | null
           global_status?: Database["public"]["Enums"]["global_status"]
           id?: string
           name?: string
           order?: number
           process_id?: string
+          responsable_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -245,11 +1113,79 @@ export type Database = {
             referencedRelation: "processes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pipeline_stages_responsable_id_fkey"
+            columns: ["responsable_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      process_areas: {
+        Row: {
+          area_id: string
+          process_id: string
+        }
+        Insert: {
+          area_id: string
+          process_id: string
+        }
+        Update: {
+          area_id?: string
+          process_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_areas_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "process_areas_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      process_sub_areas: {
+        Row: {
+          process_id: string
+          sub_area_id: string
+        }
+        Insert: {
+          process_id: string
+          sub_area_id: string
+        }
+        Update: {
+          process_id?: string
+          sub_area_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "process_sub_areas_process_id_fkey"
+            columns: ["process_id"]
+            isOneToOne: false
+            referencedRelation: "processes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "process_sub_areas_sub_area_id_fkey"
+            columns: ["sub_area_id"]
+            isOneToOne: false
+            referencedRelation: "sub_areas_empresa"
+            referencedColumns: ["id"]
+          },
         ]
       }
       processes: {
         Row: {
           area: string | null
+          area_id: string | null
           created_at: string
           description: string | null
           id: string
@@ -258,6 +1194,7 @@ export type Database = {
         }
         Insert: {
           area?: string | null
+          area_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -266,13 +1203,22 @@ export type Database = {
         }
         Update: {
           area?: string | null
+          area_id?: string | null
           created_at?: string
           description?: string | null
           id?: string
           name?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "processes_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -400,6 +1346,41 @@ export type Database = {
           },
         ]
       }
+      sub_areas_empresa: {
+        Row: {
+          area_id: string
+          color: string
+          created_at: string | null
+          id: string
+          nombre: string
+          orden: number
+        }
+        Insert: {
+          area_id: string
+          color?: string
+          created_at?: string | null
+          id?: string
+          nombre: string
+          orden?: number
+        }
+        Update: {
+          area_id?: string
+          color?: string
+          created_at?: string | null
+          id?: string
+          nombre?: string
+          orden?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sub_areas_empresa_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -411,7 +1392,7 @@ export type Database = {
       activity_type: "tarea" | "llamada" | "reunión"
       gestion_priority: "low" | "medium" | "high" | "urgent"
       gestion_type: "comercial" | "proyecto" | "operativa" | "caso"
-      global_status: "todo" | "planned" | "doing" | "review" | "done"
+      global_status: "to_do" | "doing" | "review" | "done"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -542,7 +1523,7 @@ export const Constants = {
       activity_type: ["tarea", "llamada", "reunión"],
       gestion_priority: ["low", "medium", "high", "urgent"],
       gestion_type: ["comercial", "proyecto", "operativa", "caso"],
-      global_status: ["todo", "planned", "doing", "review", "done"],
+      global_status: ["to_do", "doing", "review", "done"],
     },
   },
 } as const

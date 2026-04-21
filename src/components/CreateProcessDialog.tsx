@@ -14,7 +14,7 @@ interface CreateProcessDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type GlobalStatus = "todo" | "planned" | "doing" | "review" | "done";
+type GlobalStatus = "to_do" | "doing" | "review" | "done";
 
 interface StageTemplate {
   name: string;
@@ -37,8 +37,8 @@ const TEMPLATES: ProcessTemplate[] = [
     icon: ShoppingCart,
     description: "Pipeline comercial de leads a cierre",
     stages: [
-      { name: "Lead", order: 0, global_status: "todo" },
-      { name: "Contacto", order: 1, global_status: "planned" },
+      { name: "Lead", order: 0, global_status: "to_do" },
+      { name: "Contacto", order: 1, global_status: "to_do" },
       { name: "Cotización", order: 2, global_status: "doing" },
       { name: "Negociación", order: 3, global_status: "review" },
       { name: "Cierre", order: 4, global_status: "done" },
@@ -50,8 +50,8 @@ const TEMPLATES: ProcessTemplate[] = [
     icon: Headphones,
     description: "Gestión de tickets y casos de soporte",
     stages: [
-      { name: "Nuevo", order: 0, global_status: "todo" },
-      { name: "Asignado", order: 1, global_status: "planned" },
+      { name: "Nuevo", order: 0, global_status: "to_do" },
+      { name: "Asignado", order: 1, global_status: "to_do" },
       { name: "En atención", order: 2, global_status: "doing" },
       { name: "Esperando cliente", order: 3, global_status: "review" },
       { name: "Resuelto", order: 4, global_status: "done" },
@@ -63,8 +63,8 @@ const TEMPLATES: ProcessTemplate[] = [
     icon: Settings,
     description: "Control de tareas operativas",
     stages: [
-      { name: "Pendiente", order: 0, global_status: "todo" },
-      { name: "Programado", order: 1, global_status: "planned" },
+      { name: "Pendiente", order: 0, global_status: "to_do" },
+      { name: "Programado", order: 1, global_status: "to_do" },
       { name: "En ejecución", order: 2, global_status: "doing" },
       { name: "Verificación", order: 3, global_status: "review" },
       { name: "Finalizado", order: 4, global_status: "done" },
@@ -76,8 +76,8 @@ const TEMPLATES: ProcessTemplate[] = [
     icon: FolderKanban,
     description: "Seguimiento de proyectos y entregables",
     stages: [
-      { name: "Backlog", order: 0, global_status: "todo" },
-      { name: "Planificación", order: 1, global_status: "planned" },
+      { name: "Backlog", order: 0, global_status: "to_do" },
+      { name: "Planificación", order: 1, global_status: "to_do" },
       { name: "En desarrollo", order: 2, global_status: "doing" },
       { name: "QA / Revisión", order: 3, global_status: "review" },
       { name: "Entregado", order: 4, global_status: "done" },
@@ -86,8 +86,8 @@ const TEMPLATES: ProcessTemplate[] = [
 ];
 
 const DEFAULT_STAGES: StageTemplate[] = [
-  { name: "Por hacer", order: 0, global_status: "todo" },
-  { name: "Planificado", order: 1, global_status: "planned" },
+  { name: "Por hacer", order: 0, global_status: "to_do" },
+  { name: "Planificado", order: 1, global_status: "to_do" },
   { name: "En progreso", order: 2, global_status: "doing" },
   { name: "En revisión", order: 3, global_status: "review" },
   { name: "Completado", order: 4, global_status: "done" },
