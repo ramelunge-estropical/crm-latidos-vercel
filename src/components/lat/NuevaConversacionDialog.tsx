@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X, Search, MessageSquare, Phone as PhoneIcon, Mail, Loader2, UserPlus, ArrowRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,18 +10,24 @@ type Canal = 'whatsapp' | 'phone' | 'email';
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Callback cuando se inicia exitosamente; conversacionId puede ser null para llamada/email sin conversación */
+  /** Callback cuando se crea o reactiva la conversación. */
   onConversacionCreated: (conversacionId: string) => void;
 }
 
+/**
+ * Modal "Nueva conversación":
+ *  - Solo pide CLIENTE + CANAL.
+ *  - No pide asunto ni mensaje inicial → el asesor escribe luego desde el chat.
+ *  - Si ya existe una conversación del mismo cliente/canal, la reutiliza
+ *    (no crea hilos paralelos en WhatsApp) y deja un evento de sistema
+ *    "Nueva comunicación iniciada HH:MM" en el hilo.
+ */
 export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCreated }: Props) {
   const [step, setStep]               = useState<'cliente' | 'canal'>('cliente');
   const [search, setSearch]           = useState('');
   const [clienteId, setClienteId]     = useState<string | null>(null);
   const [clienteData, setClienteData] = useState<any>(null);
   const [canal, setCanal]             = useState<Canal>('whatsapp');
-  const [asunto, setAsunto]           = useState('');
-  const [mensaje, setMensaje]         = useState('');
   const [creating, setCreating]       = useState(false);
   const [showCrearCliente, setShowCrearCliente] = useState(false);
 
@@ -47,8 +53,6 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
     setClienteId(null);
     setClienteData(null);
     setCanal('whatsapp');
-    setAsunto('');
-    setMensaje('');
   };
 
   const handleClose = () => {
@@ -67,11 +71,7 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
 
   const handleIniciar = async () => {
     if (!clienteId || !clienteData) return;
-    if (canal === 'whatsapp' && !clienteData.telefono) {
-      toast.error('El cliente no tiene teléfono registrado');
-      return;
-    }
-    if (canal === 'phone' && !clienteData.telefono) {
+    if ((canal === 'whatsapp' || canal === 'phone') && !clienteData.telefono) {
       toast.error('El cliente no tiene teléfono registrado');
       return;
     }
@@ -82,10 +82,10 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
 
     setCreating(true);
     try {
-      // Buscar conversación abierta existente del mismo cliente y canal
+      // Buscar conversación existente del mismo cliente/canal (cualquier estado salvo cerrado)
       const { data: existentes } = await (supabase as any)
         .from('lat_conversaciones')
-        .select('id, estado')
+        .select('id, estado, en_foco')
         .eq('cliente_id', clienteId)
         .eq('canal', canal)
         .neq('estado', 'cerrado')
@@ -93,66 +93,60 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
         .limit(1);
 
       let convId: string;
+      const ahora = new Date();
+      const hhmm = `${ahora.getHours().toString().padStart(2, '0')}:${ahora.getMinutes().toString().padStart(2, '0')}`;
 
       if (existentes && existentes.length > 0) {
+        // ── Reutilizar conversación existente ──
         convId = existentes[0].id;
         await (supabase as any)
           .from('lat_conversaciones')
           .update({
             en_foco: true,
             estado: existentes[0].estado === 'liberado' ? 'abierto' : existentes[0].estado,
-            ...(asunto ? { asunto } : {}),
-            ultima_interaccion: new Date().toISOString(),
+            ultima_interaccion: ahora.toISOString(),
           })
           .eq('id', convId);
+
+        // Evento de sistema visible en el hilo
+        await (supabase as any).from('lat_mensajes').insert({
+          conversacion_id: convId,
+          tipo:            'sistema',
+          contenido:       `Nueva comunicación iniciada ${hhmm} (${canalLabel(canal)})`,
+          estado:          'enviado',
+        });
         toast.success('Conversación existente reactivada');
       } else {
+        // ── Crear nueva conversación ──
         const nombre = clienteData.nombre_completo ?? clienteData.razon_social ?? '—';
         const tel    = clienteData.telefono ?? null;
         const { data: nueva, error } = await (supabase as any)
           .from('lat_conversaciones')
           .insert({
-            cliente_id:       clienteId,
-            cliente_nombre:   nombre,
-            telefono:         tel,
+            cliente_id:        clienteId,
+            cliente_nombre:    nombre,
+            telefono:          tel,
             canal,
-            estado:           'abierto',
-            asunto:           asunto || `Nuevo contacto outbound (${canalLabel(canal)})`,
-            ultimo_mensaje:   mensaje ? mensaje.slice(0, 100) : '(conversación iniciada por el asesor)',
-            prioridad:        'media',
-            en_foco:          true,
-            ultima_interaccion: new Date().toISOString(),
+            estado:            'abierto',
+            asunto:            null,
+            ultimo_mensaje:    `Nueva comunicación iniciada ${hhmm}`,
+            prioridad:         'media',
+            en_foco:           true,
+            ultima_interaccion: ahora.toISOString(),
           })
           .select('id')
           .single();
         if (error) throw error;
         convId = nueva.id;
-        toast.success('Conversación creada');
-      }
 
-      // Mensaje sistema con la acción outbound
-      if (canal === 'phone') {
+        // Evento de sistema en hilo nuevo
         await (supabase as any).from('lat_mensajes').insert({
           conversacion_id: convId,
           tipo:            'sistema',
-          contenido:       `Llamada saliente iniciada por el asesor${mensaje ? ` — Motivo: ${mensaje}` : ''}`,
+          contenido:       `Nueva comunicación iniciada ${hhmm} (${canalLabel(canal)})`,
           estado:          'enviado',
         });
-      } else if (canal === 'email') {
-        await (supabase as any).from('lat_mensajes').insert({
-          conversacion_id: convId,
-          tipo:            'outbound',
-          contenido:       `[Email a ${clienteData.email}]${asunto ? `\nAsunto: ${asunto}` : ''}\n\n${mensaje}`,
-          estado:          'enviado',
-        });
-      } else if (canal === 'whatsapp' && mensaje) {
-        // Guardar como nota interna para que el asesor pueda mandarlo desde el chat
-        await (supabase as any).from('lat_mensajes').insert({
-          conversacion_id: convId,
-          tipo:            'nota_interna',
-          contenido:       `Borrador inicial preparado por el asesor:\n\n${mensaje}`,
-          estado:          'enviado',
-        });
+        toast.success('Conversación creada');
       }
 
       onConversacionCreated(convId);
@@ -280,43 +274,20 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
                   </div>
                   {canal === 'whatsapp' && (
                     <p className="text-[10px] text-muted-foreground mt-1.5">
-                      Si el cliente está fuera de ventana de 24h, vas a poder enviar una plantilla aprobada desde el chat.
+                      Si ya hay una conversación de WhatsApp con este cliente, se reutiliza el mismo hilo.
+                      Vas a redactar el mensaje desde el chat. Fuera de ventana de 24h se usa plantilla aprobada.
                     </p>
                   )}
                   {canal === 'phone' && (
                     <p className="text-[10px] text-muted-foreground mt-1.5">
-                      Se registra una llamada saliente. Usá el softphone para hacer el call efectivo.
+                      Se abre el hilo de la llamada. Usá el softphone para hacer el call efectivo.
                     </p>
                   )}
                   {canal === 'email' && (
                     <p className="text-[10px] text-muted-foreground mt-1.5">
-                      Se registra el envío en el historial. El email externo se envía desde tu cliente de correo habitual.
+                      Se abre el hilo del correo. Vas a redactar el mensaje desde el chat.
                     </p>
                   )}
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-medium text-foreground">Asunto</label>
-                  <input
-                    type="text"
-                    value={asunto}
-                    onChange={e => setAsunto(e.target.value)}
-                    placeholder="Motivo del contacto..."
-                    className="w-full mt-1 bg-muted/50 text-xs rounded-md px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-medium text-foreground">
-                    {canal === 'phone' ? 'Motivo de la llamada' : 'Mensaje inicial'}{canal === 'whatsapp' ? ' (opcional)' : ''}
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={mensaje}
-                    onChange={e => setMensaje(e.target.value)}
-                    placeholder={canal === 'phone' ? 'Sobre qué llamás...' : 'Texto del mensaje...'}
-                    className="w-full mt-1 bg-muted/50 text-xs rounded-md px-2.5 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                  />
                 </div>
 
                 <button
@@ -325,7 +296,7 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
                   className="w-full flex items-center justify-center gap-1.5 text-[11px] px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 font-medium"
                 >
                   {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                  Iniciar conversación
+                  Abrir conversación
                 </button>
               </div>
             )}

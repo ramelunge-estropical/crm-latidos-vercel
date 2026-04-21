@@ -64,7 +64,8 @@ interface ConversacionPanelProps {
 export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [inputValue, setInputValue]               = useState('');
   const [showNota, setShowNota]                   = useState(false);
-  const [activeTab, setActiveTab]                 = useState<ActiveTab>('cliente');
+  // Por defecto la primera vista activa es el chat (consola de atención).
+  const [activeTab, setActiveTab]                 = useState<ActiveTab>('chat');
   const [showCreateGestion, setShowCreateGestion] = useState(false);
   const [vincularSearch, setVincularSearch]       = useState('');
   const [showVincular, setShowVincular]           = useState(false);
@@ -81,6 +82,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
     queryClient.invalidateQueries({ queryKey: ['lat-cliente-db'] });
     queryClient.invalidateQueries({ queryKey: ['lat-gestiones-cliente'] });
+    queryClient.invalidateQueries({ queryKey: ['cliente-db-panel'] });
+    queryClient.invalidateQueries({ queryKey: ['gestiones-panel'] });
+    queryClient.invalidateQueries({ queryKey: ['clientes'] });
   };
 
   const isMock = conversacion._source === 'mock';
@@ -105,6 +109,21 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [mensajes, activeTab]);
+
+  // Marcar como leído al abrir la conversación (real)
+  useEffect(() => {
+    if (isMock) return;
+    if ((conversacion.no_leidos ?? 0) > 0) {
+      (supabase as any)
+        .from('lat_conversaciones')
+        .update({ no_leidos: 0 })
+        .eq('id', conversacion.id)
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+        });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversacion.id]);
 
   // ── Gestiones del cliente ─────────────────────────────────────────────────
   const { data: gestiones = [], isLoading: loadingGest } = useQuery<any[]>({
