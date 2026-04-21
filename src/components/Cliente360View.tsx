@@ -181,6 +181,7 @@ export function Cliente360View() {
   const [showCreate,   setShowCreate]   = useState(false);
   const [createNombre, setCreateNombre] = useState("");
   const [showEdit,     setShowEdit]     = useState(false);
+  const [editDoc,      setEditDoc]      = useState<Documento & { _new?: boolean } | null>(null);
   const { isAdmin } = useCurrentUserRol();
   const queryClient = useQueryClient();
 
@@ -317,6 +318,32 @@ export function Cliente360View() {
     const newTipos = tipos.includes(tipo) ? tipos.filter(t => t !== tipo) : [...tipos, tipo];
     await (supabase as any).from("cliente_bancos").update({ tipo_cuenta: newTipos.join("|") || null }).eq("id", existing.id);
     queryClient.invalidateQueries({ queryKey: ["cliente_bancos", selectedId] });
+  };
+
+  // ── Document handlers ──
+  const saveDoc = async (doc: Documento & { _new?: boolean }) => {
+    if (!selectedId) return;
+    const payload = {
+      tipo:               doc.tipo,
+      numero:             doc.numero             || null,
+      fecha_emision:      doc.fecha_emision      || null,
+      fecha_vencimiento:  doc.fecha_vencimiento  || null,
+      pais_emisor:        doc.pais_emisor         || null,
+      observaciones:      doc.observaciones       || null,
+    };
+    if (doc._new) {
+      await (supabase as any).from("cliente_documentos").insert({ ...payload, cliente_id: selectedId });
+    } else {
+      await (supabase as any).from("cliente_documentos").update(payload).eq("id", doc.id);
+    }
+    queryClient.invalidateQueries({ queryKey: ["cliente_docs", selectedId] });
+    setEditDoc(null);
+  };
+
+  const deleteDoc = async (id: string) => {
+    await (supabase as any).from("cliente_documentos").delete().eq("id", id);
+    queryClient.invalidateQueries({ queryKey: ["cliente_docs", selectedId] });
+    setEditDoc(null);
   };
 
   // ── Summary stats ──
@@ -882,15 +909,84 @@ export function Cliente360View() {
 
                 {/* ── DOCUMENTOS ── */}
                 <TabsContent value="documentos" className="m-0 p-5">
-                  <SectionTitle icon={FileText}>Documentos y vigencia</SectionTitle>
-                  {documentos.length === 0 ? (
+                  <div className="flex items-center justify-between mb-4">
+                    <SectionTitle icon={FileText}>Documentos y vigencia</SectionTitle>
+                    {isAdmin && !editDoc && (
+                      <button
+                        onClick={() => setEditDoc({ id: "", tipo: "pasaporte", numero: null, fecha_emision: null, fecha_vencimiento: null, pais_emisor: "Bolivia", observaciones: null, _new: true })}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90 transition-colors"
+                      >
+                        <span className="text-base leading-none">+</span> Agregar
+                      </button>
+                    )}
+                  </div>
+
+                  {/* ── Inline form (create / edit) ── */}
+                  {editDoc && (
+                    <div className="mb-4 p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
+                      <p className="text-xs font-semibold text-foreground">{editDoc._new ? "Nuevo documento" : "Editar documento"}</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Tipo</label>
+                          <select
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                            value={editDoc.tipo}
+                            onChange={e => setEditDoc(d => d && ({ ...d, tipo: e.target.value }))}
+                          >
+                            {Object.entries(docLabels).map(([k, v]) => (
+                              <option key={k} value={k}>{v}</option>
+                            ))}
+                            <option value="otro">Otro</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Número</label>
+                          <input className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editDoc.numero ?? ""} onChange={e => setEditDoc(d => d && ({ ...d, numero: e.target.value }))} placeholder="Ej: P8812345" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Fecha de emisión</label>
+                          <input type="date" className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editDoc.fecha_emision ?? ""} onChange={e => setEditDoc(d => d && ({ ...d, fecha_emision: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Fecha de vencimiento</label>
+                          <input type="date" className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editDoc.fecha_vencimiento ?? ""} onChange={e => setEditDoc(d => d && ({ ...d, fecha_vencimiento: e.target.value }))} />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">País emisor</label>
+                          <input className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editDoc.pais_emisor ?? ""} onChange={e => setEditDoc(d => d && ({ ...d, pais_emisor: e.target.value }))} placeholder="Bolivia" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Observaciones</label>
+                          <input className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editDoc.observaciones ?? ""} onChange={e => setEditDoc(d => d && ({ ...d, observaciones: e.target.value }))} placeholder="Opcional" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          {!editDoc._new && (
+                            <button onClick={() => deleteDoc(editDoc.id)} className="text-[10px] text-destructive hover:underline">Eliminar documento</button>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditDoc(null)} className="px-3 py-1.5 text-xs rounded-md border border-border hover:bg-muted transition-colors">Cancelar</button>
+                          <button onClick={() => saveDoc(editDoc)} className="px-3 py-1.5 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">Guardar</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {documentos.length === 0 && !editDoc ? (
                     <EmptySection icon={FileText} label="No hay documentos registrados para este cliente" />
                   ) : (
                     <div className="space-y-2">
                       {documentos.map(doc => {
-                        const vig = docVigencia(doc.fecha_vencimiento);
+                        const vig       = docVigencia(doc.fecha_vencimiento);
+                        const isEditing = editDoc?.id === doc.id;
                         return (
-                          <div key={doc.id} className="flex items-center gap-3 bg-muted/30 rounded-xl p-3">
+                          <div
+                            key={doc.id}
+                            onClick={() => isAdmin && !editDoc && setEditDoc({ ...doc })}
+                            className={`flex items-center gap-3 rounded-xl p-3 transition-colors ${isEditing ? "bg-primary/5 border border-primary/30" : "bg-muted/30"} ${isAdmin && !editDoc ? "cursor-pointer hover:bg-muted/50" : ""}`}
+                          >
                             <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
                               <FileText className="w-4 h-4 text-primary" />
                             </div>
