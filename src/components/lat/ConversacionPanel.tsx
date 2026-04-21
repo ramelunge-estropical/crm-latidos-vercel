@@ -179,10 +179,60 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       .from('lat_conversaciones')
       .update({ cliente_id: cId, cliente_nombre: cNombre })
       .eq('id', conversacion.id);
-    queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
-    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', cId, telefono] });
+    invalidateAll();
+    toast.success('Cliente vinculado');
     setShowVincular(false);
     setVincularSearch('');
+    setActiveTab('gestiones');
+  };
+
+  const handleAutoVincularCreado = async (cId: string, cNombre: string, tel?: string | null, email?: string | null) => {
+    // Si la conversación no tiene cliente, lo vinculamos automáticamente
+    if (!isMock && !clienteId) {
+      const update: any = { cliente_id: cId, cliente_nombre: cNombre };
+      if (!conversacion.telefono && tel) update.telefono = tel;
+      await (supabase as any).from('lat_conversaciones').update(update).eq('id', conversacion.id);
+      toast.success('Cliente creado y vinculado');
+    }
+    invalidateAll();
+    setActiveTab('gestiones');
+  };
+
+  // ── Liberar chat ──────────────────────────────────────────────────────────
+  const conversacionEstaLiberada = conversacion.estado === 'liberado' || !conversacion.en_foco;
+  const tieneVinculoGestion = !!(conversacion.gestion_id || activeGestiones.length > 0);
+
+  const handleLiberarChat = async () => {
+    if (isMock) { toast.info('Disponible solo en modo real'); return; }
+    setLiberando(true);
+    try {
+      await (supabase as any)
+        .from('lat_conversaciones')
+        .update({ en_foco: false, estado: 'liberado' })
+        .eq('id', conversacion.id);
+      await (supabase as any).from('lat_mensajes').insert({
+        conversacion_id: conversacion.id,
+        tipo: 'sistema',
+        contenido: 'Chat liberado del foco. Volverá automáticamente al recibir un nuevo evento.',
+        estado: 'enviado',
+      });
+      invalidateAll();
+      toast.success('Chat liberado del foco');
+    } catch (e: any) {
+      toast.error(e.message ?? 'Error al liberar chat');
+    } finally {
+      setLiberando(false);
+    }
+  };
+
+  const handleReactivarChat = async () => {
+    if (isMock) return;
+    await (supabase as any)
+      .from('lat_conversaciones')
+      .update({ en_foco: true, estado: 'abierto' })
+      .eq('id', conversacion.id);
+    invalidateAll();
+    toast.success('Chat reactivado al foco');
   };
 
   // ── Send ──────────────────────────────────────────────────────────────────
@@ -195,6 +245,38 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       setShowNota(false);
     } else {
       toast.error(result.error ?? 'Error al enviar el mensaje');
+    }
+  };
+
+  const handleSendTemplate = async ({ template, variables, bodyPreview }: { template: WppTemplate; variables: string[]; bodyPreview: string }): Promise<boolean> => {
+    if (isMock) { toast.info('Disponible solo en modo real'); return false; }
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const res = await fetch(`${supabaseUrl}/functions/v1/wpp-send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({
+          conversacion_id: conversacion.id,
+          template_name: template.name,
+          template_language: template.language,
+          template_variables: variables,
+          contenido: bodyPreview,
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error ?? 'Error al enviar plantilla');
+      }
+      queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacion.id] });
+      toast.success('Plantilla enviada');
+      return true;
+    } catch (e: any) {
+      toast.error(e.message ?? 'Error al enviar plantilla');
+      return false;
     }
   };
 
