@@ -458,8 +458,10 @@ export type Database = {
           espacio_a_bordo: boolean
           estado: string
           estado_civil: string | null
+          facebook: string | null
           fecha_nacimiento: string | null
           id: string
+          instagram: string | null
           nacionalidad: string | null
           nit: string | null
           nombre_completo: string
@@ -472,6 +474,7 @@ export type Database = {
           score_valor: number
           telefono: string | null
           telefono_secundario: string | null
+          tiktok: string | null
           tipo_cliente: string
           updated_at: string
         }
@@ -490,8 +493,10 @@ export type Database = {
           espacio_a_bordo?: boolean
           estado?: string
           estado_civil?: string | null
+          facebook?: string | null
           fecha_nacimiento?: string | null
           id?: string
+          instagram?: string | null
           nacionalidad?: string | null
           nit?: string | null
           nombre_completo: string
@@ -504,6 +509,7 @@ export type Database = {
           score_valor?: number
           telefono?: string | null
           telefono_secundario?: string | null
+          tiktok?: string | null
           tipo_cliente?: string
           updated_at?: string
         }
@@ -522,8 +528,10 @@ export type Database = {
           espacio_a_bordo?: boolean
           estado?: string
           estado_civil?: string | null
+          facebook?: string | null
           fecha_nacimiento?: string | null
           id?: string
+          instagram?: string | null
           nacionalidad?: string | null
           nit?: string | null
           nombre_completo?: string
@@ -536,6 +544,7 @@ export type Database = {
           score_valor?: number
           telefono?: string | null
           telefono_secundario?: string | null
+          tiktok?: string | null
           tipo_cliente?: string
           updated_at?: string
         }
