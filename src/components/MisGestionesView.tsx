@@ -8,7 +8,7 @@ import { GestionDetailView } from "./GestionDetailView";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Hash, Tag, AlertCircle, Plus, Check } from "lucide-react";
+import { Calendar, Hash, Tag, AlertCircle, Plus, Check, Search } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -71,6 +71,7 @@ export function MisGestionesView() {
   );
   const [filterType,     setFilterType]     = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
+  const [busqueda,       setBusqueda]       = useState("");
 
   const { data: colaboradores = [] } = useColaboradores();
 
@@ -186,12 +187,14 @@ export function MisGestionesView() {
   const currentColab = colaboradores.find(c => c.id === colaboradorId);
 
   const filtered = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
     return gestiones.filter(g => {
       if (filterType     !== "all" && g.type     !== filterType)     return false;
       if (filterPriority !== "all" && g.priority !== filterPriority) return false;
+      if (q && !g.title.toLowerCase().includes(q) && !(g.cliente_nombre ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [gestiones, filterType, filterPriority]);
+  }, [gestiones, filterType, filterPriority, busqueda]);
 
   const grouped = useMemo(() => {
     const map: Record<string, GestionRow[]> = { to_do: [], doing: [], review: [], done: [] };
@@ -265,9 +268,19 @@ export function MisGestionesView() {
             </SelectContent>
           </Select>
 
-          {(filterType !== "all" || filterPriority !== "all") && (
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              value={busqueda}
+              onChange={e => setBusqueda(e.target.value)}
+              placeholder="Buscar por título o cliente…"
+              className="h-8 pl-8 pr-3 text-xs rounded-md border border-input bg-background min-w-[200px] focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+
+          {(filterType !== "all" || filterPriority !== "all" || busqueda) && (
             <button
-              onClick={() => { setFilterType("all"); setFilterPriority("all"); }}
+              onClick={() => { setFilterType("all"); setFilterPriority("all"); setBusqueda(""); }}
               className="text-xs text-primary hover:underline"
             >
               Limpiar
