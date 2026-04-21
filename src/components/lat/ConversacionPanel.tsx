@@ -45,6 +45,13 @@ const statusDot: Record<string, string> = {
   done:   'bg-status-done',
 };
 
+const statusLabel: Record<string, { label: string; className: string }> = {
+  to_do:  { label: 'Pendiente',  className: 'bg-muted text-muted-foreground'         },
+  doing:  { label: 'En curso',   className: 'bg-blue-500/15 text-blue-600'           },
+  review: { label: 'En revisión',className: 'bg-yellow-500/15 text-yellow-600'       },
+  done:   { label: 'Finalizado', className: 'bg-green-500/15 text-green-700'         },
+};
+
 type ActiveTab = 'chat' | 'gestiones' | 'cliente';
 
 interface ConversacionPanelProps {
@@ -60,6 +67,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [showVincular, setShowVincular]         = useState(false);
   const [showCrearCliente, setShowCrearCliente] = useState(false);
   const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
+  const [mostrarTodasGest, setMostrarTodasGest]   = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
@@ -327,6 +335,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               <p className="text-[10px] text-muted-foreground">
                 {activeGestiones.length} activa{activeGestiones.length !== 1 ? 's' : ''} · {gestiones.length} total
               </p>
+              <div className="flex items-center gap-1 mt-1.5">
+                <button
+                  onClick={() => setMostrarTodasGest(false)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${!mostrarTodasGest ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                >Activas</button>
+                <button
+                  onClick={() => setMostrarTodasGest(true)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${mostrarTodasGest ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                >Todas</button>
+              </div>
             </div>
             {clienteId ? (
               <button
@@ -388,16 +406,17 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 )}
               </div>
             ) : (
-              gestiones.map((g: any) => {
-                const pCfg   = priorityCfg[g.priority] || priorityCfg.medium;
-                const status = g.pipeline_stages?.global_status || 'to_do';
-                const isDone = status === 'done';
+              (mostrarTodasGest ? gestiones : activeGestiones).map((g: any) => {
+                const pCfg    = priorityCfg[g.priority] || priorityCfg.medium;
+                const status  = g.pipeline_stages?.global_status || 'to_do';
+                const isDone  = status === 'done';
+                const sLabel  = statusLabel[status] || statusLabel.to_do;
                 return (
                   <div
                     key={g.id}
                     onClick={() => setSelectedGestionId(g.id)}
                     className={`flex items-start gap-2.5 rounded-xl p-3 border transition-colors cursor-pointer ${
-                      isDone ? 'bg-muted/20 border-border/50 opacity-60 hover:opacity-80' : 'bg-card border-border hover:border-primary/30 hover:bg-accent/30'
+                      isDone ? 'bg-muted/20 border-border/50 opacity-70 hover:opacity-90' : 'bg-card border-border hover:border-primary/30 hover:bg-accent/30'
                     }`}
                   >
                     <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${statusDot[status] || 'bg-muted'}`} />
@@ -407,7 +426,10 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                         {g.processes?.name}
                         {g.pipeline_stages?.name && ` · ${g.pipeline_stages.name}`}
                       </p>
-                      <div className="flex items-center gap-1.5 mt-1.5">
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${sLabel.className}`}>
+                          {sLabel.label}
+                        </span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${pCfg.className}`}>
                           {pCfg.label}
                         </span>
