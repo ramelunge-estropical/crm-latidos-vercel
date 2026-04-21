@@ -308,6 +308,27 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
           )}
+          {!isMock && tieneVinculoGestion && !conversacionEstaLiberada && (
+            <button
+              onClick={handleLiberarChat}
+              disabled={liberando}
+              title="Liberar chat del foco (queda vinculado a la gestión y vuelve al foco si llega un mensaje)"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border border-border hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {liberando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink className="w-3 h-3" />}
+              Liberar
+            </button>
+          )}
+          {!isMock && conversacionEstaLiberada && (
+            <button
+              onClick={handleReactivarChat}
+              title="Reactivar al foco de Bandeja"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-warning/10 text-warning hover:bg-warning/20 transition-colors"
+            >
+              <Sparkles className="w-3 h-3" />
+              En foco
+            </button>
+          )}
           <button
             onClick={() => setActiveTab('chat')}
             title="Chat"
@@ -390,6 +411,15 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 >
                   <StickyNote className="w-4 h-4" />
                 </button>
+                {isWhatsapp && !isMock && (
+                  <button
+                    onClick={() => setShowTemplates(true)}
+                    className={`p-1.5 rounded-md hover:bg-accent/50 ${isOutOfWindow ? 'text-primary' : 'text-muted-foreground'}`}
+                    title="Plantillas WhatsApp aprobadas (Gupshup)"
+                  >
+                    <FileText className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <textarea
                 rows={1}
@@ -399,20 +429,30 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 disabled={(isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
                 placeholder={
                   isWhatsapp && isOutOfWindow && !showNota
-                    ? 'Ventana expirada. Usá una plantilla.'
+                    ? 'Ventana expirada. Usá una plantilla aprobada →'
                     : showNota
                     ? 'Nota interna...'
                     : 'Escribí un mensaje... (Enter para enviar)'
                 }
                 className="flex-1 bg-muted/50 text-sm rounded-lg px-3 py-2 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
               />
-              <button
-                onClick={handleSend}
-                disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
-                className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
-              >
-                {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+              {isWhatsapp && isOutOfWindow && !isMock && !showNota ? (
+                <button
+                  onClick={() => setShowTemplates(true)}
+                  className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1 text-xs"
+                  title="Enviar plantilla aprobada"
+                >
+                  <FileText className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                  className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+                >
+                  {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              )}
             </div>
           </div>
         </>

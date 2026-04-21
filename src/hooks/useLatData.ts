@@ -118,7 +118,10 @@ export function useLatConversaciones() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "lat_conversaciones" },
-        () => queryClient.invalidateQueries({ queryKey: ["lat_conversaciones"] })
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["lat_conversaciones"] });
+          queryClient.invalidateQueries({ queryKey: ["lat-conversaciones"] });
+        }
       )
       .subscribe();
 
