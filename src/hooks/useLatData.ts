@@ -182,7 +182,9 @@ export function useLatMensajes(conversacionId: string | null, isMock: boolean) {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [conversacionId, isMock, queryClient]);
 
   return { data: data ?? [], isLoading };
