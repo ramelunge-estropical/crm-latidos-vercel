@@ -4,12 +4,14 @@ import {
   Send, Paperclip, StickyNote, AlertTriangle,
   Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
   ClipboardList, Plus, ChevronRight, User, Building2, Loader2, Search, X,
+  Unlink, FileText, Sparkles,
 } from 'lucide-react';
 import { getCliente } from '@/data/latMockData';
 import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
 import { GestionDialog } from '@/components/GestionDialog';
 import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
+import { WppTemplatePicker, WppTemplate } from '@/components/lat/WppTemplatePicker';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -69,8 +71,17 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [showCrearCliente, setShowCrearCliente]   = useState(false);
   const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
   const [mostrarTodasGest, setMostrarTodasGest]   = useState(true);
+  const [showTemplates, setShowTemplates]         = useState(false);
+  const [liberando, setLiberando]                 = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-gestiones-cliente'] });
+  };
 
   const isMock = conversacion._source === 'mock';
 
@@ -168,10 +179,60 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       .from('lat_conversaciones')
       .update({ cliente_id: cId, cliente_nombre: cNombre })
       .eq('id', conversacion.id);
-    queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
-    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', cId, telefono] });
+    invalidateAll();
+    toast.success('Cliente vinculado');
     setShowVincular(false);
     setVincularSearch('');
+    setActiveTab('gestiones');
+  };
+
+  const handleAutoVincularCreado = async (cId: string, cNombre: string, tel?: string | null, email?: string | null) => {
+    // Si la conversación no tiene cliente, lo vinculamos automáticamente
+    if (!isMock && !clienteId) {
+      const update: any = { cliente_id: cId, cliente_nombre: cNombre };
+      if (!conversacion.telefono && tel) update.telefono = tel;
+      await (supabase as any).from('lat_conversaciones').update(update).eq('id', conversacion.id);
+      toast.success('Cliente creado y vinculado');
+    }
+    invalidateAll();
+    setActiveTab('gestiones');
+  };
+
+  // ── Liberar chat ──────────────────────────────────────────────────────────
+  const conversacionEstaLiberada = conversacion.estado === 'liberado' || !conversacion.en_foco;
+  const tieneVinculoGestion = !!(conversacion.gestion_id || activeGestiones.length > 0);
+
+  const handleLiberarChat = async () => {
+    if (isMock) { toast.info('Disponible solo en modo real'); return; }
+    setLiberando(true);
+    try {
+      await (supabase as any)
+        .from('lat_conversaciones')
+        .update({ en_foco: false, estado: 'liberado' })
+        .eq('id', conversacion.id);
+      await (supabase as any).from('lat_mensajes').insert({
+        conversacion_id: conversacion.id,
+        tipo: 'sistema',
+        contenido: 'Chat liberado del foco. Volverá automáticamente al recibir un nuevo evento.',
+        estado: 'enviado',
+      });
+      invalidateAll();
+      toast.success('Chat liberado del foco');
+    } catch (e: any) {
+      toast.error(e.message ?? 'Error al liberar chat');
+    } finally {
+      setLiberando(false);
+    }
+  };
+
+  const handleReactivarChat = async () => {
+    if (isMock) return;
+    await (supabase as any)
+      .from('lat_conversaciones')
+      .update({ en_foco: true, estado: 'abierto' })
+      .eq('id', conversacion.id);
+    invalidateAll();
+    toast.success('Chat reactivado al foco');
   };
 
   // ── Send ──────────────────────────────────────────────────────────────────
@@ -184,6 +245,38 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       setShowNota(false);
     } else {
       toast.error(result.error ?? 'Error al enviar el mensaje');
+    }
+  };
+
+  const handleSendTemplate = async ({ template, variables, bodyPreview }: { template: WppTemplate; variables: string[]; bodyPreview: string }): Promise<boolean> => {
+    if (isMock) { toast.info('Disponible solo en modo real'); return false; }
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const res = await fetch(`${supabaseUrl}/functions/v1/wpp-send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({
+          conversacion_id: conversacion.id,
+          template_name: template.name,
+          template_language: template.language,
+          template_variables: variables,
+          contenido: bodyPreview,
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error ?? 'Error al enviar plantilla');
+      }
+      queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacion.id] });
+      toast.success('Plantilla enviada');
+      return true;
+    } catch (e: any) {
+      toast.error(e.message ?? 'Error al enviar plantilla');
+      return false;
     }
   };
 
@@ -214,6 +307,27 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             }`}>
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
+          )}
+          {!isMock && tieneVinculoGestion && !conversacionEstaLiberada && (
+            <button
+              onClick={handleLiberarChat}
+              disabled={liberando}
+              title="Liberar chat del foco (queda vinculado a la gestión y vuelve al foco si llega un mensaje)"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border border-border hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {liberando ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink className="w-3 h-3" />}
+              Liberar
+            </button>
+          )}
+          {!isMock && conversacionEstaLiberada && (
+            <button
+              onClick={handleReactivarChat}
+              title="Reactivar al foco de Bandeja"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-warning/10 text-warning hover:bg-warning/20 transition-colors"
+            >
+              <Sparkles className="w-3 h-3" />
+              En foco
+            </button>
           )}
           <button
             onClick={() => setActiveTab('chat')}
@@ -297,6 +411,15 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 >
                   <StickyNote className="w-4 h-4" />
                 </button>
+                {isWhatsapp && !isMock && (
+                  <button
+                    onClick={() => setShowTemplates(true)}
+                    className={`p-1.5 rounded-md hover:bg-accent/50 ${isOutOfWindow ? 'text-primary' : 'text-muted-foreground'}`}
+                    title="Plantillas WhatsApp aprobadas (Gupshup)"
+                  >
+                    <FileText className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <textarea
                 rows={1}
@@ -306,20 +429,30 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 disabled={(isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
                 placeholder={
                   isWhatsapp && isOutOfWindow && !showNota
-                    ? 'Ventana expirada. Usá una plantilla.'
+                    ? 'Ventana expirada. Usá una plantilla aprobada →'
                     : showNota
                     ? 'Nota interna...'
                     : 'Escribí un mensaje... (Enter para enviar)'
                 }
                 className="flex-1 bg-muted/50 text-sm rounded-lg px-3 py-2 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
               />
-              <button
-                onClick={handleSend}
-                disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
-                className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
-              >
-                {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              </button>
+              {isWhatsapp && isOutOfWindow && !isMock && !showNota ? (
+                <button
+                  onClick={() => setShowTemplates(true)}
+                  className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1 text-xs"
+                  title="Enviar plantilla aprobada"
+                >
+                  <FileText className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                  className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+                >
+                  {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                </button>
+              )}
             </div>
           </div>
         </>
@@ -589,15 +722,23 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         open={showCrearCliente}
         onOpenChange={(open) => {
           setShowCrearCliente(open);
-          if (!open) {
-            queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
-            queryClient.invalidateQueries({ queryKey: ['lat-cliente-db', clienteId, telefono] });
-          }
+          if (!open) invalidateAll();
         }}
         initialTelefono={conversacion.telefono ?? ''}
         initialNombre={conversacion.cliente_nombre ?? ''}
-        initialCanal="WhatsApp"
+        initialCanal={conversacion.canal === 'whatsapp' ? 'WhatsApp' : conversacion.canal === 'phone' ? 'Telefonía' : 'Correo'}
+        onCreated={handleAutoVincularCreado}
       />
+
+      {isWhatsapp && !isMock && (
+        <WppTemplatePicker
+          open={showTemplates}
+          onOpenChange={setShowTemplates}
+          conversacionId={conversacion.id}
+          clienteNombre={clienteNombre}
+          onSend={handleSendTemplate}
+        />
+      )}
     </div>
   );
 }
