@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
 
     let gupshupRes: Response;
     try {
-      gupshupRes = await fetch("https://api.gupshup.io/sm/api/v1/msg", {
+      gupshupRes = await fetch("https://api.gupshup.io/wa/api/v1/msg", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
