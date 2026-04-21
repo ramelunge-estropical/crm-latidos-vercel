@@ -41,6 +41,7 @@ interface FormData {
   club_viajes: boolean;
   espacio_a_bordo: boolean;
   pases_a_bordo: string;
+  dias_credito: string;
   notas_rapidas: string;
 }
 
@@ -77,6 +78,7 @@ const EMPTY_FORM: FormData = {
   club_viajes:         false,
   espacio_a_bordo:     false,
   pases_a_bordo:       "0",
+  dias_credito:        "",
   notas_rapidas:       "",
 };
 
@@ -204,6 +206,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
           club_viajes:         clienteData.club_viajes         ?? false,
           espacio_a_bordo:     clienteData.espacio_a_bordo     ?? false,
           pases_a_bordo:       String(clienteData.pases_a_bordo ?? "0"),
+          dias_credito:        String(clienteData.dias_credito  ?? ""),
           notas_rapidas:       clienteData.notas_rapidas       ?? "",
         });
       } else {
@@ -302,6 +305,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
         club_viajes:         form.club_viajes,
         espacio_a_bordo:     form.espacio_a_bordo,
         pases_a_bordo:       parseInt(form.pases_a_bordo) || 0,
+        dias_credito:        form.dias_credito ? parseInt(form.dias_credito) : null,
         notas_rapidas:       form.notas_rapidas    || null,
         score_valor:         0,
       };
@@ -453,6 +457,9 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
                 </Field>
                 <Field label="Cargo del contacto">
                   <Input className="h-8 text-xs" value={form.contacto_cargo} onChange={e => set("contacto_cargo", e.target.value)} placeholder="Gerente Comercial" />
+                </Field>
+                <Field label="Días de crédito">
+                  <Input className="h-8 text-xs" type="number" min="0" value={form.dias_credito} onChange={e => set("dias_credito", e.target.value)} placeholder="Ej: 30" />
                 </Field>
               </div>
             </div>

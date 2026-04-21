@@ -63,6 +63,7 @@ type Cliente = {
   score_valor: number;
   score_etiqueta: string | null;
   notas_rapidas: string | null;
+  dias_credito: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -84,6 +85,7 @@ type IdeaViaje   = { id: string; destino: string; notas: string | null; priorida
 type Referido    = { id: string; referido_nombre: string | null; tipo: string; fecha: string | null; observaciones: string | null };
 type Familiar    = { id: string; nombre: string; relacion: string; fecha_nacimiento: string | null; documento_numero: string | null };
 type Pago        = { id: string; tipo: string; monto: number; moneda: string | null; concepto: string | null; fecha: string | null; estado: string | null };
+type Cobranza    = { id: string; concepto: string; monto: number; moneda: string; fecha_emision: string | null; fecha_vencimiento: string | null; estado: string; notas: string | null };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -198,7 +200,8 @@ export function Cliente360View() {
   const [createNombre, setCreateNombre] = useState("");
   const [showEdit,     setShowEdit]     = useState(false);
   const [editDoc,      setEditDoc]      = useState<Documento & { _new?: boolean } | null>(null);
-  const [editLealtad,  setEditLealtad]  = useState<Lealtad  & { _new?: boolean } | null>(null);
+  const [editLealtad,   setEditLealtad]   = useState<Lealtad   & { _new?: boolean } | null>(null);
+  const [editCobranza,  setEditCobranza]  = useState<Cobranza  & { _new?: boolean } | null>(null);
   const { isAdmin } = useCurrentUserRol();
   const queryClient = useQueryClient();
 
@@ -301,6 +304,16 @@ export function Cliente360View() {
     }),
   });
 
+  const { data: cobranzas = [] } = useQuery<Cobranza[]>({
+    queryKey: ["cliente_cobranzas", selectedId],
+    enabled: !!selectedId,
+    queryFn: () => safeQuery(async () => {
+      const { data } = await (supabase as any).from("cliente_cobranzas").select("*")
+        .eq("cliente_id", selectedId).order("fecha_vencimiento", { ascending: true });
+      return data ?? [];
+    }),
+  });
+
   const { data: gestionesCliente = [] } = useQuery<any[]>({
     queryKey: ["gestiones_cliente_id", selectedId],
     enabled: !!selectedId,
@@ -387,6 +400,33 @@ export function Cliente360View() {
     await (supabase as any).from("cliente_lealtad").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["cliente_lealtad", selectedId] });
     setEditLealtad(null);
+  };
+
+  // ── Cobranza handlers ──
+  const saveCobranza = async (c: Cobranza & { _new?: boolean }) => {
+    if (!selectedId) return;
+    const payload = {
+      concepto:          c.concepto,
+      monto:             Number(c.monto) || 0,
+      moneda:            c.moneda || "Bs",
+      fecha_emision:     c.fecha_emision     || null,
+      fecha_vencimiento: c.fecha_vencimiento || null,
+      estado:            c.estado || "pendiente",
+      notas:             c.notas || null,
+    };
+    if (c._new) {
+      await (supabase as any).from("cliente_cobranzas").insert({ ...payload, cliente_id: selectedId });
+    } else {
+      await (supabase as any).from("cliente_cobranzas").update(payload).eq("id", c.id);
+    }
+    queryClient.invalidateQueries({ queryKey: ["cliente_cobranzas", selectedId] });
+    setEditCobranza(null);
+  };
+
+  const deleteCobranza = async (id: string) => {
+    await (supabase as any).from("cliente_cobranzas").delete().eq("id", id);
+    queryClient.invalidateQueries({ queryKey: ["cliente_cobranzas", selectedId] });
+    setEditCobranza(null);
   };
 
   // ── Summary stats ──
@@ -841,6 +881,7 @@ export function Cliente360View() {
                           { label: "Facebook",             value: cliente.facebook },
                           { label: "TikTok",               value: cliente.tiktok },
                           { label: "Canal de contacto",    value: (cliente as any).canal_contacto },
+                          { label: "Días de crédito",      value: cliente.dias_credito != null ? `${cliente.dias_credito} días` : null },
                           { label: "Asesor asignado",      value: cliente.asesor_nombre },
                         ].map(({ label, value }) => (
                           <div key={label}>
@@ -1214,6 +1255,115 @@ export function Cliente360View() {
                       </div>
                     </div>
                   )}
+
+                  {/* ── Cobranzas pendientes ── */}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <SectionTitle icon={CreditCard}>Cobranzas</SectionTitle>
+                      {isAdmin && !editCobranza && (
+                        <button
+                          onClick={() => setEditCobranza({ id: "", concepto: "", monto: 0, moneda: "Bs", fecha_emision: null, fecha_vencimiento: null, estado: "pendiente", notas: null, _new: true })}
+                          className="flex items-center gap-1 px-2.5 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90 transition-colors"
+                        >
+                          <span className="text-base leading-none">+</span> Nueva
+                        </button>
+                      )}
+                    </div>
+
+                    {editCobranza && (
+                      <div className="mb-3 p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
+                        <p className="text-xs font-semibold">{editCobranza._new ? "Nueva cobranza" : "Editar cobranza"}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1 col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Concepto *</label>
+                            <input className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editCobranza.concepto} onChange={e => setEditCobranza(c => c && ({ ...c, concepto: e.target.value }))} placeholder="Ej: Factura #001 - Paquete Europa" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Monto</label>
+                            <input type="number" min="0" className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editCobranza.monto} onChange={e => setEditCobranza(c => c && ({ ...c, monto: Number(e.target.value) }))} placeholder="0" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Moneda</label>
+                            <select className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editCobranza.moneda} onChange={e => setEditCobranza(c => c && ({ ...c, moneda: e.target.value }))}>
+                              <option value="Bs">Bs (Bolivianos)</option>
+                              <option value="USD">USD</option>
+                              <option value="EUR">EUR</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Fecha de emisión</label>
+                            <input type="date" className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editCobranza.fecha_emision ?? ""} onChange={e => setEditCobranza(c => c && ({ ...c, fecha_emision: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Fecha de vencimiento</label>
+                            <input type="date" className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editCobranza.fecha_vencimiento ?? ""} onChange={e => setEditCobranza(c => c && ({ ...c, fecha_vencimiento: e.target.value }))} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground">Estado</label>
+                            <select className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editCobranza.estado} onChange={e => setEditCobranza(c => c && ({ ...c, estado: e.target.value }))}>
+                              <option value="pendiente">Pendiente</option>
+                              <option value="pagado">Pagado</option>
+                              <option value="vencido">Vencido</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1 col-span-2">
+                            <label className="text-[10px] text-muted-foreground">Notas</label>
+                            <input className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editCobranza.notas ?? ""} onChange={e => setEditCobranza(c => c && ({ ...c, notas: e.target.value }))} placeholder="Opcional" />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
+                          <div>{!editCobranza._new && <button onClick={() => deleteCobranza(editCobranza.id)} className="text-[10px] text-destructive hover:underline">Eliminar</button>}</div>
+                          <div className="flex gap-2">
+                            <button onClick={() => setEditCobranza(null)} className="px-3 py-1.5 text-xs rounded-md border border-border hover:bg-muted transition-colors">Cancelar</button>
+                            <button onClick={() => editCobranza.concepto.trim() && saveCobranza(editCobranza)} className="px-3 py-1.5 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">Guardar</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {cobranzas.length === 0 && !editCobranza ? (
+                      <p className="text-xs text-muted-foreground py-2">Sin cobranzas registradas</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {cobranzas.map(c => {
+                          const dias = c.fecha_vencimiento
+                            ? Math.floor((new Date(`${c.fecha_vencimiento}T00:00:00`).getTime() - Date.now()) / 86_400_000)
+                            : null;
+                          const estadoCfg = {
+                            pendiente: { label: "Pendiente", className: "bg-amber-500/10 text-amber-700 border-amber-200" },
+                            pagado:    { label: "Pagado",    className: "bg-emerald-500/10 text-emerald-700 border-emerald-200" },
+                            vencido:   { label: "Vencido",   className: "bg-red-500/10 text-red-700 border-red-200" },
+                          }[c.estado] ?? { label: c.estado, className: "bg-muted text-muted-foreground" };
+                          const autoVencido = dias !== null && dias < 0 && c.estado === "pendiente";
+                          return (
+                            <div
+                              key={c.id}
+                              onClick={() => isAdmin && !editCobranza && setEditCobranza({ ...c })}
+                              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${autoVencido ? "bg-red-500/5 border border-red-200" : "bg-muted/20"} ${isAdmin && !editCobranza ? "cursor-pointer hover:bg-muted/40" : ""}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{c.concepto}</p>
+                                <p className="text-[10px] text-muted-foreground">
+                                  {c.fecha_vencimiento ? `Vence: ${fmtDate(c.fecha_vencimiento)}` : "Sin fecha"}
+                                  {dias !== null && c.estado === "pendiente" && (
+                                    <span className={`ml-1.5 font-medium ${dias < 0 ? "text-red-600" : dias < 7 ? "text-amber-600" : "text-muted-foreground"}`}>
+                                      {dias < 0 ? `Vencido hace ${Math.abs(dias)}d` : dias === 0 ? "Vence hoy" : `En ${dias}d`}
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                              <p className="text-xs font-semibold flex-shrink-0">
+                                {c.moneda} {Number(c.monto).toLocaleString()}
+                              </p>
+                              <Badge variant="outline" className={`text-[10px] flex-shrink-0 ${autoVencido ? "bg-red-500/10 text-red-700 border-red-200" : estadoCfg.className}`}>
+                                {autoVencido ? "Vencido" : estadoCfg.label}
+                              </Badge>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
 
                   <SectionTitle icon={DollarSign}>Movimientos</SectionTitle>
                   {pagos.length === 0 ? (
