@@ -145,9 +145,11 @@ interface CreateClienteDialogProps {
   initialNombre?: string;
   initialTelefono?: string;
   initialCanal?: string;
+  /** Callback cuando el cliente se crea exitosamente. Útil para auto-vincular. */
+  onCreated?: (clienteId: string, nombre: string, telefono?: string | null, email?: string | null) => void;
 }
 
-export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "" }: CreateClienteDialogProps) {
+export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "", onCreated }: CreateClienteDialogProps) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormData>({
     ...EMPTY_FORM,
@@ -252,11 +254,18 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
         score_valor:         0,
       };
 
-      const { error } = await (supabase as any).from("clientes").insert(payload);
+      const { data: inserted, error } = await (supabase as any)
+        .from("clientes")
+        .insert(payload)
+        .select("id, nombre_completo, telefono, email")
+        .single();
       if (error) throw error;
 
       toast.success("Cliente creado correctamente");
       queryClient.invalidateQueries({ queryKey: ["clientes"] });
+      if (inserted && onCreated) {
+        onCreated(inserted.id, inserted.nombre_completo, inserted.telefono, inserted.email);
+      }
       setForm({ ...EMPTY_FORM });
       setTranscript(null);
       onOpenChange(false);
