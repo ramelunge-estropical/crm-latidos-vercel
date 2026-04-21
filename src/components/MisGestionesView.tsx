@@ -8,7 +8,7 @@ import { GestionDetailView } from "./GestionDetailView";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Hash, Tag, AlertCircle, Plus } from "lucide-react";
+import { Calendar, Hash, Tag, AlertCircle, Plus, Check } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -16,10 +16,10 @@ import { GestionDialog } from "./GestionDialog";
 import { Button } from "@/components/ui/button";
 
 const COLUMNS = [
-  { id: "to_do",  label: "To Do",   dot: "bg-status-todo"   },
-  { id: "doing",  label: "Doing",   dot: "bg-status-doing"  },
-  { id: "review", label: "Review",  dot: "bg-status-review" },
-  { id: "done",   label: "Done",    dot: "bg-status-done"   },
+  { id: "to_do",  label: "Por hacer",   dot: "bg-status-todo"   },
+  { id: "doing",  label: "En curso",    dot: "bg-status-doing"  },
+  { id: "review", label: "En revisión", dot: "bg-status-review" },
+  { id: "done",   label: "Completo",    dot: "bg-status-done"   },
 ];
 
 const priorityConfig: Record<string, { label: string; className: string }> = {
@@ -146,6 +146,41 @@ export function MisGestionesView() {
   const handleSelectColab = (id: string) => {
     setColaboradorId(id);
     localStorage.setItem("mis_gestiones_colaborador", id);
+  };
+
+  const handleMarkDone = async (gestionId: string) => {
+    const gestion = gestiones.find(g => g.id === gestionId);
+    if (!gestion || gestion.pipeline_stages?.global_status === "done") return;
+
+    const targetStage = allStages
+      .filter(s => s.process_id === gestion.process_id && s.global_status === "done")
+      .sort((a, b) => a.order - b.order)[0];
+
+    if (!targetStage) { toast.error("Este proceso no tiene etapa 'Completo'"); return; }
+
+    queryClient.setQueryData(["mis-gestiones", colaboradorId], (old: GestionRow[]) =>
+      old?.map(g => g.id === gestionId
+        ? { ...g, stage_id: targetStage.id, pipeline_stages: { ...g.pipeline_stages!, global_status: "done", id: targetStage.id } }
+        : g
+      )
+    );
+
+    const { error } = await (supabase as any)
+      .from("gestiones")
+      .update({ stage_id: targetStage.id, entered_stage_at: new Date().toISOString() })
+      .eq("id", gestionId);
+
+    if (error) {
+      toast.error("Error al marcar como completo");
+      queryClient.invalidateQueries({ queryKey: ["mis-gestiones", colaboradorId] });
+    } else {
+      await (supabase as any).from("stage_history").insert({
+        gestion_id: gestionId,
+        from_stage_id: gestion.stage_id,
+        to_stage_id: targetStage.id,
+      });
+      toast.success("Gestión marcada como completa");
+    }
   };
 
   const currentColab = colaboradores.find(c => c.id === colaboradorId);
@@ -293,64 +328,89 @@ export function MisGestionesView() {
                           const isOverdue = g.due_date && new Date(g.due_date) < new Date() && col.id !== "done";
                           return (
                             <Draggable key={g.id} draggableId={g.id} index={i}>
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  {...provided.dragHandleProps}
-                                  onClick={() => { setDetailGestionId(g.id); setDetailProcessId(g.process_id); }}
-                                  className={`bg-card rounded-lg border p-3 shadow-sm cursor-pointer transition-all ${
-                                    snapshot.isDragging
-                                      ? "shadow-lg border-primary/40 rotate-[1deg]"
-                                      : "border-border hover:shadow-md hover:border-primary/30"
-                                  }`}
-                                >
-                                  {/* Código + tipo */}
-                                  <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                                    {g.codigo && (
-                                      <span className="inline-flex items-center gap-0.5 text-[10px] font-mono font-semibold text-muted-foreground">
-                                        <Hash className="w-2.5 h-2.5" />{g.codigo}
-                                      </span>
-                                    )}
-                                    {tConfig && (
-                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${tConfig.className}`}>
-                                        <Tag className="w-2.5 h-2.5" />{tConfig.label}
-                                      </span>
-                                    )}
+                              {(provided, snapshot) => {
+                                const isDone = col.id === "done";
+                                return (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.draggableProps}
+                                    {...provided.dragHandleProps}
+                                    onClick={() => { setDetailGestionId(g.id); setDetailProcessId(g.process_id); }}
+                                    className={`bg-card rounded-lg border p-3 shadow-sm cursor-pointer transition-all ${
+                                      isDone
+                                        ? "opacity-60 border-emerald-200 bg-emerald-500/5"
+                                        : snapshot.isDragging
+                                          ? "shadow-lg border-primary/40 rotate-[1deg]"
+                                          : "border-border hover:shadow-md hover:border-primary/30"
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-2">
+                                      {/* Mark-done circle */}
+                                      {!isDone && (
+                                        <button
+                                          onClick={e => { e.stopPropagation(); handleMarkDone(g.id); }}
+                                          title="Marcar como completo"
+                                          className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full border-2 border-muted-foreground/40 hover:border-emerald-500 hover:bg-emerald-500/10 flex items-center justify-center transition-colors"
+                                        />
+                                      )}
+                                      {isDone && (
+                                        <div className="mt-0.5 flex-shrink-0 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+                                          <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                                        </div>
+                                      )}
+
+                                      <div className="flex-1 min-w-0">
+                                        {/* Código + tipo */}
+                                        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                                          {g.codigo && (
+                                            <span className="inline-flex items-center gap-0.5 text-[10px] font-mono font-semibold text-muted-foreground">
+                                              <Hash className="w-2.5 h-2.5" />{g.codigo}
+                                            </span>
+                                          )}
+                                          {tConfig && (
+                                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${tConfig.className}`}>
+                                              <Tag className="w-2.5 h-2.5" />{tConfig.label}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* Título */}
+                                        <p className={`text-sm font-medium leading-snug mb-1 line-clamp-2 ${isDone ? "line-through text-muted-foreground" : "text-card-foreground"}`}>
+                                          {g.title}
+                                        </p>
+
+                                        {/* Cliente */}
+                                        {g.cliente_nombre && (
+                                          <p className="text-[11px] text-muted-foreground mb-1.5">{g.cliente_nombre}</p>
+                                        )}
+
+                                        {/* Etapa específica */}
+                                        {g.pipeline_stages?.name && (
+                                          <p className="text-[10px] text-muted-foreground mb-1.5">
+                                            Etapa: <span className="font-medium">{g.pipeline_stages.name}</span>
+                                          </p>
+                                        )}
+
+                                        {/* Footer: prioridad + fecha */}
+                                        <div className="flex items-center gap-2 flex-wrap mt-1 pt-1.5 border-t border-border/50">
+                                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${pConfig.className}`}>
+                                            {pConfig.label}
+                                          </span>
+                                          {g.due_date && (
+                                            <span className={`inline-flex items-center gap-1 text-[10px] ml-auto ${
+                                              isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"
+                                            }`}>
+                                              <Calendar className="w-3 h-3" />
+                                              {format(new Date(g.due_date), "dd MMM", { locale: es })}
+                                              {isOverdue && " · Vencida"}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
                                   </div>
-
-                                  {/* Título */}
-                                  <p className="text-sm font-medium text-card-foreground leading-snug mb-1 line-clamp-2">{g.title}</p>
-
-                                  {/* Cliente */}
-                                  {g.cliente_nombre && (
-                                    <p className="text-[11px] text-muted-foreground mb-1.5">{g.cliente_nombre}</p>
-                                  )}
-
-                                  {/* Etapa específica */}
-                                  {g.pipeline_stages?.name && (
-                                    <p className="text-[10px] text-muted-foreground mb-1.5">
-                                      Etapa: <span className="font-medium">{g.pipeline_stages.name}</span>
-                                    </p>
-                                  )}
-
-                                  {/* Footer: prioridad + fecha */}
-                                  <div className="flex items-center gap-2 flex-wrap mt-1 pt-1.5 border-t border-border/50">
-                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${pConfig.className}`}>
-                                      {pConfig.label}
-                                    </span>
-                                    {g.due_date && (
-                                      <span className={`inline-flex items-center gap-1 text-[10px] ml-auto ${
-                                        isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"
-                                      }`}>
-                                        <Calendar className="w-3 h-3" />
-                                        {format(new Date(g.due_date), "dd MMM", { locale: es })}
-                                        {isOverdue && " · Vencida"}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                                );
+                              }}
                             </Draggable>
                           );
                         })}
