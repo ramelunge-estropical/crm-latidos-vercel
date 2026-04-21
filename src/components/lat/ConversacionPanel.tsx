@@ -64,7 +64,8 @@ interface ConversacionPanelProps {
 export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [inputValue, setInputValue]               = useState('');
   const [showNota, setShowNota]                   = useState(false);
-  const [activeTab, setActiveTab]                 = useState<ActiveTab>('cliente');
+  // Por defecto la primera vista activa es el chat (consola de atención).
+  const [activeTab, setActiveTab]                 = useState<ActiveTab>('chat');
   const [showCreateGestion, setShowCreateGestion] = useState(false);
   const [vincularSearch, setVincularSearch]       = useState('');
   const [showVincular, setShowVincular]           = useState(false);
