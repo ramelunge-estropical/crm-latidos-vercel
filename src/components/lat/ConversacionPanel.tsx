@@ -82,6 +82,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
     queryClient.invalidateQueries({ queryKey: ['lat-cliente-db'] });
     queryClient.invalidateQueries({ queryKey: ['lat-gestiones-cliente'] });
+    queryClient.invalidateQueries({ queryKey: ['cliente-db-panel'] });
+    queryClient.invalidateQueries({ queryKey: ['gestiones-panel'] });
+    queryClient.invalidateQueries({ queryKey: ['clientes'] });
   };
 
   const isMock = conversacion._source === 'mock';
