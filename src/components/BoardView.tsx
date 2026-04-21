@@ -187,6 +187,41 @@ export function BoardView({ processId, processName }: BoardViewProps) {
   const hasFilters = filterPriority !== "all" || filterResponsable !== "all";
   const hasRules = rules.length > 0;
 
+  // Find the "done" stage for this process
+  const doneStage = stages.find(s => s.global_status === "done");
+
+  const handleMarkDone = async (gestionId: string) => {
+    if (!doneStage) { toast.error("No hay etapa 'Completo' en este proceso"); return; }
+    const gestion = gestiones.find(g => g.id === gestionId);
+    if (!gestion || gestion.stage_id === doneStage.id) return;
+
+    queryClient.setQueryData(["gestiones", processId], (old: any[]) =>
+      old.map(g => g.id === gestionId
+        ? { ...g, stage_id: doneStage.id, entered_stage_at: new Date().toISOString() }
+        : g
+      )
+    );
+
+    const { error } = await supabase
+      .from("gestiones")
+      .update({ stage_id: doneStage.id, entered_stage_at: new Date().toISOString() } as any)
+      .eq("id", gestionId);
+
+    if (error) {
+      toast.error("Error al marcar como completo");
+      queryClient.invalidateQueries({ queryKey: ["gestiones", processId] });
+      return;
+    }
+
+    await supabase.from("stage_history").insert({
+      gestion_id: gestionId,
+      from_stage_id: gestion.stage_id,
+      to_stage_id: doneStage.id,
+    } as any);
+
+    toast.success("Gestión marcada como completa");
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -268,6 +303,7 @@ export function BoardView({ processId, processName }: BoardViewProps) {
                 canAdd={isAdmin}
                 onAddGestion={() => isAdmin && setCreateStageId(stage.id)}
                 onEditGestion={(g) => setDetailGestionId(g.id)}
+                onMarkDone={stage.global_status !== "done" ? handleMarkDone : undefined}
               />
             ))}
 
