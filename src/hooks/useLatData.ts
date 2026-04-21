@@ -118,7 +118,9 @@ export function useLatConversaciones() {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [queryClient]);
 
   return { data: data ?? [], isLoading, error };
@@ -180,7 +182,9 @@ export function useLatMensajes(conversacionId: string | null, isMock: boolean) {
       )
       .subscribe();
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [conversacionId, isMock, queryClient]);
 
   return { data: data ?? [], isLoading };
