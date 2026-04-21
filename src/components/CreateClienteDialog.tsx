@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -155,6 +155,17 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
     telefono:        initialTelefono,
     canal_contacto:  initialCanal,
   });
+  useEffect(() => {
+    if (open) {
+      setForm({
+        ...EMPTY_FORM,
+        nombre_completo: initialNombre,
+        telefono:        initialTelefono,
+        canal_contacto:  initialCanal,
+      });
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [saving, setSaving]       = useState(false);
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);

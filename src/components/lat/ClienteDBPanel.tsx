@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { GestionDetailView } from '@/components/GestionDetailView';
 import { useQuery } from '@tanstack/react-query';
 import {
   User, Phone as PhoneIcon, Mail, ChevronDown, ChevronRight,
@@ -59,6 +60,7 @@ const priorityCfg: Record<string, { label: string; className: string }> = {
 };
 
 export function ClienteDBPanel({ clienteId, conversacion, onCrearGestion }: ClienteDBPanelProps) {
+  const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
   const { data: cliente } = useQuery<any>({
     queryKey: ['cliente-db-panel', clienteId],
     queryFn: async () => {
@@ -148,7 +150,11 @@ export function ClienteDBPanel({ clienteId, conversacion, onCrearGestion }: Clie
               const status = g.pipeline_stages?.global_status ?? 'to_do';
               const pCfg = priorityCfg[g.priority] ?? priorityCfg.medium;
               return (
-                <div key={g.id} className="flex items-start gap-2">
+                <div
+                  key={g.id}
+                  onClick={() => setSelectedGestionId(g.id)}
+                  className="flex items-start gap-2 cursor-pointer hover:bg-accent/40 rounded-lg px-1 py-0.5 -mx-1 transition-colors"
+                >
                   <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${statusDot[status] ?? 'bg-muted'}`} />
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-medium truncate">{g.title}</p>
@@ -201,6 +207,12 @@ export function ClienteDBPanel({ clienteId, conversacion, onCrearGestion }: Clie
           <p className="text-[11px] text-foreground leading-relaxed">{cliente.notas_rapidas}</p>
         </Section>
       )}
+
+      <GestionDetailView
+        open={!!selectedGestionId}
+        onOpenChange={(o) => { if (!o) setSelectedGestionId(null); }}
+        gestionId={selectedGestionId ?? ''}
+      />
 
       {/* Link a Cliente 360 completo */}
       <div className="px-4 py-3 mt-auto">
