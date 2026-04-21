@@ -943,6 +943,7 @@ export type Database = {
           cliente_id: string | null
           cliente_nombre: string | null
           created_at: string | null
+          en_foco: boolean
           estado: string
           gestion_id: string | null
           id: string
@@ -964,6 +965,7 @@ export type Database = {
           cliente_id?: string | null
           cliente_nombre?: string | null
           created_at?: string | null
+          en_foco?: boolean
           estado?: string
           gestion_id?: string | null
           id?: string
@@ -985,6 +987,7 @@ export type Database = {
           cliente_id?: string | null
           cliente_nombre?: string | null
           created_at?: string | null
+          en_foco?: boolean
           estado?: string
           gestion_id?: string | null
           id?: string

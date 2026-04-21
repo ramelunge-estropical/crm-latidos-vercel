@@ -28,11 +28,24 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { conversacion_id, contenido, autor_nombre } = await req.json();
+    const body = await req.json();
+    const {
+      conversacion_id,
+      contenido,
+      autor_nombre,
+      // Soporte para plantilla aprobada Gupshup:
+      template_name,           // string
+      template_language,       // string (ej: "es")
+      template_variables,      // string[] en orden {{1}} {{2}} ...
+      template_body_preview,   // string para guardar como contenido legible
+    } = body;
 
-    if (!conversacion_id || !contenido) {
+    const isTemplate = !!template_name;
+    const messageContent = isTemplate ? (template_body_preview ?? contenido ?? template_name) : contenido;
+
+    if (!conversacion_id || (!isTemplate && !contenido)) {
       return new Response(
-        JSON.stringify({ error: "conversacion_id y contenido son requeridos" }),
+        JSON.stringify({ error: "conversacion_id y contenido (o template_name) son requeridos" }),
         { status: 400, headers: { ...CORS, "Content-Type": "application/json" } },
       );
     }
@@ -71,24 +84,43 @@ Deno.serve(async (req: Request) => {
     const source  = Deno.env.get("GUPSHUP_NUMBER")   ?? "";
     const appName = Deno.env.get("GUPSHUP_APP_NAME") ?? "";
 
-    console.log("wpp-send: enviando a", destination, "desde", source, "app", appName);
+    console.log("wpp-send: enviando a", destination, "desde", source, "app", appName, "template?", isTemplate);
+
     console.log("wpp-send: apiKey (primeros 8 chars):", apiKey.slice(0, 8));
 
-    // ── Llamada a Gupshup ────────────────────────────────────────────────────
-    const formBody = new URLSearchParams({
-      channel:     "whatsapp",
-      source:      source,
-      destination: destination,
-      message:     JSON.stringify({ type: "text", text: contenido }),
-      "src.name":  appName,
-    });
+    // ── Llamada a Gupshup (texto libre OR plantilla) ──────────────────────────
+    let formBody: URLSearchParams;
+    let gupshupUrl: string;
+
+    if (isTemplate) {
+      // Endpoint de plantilla: /wa/api/v1/template/msg
+      formBody = new URLSearchParams({
+        source:      source,
+        destination: destination,
+        "src.name":  appName,
+        template:    JSON.stringify({
+          id:     template_name,                          // Gupshup acepta name como id
+          params: Array.isArray(template_variables) ? template_variables : [],
+        }),
+      });
+      gupshupUrl = "https://api.gupshup.io/wa/api/v1/template/msg";
+    } else {
+      formBody = new URLSearchParams({
+        channel:     "whatsapp",
+        source:      source,
+        destination: destination,
+        message:     JSON.stringify({ type: "text", text: contenido }),
+        "src.name":  appName,
+      });
+      gupshupUrl = "https://api.gupshup.io/wa/api/v1/msg";
+    }
 
     const controller = new AbortController();
-    const timeoutId  = setTimeout(() => controller.abort(), 8000); // 8s timeout
+    const timeoutId  = setTimeout(() => controller.abort(), 8000);
 
     let gupshupRes: Response;
     try {
-      gupshupRes = await fetch("https://api.gupshup.io/wa/api/v1/msg", {
+      gupshupRes = await fetch(gupshupUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -131,7 +163,7 @@ Deno.serve(async (req: Request) => {
     const { error: insertErr } = await supabase.from("lat_mensajes").insert({
       conversacion_id,
       tipo:           "outbound",
-      contenido,
+      contenido:      messageContent,
       estado:         "enviado",
       autor_nombre:   autor_nombre ?? null,
       wpp_message_id: gupshupData?.messageId ?? null,
@@ -141,14 +173,16 @@ Deno.serve(async (req: Request) => {
       console.error("Error insertando mensaje:", insertErr);
     }
 
-    // Actualizar última interacción de la conversación
+    // Actualizar última interacción y reabrir si estaba liberada/cerrada
     await supabase
       .from("lat_conversaciones")
       .update({
-        ultimo_mensaje:     contenido.slice(0, 100),
+        ultimo_mensaje:     (messageContent ?? "").slice(0, 100),
         ultima_interaccion: new Date().toISOString(),
+        en_foco:            true,
       })
       .eq("id", conversacion_id);
+
 
     return new Response(
       JSON.stringify({ ok: true, messageId: gupshupData?.messageId }),

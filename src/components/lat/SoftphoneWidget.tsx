@@ -7,10 +7,18 @@ export function SoftphoneWidget() {
   const [state, setState] = useState<CallState>('idle');
   const [muted, setMuted] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [minimized, setMinimized] = useState(false);
+  // Inicia minimizado para no competir con la conversación activa
+  const [minimized, setMinimized] = useState(true);
   const [dialNumber, setDialNumber] = useState('');
   const [wrapUpNote, setWrapUpNote] = useState('');
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
+
+  // Si llega una llamada activa o entrante, expandir automáticamente
+  useEffect(() => {
+    if (state === 'active' || state === 'ringing_in') {
+      setMinimized(false);
+    }
+  }, [state]);
 
   useEffect(() => {
     if (state === 'active') {
