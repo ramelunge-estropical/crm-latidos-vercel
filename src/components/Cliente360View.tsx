@@ -87,6 +87,22 @@ type Pago        = { id: string; tipo: string; monto: number; moneda: string | n
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const PROGRAMAS_LEALTAD = [
+  // Aerolíneas — Sudamérica / regionales
+  "LATAM Pass", "Aerolíneas Plus", "LifeMiles (Avianca)", "Smiles (GOL)",
+  "ConnectMiles (Copa)", "Iberia Plus",
+  // Aerolíneas — globales
+  "Flying Blue (Air France/KLM)", "Miles & More (Lufthansa)",
+  "AAdvantage (American)", "MileagePlus (United)", "SkyMiles (Delta)",
+  "Executive Club (British Airways)", "Miles&Smiles (Turkish)",
+  "Aeroplan (Air Canada)",
+  // Hoteles
+  "Marriott Bonvoy", "Hilton Honors", "World of Hyatt",
+  "IHG One Rewards", "Accor Live Limitless",
+  // Otro
+  "Otro",
+];
+
 const BANCOS_BOLIVIA = [
   "BNB", "BMSC", "BISA", "BCP", "Banco Ganadero",
   "Banco Unión", "Banco Económico", "Banco FIE",
@@ -182,6 +198,7 @@ export function Cliente360View() {
   const [createNombre, setCreateNombre] = useState("");
   const [showEdit,     setShowEdit]     = useState(false);
   const [editDoc,      setEditDoc]      = useState<Documento & { _new?: boolean } | null>(null);
+  const [editLealtad,  setEditLealtad]  = useState<Lealtad  & { _new?: boolean } | null>(null);
   const { isAdmin } = useCurrentUserRol();
   const queryClient = useQueryClient();
 
@@ -344,6 +361,32 @@ export function Cliente360View() {
     await (supabase as any).from("cliente_documentos").delete().eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["cliente_docs", selectedId] });
     setEditDoc(null);
+  };
+
+  // ── Lealtad handlers ──
+  const saveLealtad = async (l: Lealtad & { _new?: boolean }) => {
+    if (!selectedId) return;
+    const payload = {
+      programa:          l.programa,
+      numero_membresia:  l.numero_membresia  || null,
+      estado:            l.estado            || null,
+      nivel:             l.nivel             || null,
+      millas_acumuladas: l.millas_acumuladas != null && !isNaN(Number(l.millas_acumuladas)) ? Number(l.millas_acumuladas) : null,
+      observaciones:     l.observaciones     || null,
+    };
+    if (l._new) {
+      await (supabase as any).from("cliente_lealtad").insert({ ...payload, cliente_id: selectedId });
+    } else {
+      await (supabase as any).from("cliente_lealtad").update(payload).eq("id", l.id);
+    }
+    queryClient.invalidateQueries({ queryKey: ["cliente_lealtad", selectedId] });
+    setEditLealtad(null);
+  };
+
+  const deleteLealtad = async (id: string) => {
+    await (supabase as any).from("cliente_lealtad").delete().eq("id", id);
+    queryClient.invalidateQueries({ queryKey: ["cliente_lealtad", selectedId] });
+    setEditLealtad(null);
   };
 
   // ── Summary stats ──
@@ -1272,13 +1315,91 @@ export function Cliente360View() {
 
                 {/* ── FIDELIZACIÓN ── */}
                 <TabsContent value="lealtad" className="m-0 p-5">
-                  <SectionTitle icon={CreditCard}>Programas de lealtad</SectionTitle>
-                  {lealtad.length === 0 ? (
-                    <EmptySection icon={CreditCard} label="Sin tarjetas de lealtad registradas" />
+                  <div className="flex items-center justify-between mb-4">
+                    <SectionTitle icon={CreditCard}>Programas de lealtad</SectionTitle>
+                    {isAdmin && !editLealtad && (
+                      <button
+                        onClick={() => setEditLealtad({ id: "", programa: "LATAM Pass", numero_membresia: null, estado: "activo", nivel: null, millas_acumuladas: null, observaciones: null, _new: true })}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90 transition-colors"
+                      >
+                        <span className="text-base leading-none">+</span> Agregar
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Inline form */}
+                  {editLealtad && (
+                    <div className="mb-4 p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
+                      <p className="text-xs font-semibold text-foreground">{editLealtad._new ? "Nuevo programa" : "Editar programa"}</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1 col-span-2">
+                          <label className="text-[10px] text-muted-foreground">Programa</label>
+                          <select
+                            className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                            value={editLealtad.programa}
+                            onChange={e => setEditLealtad(l => l && ({ ...l, programa: e.target.value }))}
+                          >
+                            {PROGRAMAS_LEALTAD.map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Número de membresía</label>
+                          <input className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editLealtad.numero_membresia ?? ""} onChange={e => setEditLealtad(l => l && ({ ...l, numero_membresia: e.target.value }))} placeholder="LAT-445566" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Estado</label>
+                          <select className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editLealtad.estado ?? "activo"} onChange={e => setEditLealtad(l => l && ({ ...l, estado: e.target.value }))}>
+                            <option value="activo">Activo</option>
+                            <option value="inactivo">Inactivo</option>
+                            <option value="suspendido">Suspendido</option>
+                            <option value="vencido">Vencido</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Nivel / Categoría</label>
+                          <select className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editLealtad.nivel ?? ""} onChange={e => setEditLealtad(l => l && ({ ...l, nivel: e.target.value }))}>
+                            <option value="">— Sin nivel —</option>
+                            <option value="Básico">Básico</option>
+                            <option value="Plata">Plata</option>
+                            <option value="Oro">Oro</option>
+                            <option value="Platino">Platino</option>
+                            <option value="Black / Elite">Black / Elite</option>
+                            <option value="Diamante">Diamante</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-muted-foreground">Millas / Puntos acumulados</label>
+                          <input type="number" min="0" className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editLealtad.millas_acumuladas ?? ""} onChange={e => setEditLealtad(l => l && ({ ...l, millas_acumuladas: e.target.value === "" ? null : Number(e.target.value) }))} placeholder="78000" />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <label className="text-[10px] text-muted-foreground">Observaciones</label>
+                          <input className="w-full h-8 text-xs rounded-md border border-input bg-background px-2" value={editLealtad.observaciones ?? ""} onChange={e => setEditLealtad(l => l && ({ ...l, observaciones: e.target.value }))} placeholder="Opcional" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          {!editLealtad._new && (
+                            <button onClick={() => deleteLealtad(editLealtad.id)} className="text-[10px] text-destructive hover:underline">Eliminar programa</button>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditLealtad(null)} className="px-3 py-1.5 text-xs rounded-md border border-border hover:bg-muted transition-colors">Cancelar</button>
+                          <button onClick={() => saveLealtad(editLealtad)} className="px-3 py-1.5 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">Guardar</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {lealtad.length === 0 && !editLealtad ? (
+                    <EmptySection icon={CreditCard} label="Sin programas de lealtad registrados" />
                   ) : (
                     <div className="space-y-2">
                       {lealtad.map(l => (
-                        <div key={l.id} className="flex items-center gap-3 bg-muted/30 rounded-xl p-3">
+                        <div
+                          key={l.id}
+                          onClick={() => isAdmin && !editLealtad && setEditLealtad({ ...l })}
+                          className={`flex items-center gap-3 bg-muted/30 rounded-xl p-3 transition-colors ${isAdmin && !editLealtad ? "cursor-pointer hover:bg-muted/50" : ""}`}
+                        >
                           <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
                             <CreditCard className="w-4 h-4 text-primary" />
                           </div>
@@ -1290,7 +1411,7 @@ export function Cliente360View() {
                           <div className="text-right flex-shrink-0">
                             {l.nivel && <Badge variant="outline" className="text-[10px] block mb-1">{l.nivel}</Badge>}
                             {l.millas_acumuladas != null && (
-                              <p className="text-[10px] text-muted-foreground">{l.millas_acumuladas.toLocaleString()} millas</p>
+                              <p className="text-[10px] text-muted-foreground">{l.millas_acumuladas.toLocaleString()} pts/millas</p>
                             )}
                             {l.estado && (
                               <p className={`text-[10px] font-medium mt-0.5 ${l.estado === "activo" ? "text-emerald-600" : "text-muted-foreground"}`}>
