@@ -30,39 +30,49 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Endpoint Gupshup: GET /sm/api/v2/template/list/{appId}
-    // Fallback a v1 con appName si no hay appId
-    const url = appId
-      ? `https://api.gupshup.io/sm/api/v2/template/list/${appId}`
-      : `https://api.gupshup.io/sm/api/v1/template/list/${appName}`;
+    // Probamos varios endpoints de Gupshup en orden hasta encontrar uno que responda 2xx.
+    // Diferentes cuentas/partners exponen distintas rutas (v1 con appName, v3 con appId, etc.)
+    const candidates: string[] = [];
+    if (appId)   candidates.push(`https://api.gupshup.io/wa/app/${appId}/template`);
+    if (appId)   candidates.push(`https://api.gupshup.io/sm/api/v2/template/list/${appId}`);
+    if (appName) candidates.push(`https://api.gupshup.io/sm/api/v1/template/list/${appName}`);
+    if (appName) candidates.push(`https://api.gupshup.io/wa/api/v1/template/list/${appName}`);
 
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
+    let res: Response | null = null;
+    let text = "";
+    let lastErr = "";
+    let usedUrl = "";
 
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "GET",
-        headers: { "apikey": apiKey, "Accept": "application/json" },
-        signal: ctrl.signal,
-      });
-    } catch (e: any) {
-      clearTimeout(t);
-      const msg = e?.name === "AbortError"
-        ? "Timeout: Gupshup no respondió"
-        : `Error de red: ${e?.message}`;
-      return new Response(JSON.stringify({ error: msg }), {
+    for (const url of candidates) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch(url, {
+          method: "GET",
+          headers: { "apikey": apiKey, "Accept": "application/json" },
+          signal: ctrl.signal,
+        });
+        clearTimeout(t);
+        const body = await r.text();
+        if (r.ok) {
+          res = r; text = body; usedUrl = url;
+          break;
+        }
+        lastErr = `Gupshup ${r.status} en ${url}: ${body.slice(0, 200)}`;
+      } catch (e: any) {
+        clearTimeout(t);
+        lastErr = e?.name === "AbortError"
+          ? `Timeout en ${url}`
+          : `Error de red en ${url}: ${e?.message}`;
+      }
+    }
+
+    if (!res) {
+      return new Response(JSON.stringify({ error: "No se pudo obtener plantillas de Gupshup", detail: lastErr }), {
         status: 502, headers: { ...CORS, "Content-Type": "application/json" }
       });
     }
-    clearTimeout(t);
-
-    const text = await res.text();
-    if (!res.ok) {
-      return new Response(JSON.stringify({ error: `Gupshup ${res.status}`, detail: text }), {
-        status: 502, headers: { ...CORS, "Content-Type": "application/json" }
-      });
-    }
+    console.log("gupshup-templates OK via", usedUrl);
 
     let data: any = {};
     try { data = JSON.parse(text); } catch { /* */ }
