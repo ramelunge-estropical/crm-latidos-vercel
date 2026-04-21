@@ -445,6 +445,7 @@ export type Database = {
       clientes: {
         Row: {
           asesor_nombre: string | null
+          canal_contacto: string | null
           ciudad: string | null
           club_viajes: boolean
           contacto_cargo: string | null
@@ -476,6 +477,7 @@ export type Database = {
         }
         Insert: {
           asesor_nombre?: string | null
+          canal_contacto?: string | null
           ciudad?: string | null
           club_viajes?: boolean
           contacto_cargo?: string | null
@@ -507,6 +509,7 @@ export type Database = {
         }
         Update: {
           asesor_nombre?: string | null
+          canal_contacto?: string | null
           ciudad?: string | null
           club_viajes?: boolean
           contacto_cargo?: string | null
