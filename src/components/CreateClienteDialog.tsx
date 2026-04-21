@@ -502,6 +502,18 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
                     <option value="viudo">Viudo/a</option>
                   </select>
                 </Field>
+                <Field label="Canal de contacto">
+                  <select
+                    className="w-full h-8 text-xs rounded-md border border-input bg-background px-2"
+                    value={form.canal_contacto}
+                    onChange={e => set("canal_contacto", e.target.value)}
+                  >
+                    <option value="">— Seleccioná el canal —</option>
+                    {CANALES_CONTACTO.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </Field>
               </div>
             </div>
           )}

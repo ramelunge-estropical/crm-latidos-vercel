@@ -744,6 +744,7 @@ export function Cliente360View() {
                           { label: "Instagram",            value: cliente.instagram },
                           { label: "Facebook",             value: cliente.facebook },
                           { label: "TikTok",               value: cliente.tiktok },
+                          { label: "Canal de contacto",    value: (cliente as any).canal_contacto },
                           { label: "Asesor asignado",      value: cliente.asesor_nombre },
                         ].map(({ label, value }) => (
                           <div key={label}>
@@ -769,6 +770,7 @@ export function Cliente360View() {
                           { label: "Facebook",           value: cliente.facebook },
                           { label: "TikTok",             value: cliente.tiktok },
                           { label: "Estado civil",       value: cliente.estado_civil },
+                          { label: "Canal de contacto",  value: (cliente as any).canal_contacto },
                           { label: "Asesor asignado",    value: cliente.asesor_nombre },
                         ].map(({ label, value }) => (
                           <div key={label}>
