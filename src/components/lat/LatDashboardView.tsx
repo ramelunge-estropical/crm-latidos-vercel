@@ -54,7 +54,7 @@ export function LatDashboardView() {
           <h1 className="text-base sm:text-lg font-semibold text-foreground">Dashboard LAT</h1>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Resumen unificado · misma lógica que Bandeja y Funnel
+          Reporte unificado · misma fuente de verdad que Bandeja
         </p>
       </div>
 
