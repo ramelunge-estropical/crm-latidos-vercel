@@ -63,7 +63,7 @@ const estadoAliasMap: Record<string, keyof typeof estadoIconMap> = {
   pendiente: 'pendiente',
 };
 
-const genericMediaPlaceholderPattern = /^(?:\[(?:adjunto|image|audio|video|file|document|sticker)(?:[^\]]*)\]|(?:📷\s*Imagen|🎤\s*Nota de voz|🎥\s*Video|📎\s*(?:Documento|Archivo)|😀\s*Sticker))$/i;
+const genericMediaPlaceholderPattern = /^(?:\[(?:adjunto|image|audio|video|file|document|sticker)(?:[^\]]*)\]|(?:📷\s*Imagen|🎤\s*Nota de voz|🎥\s*Video|📎\s*(?:Documento|Archivo)|😀\s*Sticker)|(?:imagen|audio|video|archivo|documento|sticker))$/i;
 const inlineLinkPattern = /\[([^,\]]+),(https?:\/\/[^\]\s]+)\]|((?:https?:\/\/|www\.)[^\s<]+)/gi;
 
 function normalizeMensajeEstado(estado?: string | null): keyof typeof estadoIconMap {
