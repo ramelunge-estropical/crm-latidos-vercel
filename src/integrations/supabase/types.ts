@@ -91,6 +91,121 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_derivaciones: {
+        Row: {
+          capacidad_destino: number | null
+          chats_abiertos_destino: number | null
+          conversacion_id: string
+          created_at: string
+          derivado_por_id: string | null
+          derivado_por_nombre: string | null
+          destino_area_id: string | null
+          destino_area_nombre: string | null
+          destino_tipo: string
+          destino_usuario_id: string | null
+          destino_usuario_nombre: string | null
+          efectivo_area_id: string | null
+          efectivo_area_nombre: string | null
+          efectivo_tipo: string
+          efectivo_usuario_id: string | null
+          efectivo_usuario_nombre: string | null
+          hubo_fallback: boolean
+          id: string
+          motivo_fallback: string | null
+          nota: string | null
+          presencia_destino: string | null
+        }
+        Insert: {
+          capacidad_destino?: number | null
+          chats_abiertos_destino?: number | null
+          conversacion_id: string
+          created_at?: string
+          derivado_por_id?: string | null
+          derivado_por_nombre?: string | null
+          destino_area_id?: string | null
+          destino_area_nombre?: string | null
+          destino_tipo: string
+          destino_usuario_id?: string | null
+          destino_usuario_nombre?: string | null
+          efectivo_area_id?: string | null
+          efectivo_area_nombre?: string | null
+          efectivo_tipo: string
+          efectivo_usuario_id?: string | null
+          efectivo_usuario_nombre?: string | null
+          hubo_fallback?: boolean
+          id?: string
+          motivo_fallback?: string | null
+          nota?: string | null
+          presencia_destino?: string | null
+        }
+        Update: {
+          capacidad_destino?: number | null
+          chats_abiertos_destino?: number | null
+          conversacion_id?: string
+          created_at?: string
+          derivado_por_id?: string | null
+          derivado_por_nombre?: string | null
+          destino_area_id?: string | null
+          destino_area_nombre?: string | null
+          destino_tipo?: string
+          destino_usuario_id?: string | null
+          destino_usuario_nombre?: string | null
+          efectivo_area_id?: string | null
+          efectivo_area_nombre?: string | null
+          efectivo_tipo?: string
+          efectivo_usuario_id?: string | null
+          efectivo_usuario_nombre?: string | null
+          hubo_fallback?: boolean
+          id?: string
+          motivo_fallback?: string | null
+          nota?: string | null
+          presencia_destino?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_derivaciones_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "lat_conversaciones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_derivado_por_id_fkey"
+            columns: ["derivado_por_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_destino_area_id_fkey"
+            columns: ["destino_area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_destino_usuario_id_fkey"
+            columns: ["destino_usuario_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_efectivo_area_id_fkey"
+            columns: ["efectivo_area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_efectivo_usuario_id_fkey"
+            columns: ["efectivo_usuario_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cliente_bancos: {
         Row: {
           banco: string
@@ -600,6 +715,44 @@ export type Database = {
         }
         Relationships: []
       }
+      colaborador_presencia: {
+        Row: {
+          capacidad_maxima: number
+          chats_abiertos: number
+          colaborador_id: string
+          estado: string
+          motivo_pausa: string | null
+          ultima_actividad: string
+          updated_at: string
+        }
+        Insert: {
+          capacidad_maxima?: number
+          chats_abiertos?: number
+          colaborador_id: string
+          estado?: string
+          motivo_pausa?: string | null
+          ultima_actividad?: string
+          updated_at?: string
+        }
+        Update: {
+          capacidad_maxima?: number
+          chats_abiertos?: number
+          colaborador_id?: string
+          estado?: string
+          motivo_pausa?: string | null
+          ultima_actividad?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colaborador_presencia_colaborador_id_fkey"
+            columns: ["colaborador_id"]
+            isOneToOne: true
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       colaboradores: {
         Row: {
           activo: boolean
@@ -1001,7 +1154,10 @@ export type Database = {
           canal: string
           cliente_id: string | null
           cliente_nombre: string | null
+          cola_area_id: string | null
+          cola_area_nombre: string | null
           created_at: string | null
+          en_cola: boolean
           en_foco: boolean
           estado: string
           gestion_id: string | null
@@ -1023,7 +1179,10 @@ export type Database = {
           canal?: string
           cliente_id?: string | null
           cliente_nombre?: string | null
+          cola_area_id?: string | null
+          cola_area_nombre?: string | null
           created_at?: string | null
+          en_cola?: boolean
           en_foco?: boolean
           estado?: string
           gestion_id?: string | null
@@ -1045,7 +1204,10 @@ export type Database = {
           canal?: string
           cliente_id?: string | null
           cliente_nombre?: string | null
+          cola_area_id?: string | null
+          cola_area_nombre?: string | null
           created_at?: string | null
+          en_cola?: boolean
           en_foco?: boolean
           estado?: string
           gestion_id?: string | null
@@ -1068,6 +1230,13 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lat_conversaciones_cola_area_id_fkey"
+            columns: ["cola_area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
             referencedColumns: ["id"]
           },
           {
