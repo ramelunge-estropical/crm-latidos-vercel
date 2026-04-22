@@ -180,7 +180,7 @@ export function NuevaActividadDialog({
 
       const responsable = colaboradores.find(c => c.id === responsableId);
 
-      const { data: inserted, error } = await supabase.from("activities").insert({
+      const { data: inserted, error } = await (supabase as any).from("activities").insert({
         gestion_id:       gestionId || null,
         activity_type:    type,
         title:            title.trim(),
