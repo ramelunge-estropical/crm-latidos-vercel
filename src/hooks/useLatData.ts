@@ -35,6 +35,10 @@ export interface LatConversacion {
   en_foco: boolean;
   created_at: string;
   updated_at: string;
+  // Cola / equipo destino (cuando la conversación está en cola en lugar de asignada a un usuario)
+  en_cola?: boolean;
+  cola_area_id?: string | null;
+  cola_area_nombre?: string | null;
   // Source flag (para saber si es real o mock)
   _source?: "db" | "mock";
 }

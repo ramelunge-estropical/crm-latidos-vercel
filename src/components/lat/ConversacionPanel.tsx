@@ -13,6 +13,8 @@ import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 import { WppTemplatePicker, WppTemplate } from '@/components/lat/WppTemplatePicker';
 import { AiAsesorPopover } from '@/components/lat/AiAsesorPopover';
+import { DerivarChatDialog } from '@/components/lat/DerivarChatDialog';
+import { GitBranch, Hand, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -155,6 +157,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [mostrarTodasGest, setMostrarTodasGest]   = useState(true);
   const [showTemplates, setShowTemplates]         = useState(false);
   const [showAi, setShowAi]                       = useState(false);
+  const [showDerivar, setShowDerivar]             = useState(false);
+  const [tomandoCola, setTomandoCola]             = useState(false);
   const [liberando, setLiberando]                 = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -342,6 +346,81 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       .eq('id', conversacion.id);
     invalidateAll();
     toast.success('Chat reactivado al foco');
+  };
+
+  // ── Tomar conversación desde cola ────────────────────────────────────────
+  // Cuando una conversación está en cola del equipo, cualquier agente puede
+  // tomarla. En ese momento pasa a ser responsable efectivo y desde ahí
+  // corren sus métricas personales.
+  const handleTomarDeCola = async () => {
+    if (isMock) return;
+    setTomandoCola(true);
+    try {
+      // Buscamos un colaborador para identificar al "tomador". Si no podemos
+      // resolverlo (no auth) usamos la etiqueta "Agente" — la trazabilidad
+      // queda igual visible en el hilo.
+      let tomadorId: string | null = null;
+      let tomadorNombre = 'Agente';
+      try {
+        const { data: { user } } = await (supabase as any).auth.getUser();
+        if (user?.id) {
+          const { data: col } = await (supabase as any)
+            .from('colaboradores')
+            .select('id, nombre, area_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (col) {
+            tomadorId = col.id;
+            tomadorNombre = col.nombre;
+          }
+        }
+      } catch { /* ignore */ }
+
+      // Actualizar conversación: sale de cola, queda asignada al tomador
+      const colaArea = conversacion.cola_area_nombre;
+      await (supabase as any)
+        .from('lat_conversaciones')
+        .update({
+          en_cola: false,
+          cola_area_id: null,
+          cola_area_nombre: null,
+          responsable_id: tomadorId,
+          responsable_nombre: tomadorNombre,
+          en_foco: true,
+          estado: 'abierto',
+        })
+        .eq('id', conversacion.id);
+
+      // Mensaje de sistema visible en el hilo
+      await (supabase as any).from('lat_mensajes').insert({
+        conversacion_id: conversacion.id,
+        tipo: 'sistema',
+        contenido: `🙋 Conversación tomada desde la cola${colaArea ? ` de ${colaArea}` : ''} por ${tomadorNombre}.`,
+        estado: 'enviado',
+      });
+
+      // Bitácora
+      await (supabase as any).from('chat_derivaciones').insert({
+        conversacion_id: conversacion.id,
+        derivado_por_id: tomadorId,
+        derivado_por_nombre: tomadorNombre,
+        destino_tipo: 'usuario',
+        destino_usuario_id: tomadorId,
+        destino_usuario_nombre: tomadorNombre,
+        efectivo_tipo: 'usuario',
+        efectivo_usuario_id: tomadorId,
+        efectivo_usuario_nombre: tomadorNombre,
+        hubo_fallback: false,
+        nota: `Tomada desde cola${colaArea ? ` de ${colaArea}` : ''}`,
+      });
+
+      invalidateAll();
+      toast.success(`Conversación asignada a ${tomadorNombre}`);
+    } catch (e: any) {
+      toast.error(e.message ?? 'Error al tomar la conversación');
+    } finally {
+      setTomandoCola(false);
+    }
   };
 
   // ── Adjuntos ──────────────────────────────────────────────────────────────
@@ -564,6 +643,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
           )}
+          {!isMock && (
+            <button
+              onClick={() => setShowDerivar(true)}
+              title="Derivar conversación a un usuario o cola de equipo"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border border-border hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <GitBranch className="w-3 h-3" />
+              Derivar
+            </button>
+          )}
           {!isMock && tieneVinculoGestion && !conversacionEstaLiberada && (
             <button
               onClick={handleLiberarChat}
@@ -616,6 +705,24 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           </button>
         </div>
       </div>
+
+      {/* ── Banner: conversación en cola del equipo ── */}
+      {!isMock && conversacion.en_cola && (
+        <div className="px-4 py-2 bg-warning/10 border-b border-warning/20 flex items-center gap-2">
+          <Users className="w-3.5 h-3.5 text-warning shrink-0" />
+          <span className="text-[11px] text-warning flex-1">
+            En cola del equipo {conversacion.cola_area_nombre ?? ''}. Sin responsable asignado.
+          </span>
+          <button
+            onClick={handleTomarDeCola}
+            disabled={tomandoCola}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/90 transition-colors disabled:opacity-60"
+          >
+            {tomandoCola ? <Loader2 className="w-3 h-3 animate-spin" /> : <Hand className="w-3 h-3" />}
+            Tomar conversación
+          </button>
+        </div>
+      )}
 
       {/* ── Tab: CHAT ── */}
       {activeTab === 'chat' && (
@@ -1130,6 +1237,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             setInputValue((prev) => (prev ? `${prev}\n${text}` : text));
             toast.success('Nota insertada. Revisala antes de guardar.');
           }}
+        />
+      )}
+
+      {!isMock && (
+        <DerivarChatDialog
+          open={showDerivar}
+          onOpenChange={setShowDerivar}
+          conversacionId={conversacion.id}
+          conversacionAsunto={conversacion.asunto}
+          clienteNombre={clienteNombre}
         />
       )}
     </div>
