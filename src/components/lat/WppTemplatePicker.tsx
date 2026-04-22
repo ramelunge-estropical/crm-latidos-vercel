@@ -344,7 +344,12 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
                     </div>
                   )}
                   <div>
-                    <p className="text-[10px] text-muted-foreground uppercase font-semibold mb-1">Vista previa</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Vista previa</p>
+                      <span className="text-[10px] font-mono text-foreground/80 truncate ml-2" title={selected.name}>
+                        {selected.name}
+                      </span>
+                    </div>
                     <div className="bg-muted/40 border border-border rounded-md p-2.5 text-[12px] whitespace-pre-wrap leading-relaxed">
                       {preview}
                     </div>
