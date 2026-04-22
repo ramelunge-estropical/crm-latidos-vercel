@@ -17,49 +17,56 @@ serve(async (req) => {
   const error         = url.searchParams.get("error");
 
   if (error) {
-    return Response.redirect(`${APP_URL}/configuraciones?google=error&msg=${encodeURIComponent(error)}`);
+    return Response.redirect(`${APP_URL}/?google=error&msg=${encodeURIComponent(error)}`);
   }
 
   if (!code || !colaboradorId) {
-    return new Response("Parámetros inválidos", { status: 400 });
+    return Response.redirect(`${APP_URL}/?google=error&msg=missing_params`);
   }
 
-  // Exchange code for tokens
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id:     GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri:  REDIRECT_URI,
-      grant_type:    "authorization_code",
-    }),
-  });
+  try {
+    // Exchange code for tokens
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id:     GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri:  REDIRECT_URI,
+        grant_type:    "authorization_code",
+      }),
+    });
 
-  const tokens = await tokenRes.json();
-  if (!tokens.refresh_token) {
-    return Response.redirect(`${APP_URL}/configuraciones?google=error&msg=no_refresh_token`);
+    const tokens = await tokenRes.json();
+
+    // Get Google user email
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    const googleUser = await userRes.json();
+
+    // Save tokens to DB
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const expiry = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
+
+    const upsertData: any = {
+      colaborador_id: colaboradorId,
+      google_email:   googleUser.email || "",
+      access_token:   tokens.access_token,
+      token_expiry:   expiry,
+      updated_at:     new Date().toISOString(),
+    };
+
+    // Only update refresh_token if we got a new one (Google only sends it on first auth)
+    if (tokens.refresh_token) {
+      upsertData.refresh_token = tokens.refresh_token;
+    }
+
+    await supabase.from("colaborador_google_tokens").upsert(upsertData, { onConflict: "colaborador_id" });
+
+    return Response.redirect(`${APP_URL}/?google=connected`);
+  } catch (err) {
+    return Response.redirect(`${APP_URL}/?google=error&msg=${encodeURIComponent(String(err))}`);
   }
-
-  // Get Google user email
-  const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
-  const googleUser = await userRes.json();
-
-  // Save tokens to DB
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-  const expiry = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
-
-  await supabase.from("colaborador_google_tokens").upsert({
-    colaborador_id: colaboradorId,
-    google_email:   googleUser.email,
-    access_token:   tokens.access_token,
-    refresh_token:  tokens.refresh_token,
-    token_expiry:   expiry,
-    updated_at:     new Date().toISOString(),
-  }, { onConflict: "colaborador_id" });
-
-  return Response.redirect(`${APP_URL}/configuraciones?google=connected`);
 });

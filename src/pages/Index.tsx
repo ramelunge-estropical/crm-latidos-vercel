@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useProcesses } from "@/hooks/useSharedQueries";
 import Login from "./Login";
+import { toast } from "sonner";
 import { ProcessSidebar, SidebarView } from "@/components/ProcessSidebar";
 import { BoardView } from "@/components/BoardView";
 import { AgendaView } from "@/components/AgendaView";
@@ -70,7 +71,18 @@ const Index = () => {
         }
       }
 
-        const colabId  = localStorage.getItem("mis_gestiones_colaborador");
+        // Handle Google Calendar callback
+      const googleStatus = params.get("google");
+      if (googleStatus === "connected") {
+        setTimeout(() => toast.success("Google Calendar conectado correctamente"), 500);
+        window.history.replaceState({}, "", "/");
+      } else if (googleStatus === "error") {
+        const msg = params.get("msg") || "Error desconocido";
+        setTimeout(() => toast.error(`Error Google Calendar: ${msg}`), 500);
+        window.history.replaceState({}, "", "/");
+      }
+
+      const colabId  = localStorage.getItem("mis_gestiones_colaborador");
       const expiry   = localStorage.getItem("crm_session_expiry");
       const valid    = colabId && expiry && Date.now() < parseInt(expiry);
       if (!valid) {
