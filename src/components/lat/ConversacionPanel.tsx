@@ -13,6 +13,8 @@ import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 import { WppTemplatePicker, WppTemplate } from '@/components/lat/WppTemplatePicker';
 import { AiAsesorPopover } from '@/components/lat/AiAsesorPopover';
+import { DerivarChatDialog } from '@/components/lat/DerivarChatDialog';
+import { GitBranch, Hand } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -155,6 +157,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [mostrarTodasGest, setMostrarTodasGest]   = useState(true);
   const [showTemplates, setShowTemplates]         = useState(false);
   const [showAi, setShowAi]                       = useState(false);
+  const [showDerivar, setShowDerivar]             = useState(false);
+  const [tomandoCola, setTomandoCola]             = useState(false);
   const [liberando, setLiberando]                 = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
