@@ -185,8 +185,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const { send, loading: sendingMsg } = useSendMensaje();
   const { sendAdjunto, loading: sendingAdj } = useSendAdjunto();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  type PendingItem = { id: string; file: File; preview: string | null };
+  const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+  const MAX_FILE_SIZE = 16 * 1024 * 1024;
+  const MAX_QUEUE = 10;
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -339,58 +343,147 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   };
 
   // ── Adjuntos ──────────────────────────────────────────────────────────────
-  const handleFileSelected = (file: File | null) => {
-    if (!file) return;
-    if (file.size > 16 * 1024 * 1024) {
-      toast.error('Archivo demasiado grande (máx. 16 MB)');
-      return;
-    }
-    setPendingFile(file);
-    if (file.type.startsWith('image/')) {
-      setPendingPreview(URL.createObjectURL(file));
-    } else {
-      setPendingPreview(null);
-    }
+  const addFilesToQueue = (files: File[]) => {
+    if (!files.length) return;
+    if (isMock) { toast.info('Disponible solo en modo real'); return; }
+    if (!isWhatsapp) { toast.error('Adjuntos solo disponibles en WhatsApp'); return; }
+
+    setPendingItems(prev => {
+      const next = [...prev];
+      let rejectedSize = 0;
+      let rejectedQueue = 0;
+      for (const file of files) {
+        if (next.length >= MAX_QUEUE) { rejectedQueue++; continue; }
+        if (file.size > MAX_FILE_SIZE) { rejectedSize++; continue; }
+        const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+        next.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          file,
+          preview,
+        });
+      }
+      if (rejectedSize > 0) toast.error(`${rejectedSize} archivo(s) superan 16 MB`);
+      if (rejectedQueue > 0) toast.error(`Máximo ${MAX_QUEUE} adjuntos por envío`);
+      return next;
+    });
+  };
+
+  const removePendingItem = (id: string) => {
+    setPendingItems(prev => {
+      const item = prev.find(p => p.id === id);
+      if (item?.preview) URL.revokeObjectURL(item.preview);
+      return prev.filter(p => p.id !== id);
+    });
   };
 
   const clearPending = () => {
-    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
-    setPendingFile(null);
-    setPendingPreview(null);
+    setPendingItems(prev => {
+      prev.forEach(p => { if (p.preview) URL.revokeObjectURL(p.preview); });
+      return [];
+    });
   };
+
+  // Limpiar object URLs al desmontar
+  useEffect(() => {
+    return () => {
+      pendingItems.forEach(p => { if (p.preview) URL.revokeObjectURL(p.preview); });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePaste = (e: React.ClipboardEvent) => {
     if (isMock || !isWhatsapp) return;
     const items = e.clipboardData?.items;
     if (!items) return;
+    const files: File[] = [];
     for (const item of items) {
       if (item.kind === 'file') {
         const file = item.getAsFile();
-        if (file) {
-          e.preventDefault();
-          handleFileSelected(file);
-          return;
-        }
+        if (file) files.push(file);
       }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      addFilesToQueue(files);
     }
   };
 
-  const handleSendAdjunto = async () => {
-    if (!pendingFile) return;
-    if (isMock) { toast.info('Disponible solo en modo real'); return; }
-    const result = await sendAdjunto(conversacion.id, pendingFile, inputValue, isMock);
-    if (result.ok) {
-      clearPending();
-      setInputValue('');
-      toast.success('Adjunto enviado');
-    } else {
-      toast.error(result.error ?? 'Error al enviar adjunto', { duration: 6000 });
+  // ── Drag & Drop ───────────────────────────────────────────────────────────
+  const dropzoneEnabled = !isMock && isWhatsapp;
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) addFilesToQueue(files);
+  };
+
+  const handleSendQueue = async (): Promise<boolean> => {
+    if (pendingItems.length === 0) return false;
+    if (isMock) { toast.info('Disponible solo en modo real'); return false; }
+
+    const caption = inputValue.trim();
+    let okCount = 0;
+    let failCount = 0;
+    const failures: string[] = [];
+
+    // Snapshot de la cola — enviamos secuencialmente y aplicamos el caption sólo al primero
+    const queue = [...pendingItems];
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      const cap = i === 0 ? caption : '';
+      const result = await sendAdjunto(conversacion.id, item.file, cap, isMock);
+      if (result.ok) {
+        okCount++;
+        // Quitar el item enviado de la cola para feedback progresivo
+        setPendingItems(prev => {
+          const found = prev.find(p => p.id === item.id);
+          if (found?.preview) URL.revokeObjectURL(found.preview);
+          return prev.filter(p => p.id !== item.id);
+        });
+      } else {
+        failCount++;
+        failures.push(`${item.file.name}: ${result.error ?? 'error'}`);
+      }
     }
+
+    if (okCount > 0) {
+      setInputValue('');
+      toast.success(`${okCount} adjunto${okCount > 1 ? 's enviados' : ' enviado'}`);
+    }
+    if (failCount > 0) {
+      toast.error(`${failCount} fallido(s)\n${failures.slice(0, 3).join('\n')}`, { duration: 7000 });
+    }
+    return failCount === 0;
   };
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = async () => {
-    if (pendingFile) { await handleSendAdjunto(); return; }
+    if (pendingItems.length > 0) { await handleSendQueue(); return; }
     if (!inputValue.trim()) return;
     const tipo = showNota ? 'nota_interna' : 'outbound';
     const result = await send(conversacion.id, inputValue, tipo, isMock);
@@ -525,7 +618,13 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       {/* ── Tab: CHAT ── */}
       {activeTab === 'chat' && (
         <>
-          <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-3">
+          <div
+            className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-3 relative"
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             {loadingMsgs ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -539,6 +638,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               mensajes.map(msg => <MessageBubble key={msg.id} mensaje={msg} />)
             )}
             <div ref={messagesEndRef} />
+
+            {isDragging && dropzoneEnabled && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-primary/10 backdrop-blur-sm border-2 border-dashed border-primary rounded-md pointer-events-none">
+                <div className="flex flex-col items-center gap-2 text-primary">
+                  <Paperclip className="w-8 h-8" />
+                  <p className="text-sm font-medium">Soltá los archivos para adjuntarlos</p>
+                  <p className="text-[11px] text-primary/70">Imágenes, PDFs, audios, videos y documentos</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {isWhatsapp && isOutOfWindow && (
@@ -561,25 +670,56 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               </div>
             )}
 
-            {/* Preview de adjunto pendiente */}
-            {pendingFile && (
-              <div className="mb-2 flex items-center gap-2 p-2 rounded-lg border border-border bg-muted/30">
-                {pendingPreview ? (
-                  <img src={pendingPreview} alt="" className="w-10 h-10 rounded object-cover" />
-                ) : (
-                  <div className="w-10 h-10 rounded bg-primary/10 flex items-center justify-center text-primary">
-                    {pendingFile.type.startsWith('audio/') ? <Play className="w-4 h-4" /> :
-                     pendingFile.type.startsWith('video/') ? <Play className="w-4 h-4" /> :
-                     <FileText className="w-4 h-4" />}
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate">{pendingFile.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{(pendingFile.size / 1024).toFixed(1)} KB · {pendingFile.type || 'archivo'}</p>
+            {/* Cola de adjuntos pendientes */}
+            {pendingItems.length > 0 && (
+              <div className="mb-2 p-2 rounded-lg border border-border bg-muted/30 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                    {pendingItems.length} adjunto{pendingItems.length > 1 ? 's' : ''} pendiente{pendingItems.length > 1 ? 's' : ''}
+                  </p>
+                  <button
+                    onClick={clearPending}
+                    className="text-[10px] text-muted-foreground hover:text-destructive font-medium"
+                    disabled={sendingAdj}
+                  >
+                    Quitar todos
+                  </button>
                 </div>
-                <button onClick={clearPending} className="p-1 hover:bg-accent/50 rounded text-muted-foreground" title="Quitar">
-                  <X className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto scrollbar-thin">
+                  {pendingItems.map(item => {
+                    const isImage = item.file.type.startsWith('image/');
+                    const isAudio = item.file.type.startsWith('audio/');
+                    const isVideo = item.file.type.startsWith('video/');
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-2 p-1.5 pr-1 rounded-md border border-border bg-background min-w-[160px] max-w-[220px]"
+                      >
+                        {isImage && item.preview ? (
+                          <img src={item.preview} alt="" className="w-9 h-9 rounded object-cover shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                            {isAudio || isVideo ? <Play className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-medium truncate" title={item.file.name}>{item.file.name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {(item.file.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => removePendingItem(item.id)}
+                          className="p-0.5 hover:bg-accent/50 rounded text-muted-foreground hover:text-destructive shrink-0"
+                          title="Quitar"
+                          disabled={sendingAdj}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -587,8 +727,13 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               ref={fileInputRef}
               type="file"
               hidden
+              multiple
               accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
-              onChange={(e) => { handleFileSelected(e.target.files?.[0] ?? null); e.target.value = ''; }}
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                addFilesToQueue(files);
+                e.target.value = '';
+              }}
             />
 
             <div className="flex items-end gap-2">
@@ -597,7 +742,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isMock || !isWhatsapp || sendingAdj}
                   className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground disabled:opacity-40"
-                  title={isWhatsapp ? "Adjuntar imagen, audio o documento" : "Solo disponible en WhatsApp"}
+                  title={isWhatsapp ? "Adjuntar imagen, audio o documento (también podés arrastrar al chat)" : "Solo disponible en WhatsApp"}
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
@@ -624,19 +769,19 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                disabled={(isWhatsapp && isOutOfWindow && !showNota && !pendingFile) || sendingMsg || sendingAdj}
+                disabled={(isWhatsapp && isOutOfWindow && !showNota && pendingItems.length === 0) || sendingMsg || sendingAdj}
                 placeholder={
-                  pendingFile
-                    ? 'Comentario opcional para el adjunto...'
+                  pendingItems.length > 0
+                    ? 'Comentario opcional (se enviará con el primer adjunto)...'
                     : isWhatsapp && isOutOfWindow && !showNota
                     ? 'Ventana expirada. Usá una plantilla aprobada →'
                     : showNota
                     ? 'Nota interna...'
-                    : 'Escribí un mensaje, pegá una imagen o adjuntá un archivo...'
+                    : 'Escribí un mensaje, pegá o arrastrá archivos al chat...'
                 }
                 className="flex-1 bg-muted/50 text-sm rounded-lg px-3 py-2 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
               />
-              {isWhatsapp && isOutOfWindow && !isMock && !showNota && !pendingFile ? (
+              {isWhatsapp && isOutOfWindow && !isMock && !showNota && pendingItems.length === 0 ? (
                 <button
                   onClick={() => setShowTemplates(true)}
                   className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1 text-xs"
@@ -648,11 +793,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 <button
                   onClick={handleSend}
                   disabled={
-                    (!inputValue.trim() && !pendingFile) ||
-                    (isWhatsapp && isOutOfWindow && !showNota && !pendingFile) ||
+                    (!inputValue.trim() && pendingItems.length === 0) ||
+                    (isWhatsapp && isOutOfWindow && !showNota && pendingItems.length === 0) ||
                     sendingMsg || sendingAdj
                   }
                   className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+                  title={pendingItems.length > 1 ? `Enviar ${pendingItems.length} adjuntos` : 'Enviar'}
                 >
                   {(sendingMsg || sendingAdj) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
