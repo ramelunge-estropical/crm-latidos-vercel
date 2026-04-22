@@ -156,7 +156,7 @@ export function NuevaActividadDialog({
   const [date,          setDate]          = useState(
     defaultDate ? format(defaultDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")
   );
-  const [time,          setTime]          = useState("09:00");
+  const [time,          setTime]          = useState(format(new Date(), "HH:mm"));
   const [duration,      setDuration]      = useState("30");
   const [responsableId, setResponsableId] = useState(colaboradorId);
   const [attendees,     setAttendees]     = useState<string[]>([]);
@@ -165,7 +165,7 @@ export function NuevaActividadDialog({
 
   const reset = () => {
     setType("reunión"); setTitle(""); setDescription("");
-    setDate(format(new Date(), "yyyy-MM-dd")); setTime("09:00");
+    setDate(format(new Date(), "yyyy-MM-dd")); setTime(format(new Date(), "HH:mm"));
     setDuration("30"); setResponsableId(colaboradorId); setAttendees([]); setMeetLink(null);
   };
 
