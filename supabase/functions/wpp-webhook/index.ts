@@ -50,6 +50,83 @@ function categoryFromMime(mime?: string | null): "image" | "audio" | "video" | "
   return "document";
 }
 
+function guessMimeFromType(kind?: string | null, fallbackName?: string | null): string {
+  const rawKind = (kind ?? "").toLowerCase();
+  if (rawKind === "image") return "image/jpeg";
+  if (rawKind === "audio" || rawKind === "voice") return "audio/ogg";
+  if (rawKind === "video") return "video/mp4";
+  if (rawKind === "document" || rawKind === "file") {
+    const ext = extFromMime(undefined, fallbackName);
+    if (ext === "pdf") return "application/pdf";
+    return "application/octet-stream";
+  }
+  return "application/octet-stream";
+}
+
+function fileNameFromUrl(url?: string | null, fallbackName?: string | null) {
+  if (fallbackName) return fallbackName;
+  if (!url) return null;
+  try {
+    const pathname = new URL(url).pathname;
+    const last = pathname.split("/").pop();
+    return last ? decodeURIComponent(last) : null;
+  } catch {
+    return null;
+  }
+}
+
+function pickFirstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function extractMediaInfo(kind: string, payload: Record<string, any>, inner: Record<string, any>) {
+  const branch = inner?.[kind] ?? payload?.[kind] ?? {};
+  const urls = [
+    branch?.url,
+    branch?.link,
+    branch?.originalUrl,
+    branch?.previewUrl,
+    branch?.downloadUrl,
+    branch?.fileUrl,
+    inner?.url,
+    inner?.link,
+    inner?.originalUrl,
+    inner?.previewUrl,
+    inner?.mediaUrl,
+    inner?.fileUrl,
+    inner?.urls?.original,
+    inner?.urls?.preview,
+    payload?.url,
+    payload?.link,
+    payload?.originalUrl,
+    payload?.previewUrl,
+    payload?.mediaUrl,
+  ];
+
+  const mimeType = pickFirstString(
+    branch?.contentType,
+    branch?.mime_type,
+    branch?.mimeType,
+    inner?.contentType,
+    inner?.mime_type,
+    inner?.mimeType,
+    payload?.contentType,
+    payload?.mime_type,
+    payload?.mimeType,
+  ) ?? guessMimeFromType(kind, pickFirstString(branch?.name, branch?.filename, inner?.name, inner?.filename));
+
+  const fileName = pickFirstString(branch?.name, branch?.filename, inner?.name, inner?.filename) ?? fileNameFromUrl(pickFirstString(...urls));
+
+  return {
+    url: pickFirstString(...urls),
+    mimeType,
+    fileName,
+  };
+}
+
 /** Sube binario al bucket y devuelve la public URL */
 async function uploadBinary(buf: ArrayBuffer, mime: string, originalName?: string | null): Promise<{ url: string; path: string } | null> {
   try {
@@ -163,6 +240,13 @@ async function updateMessageStatus(wppId: string, newStatus: string) {
   await supabase.from("lat_mensajes").update({ estado: newStatus }).eq("id", msg.id);
 }
 
+async function updateMessageStatusByCandidates(ids: Array<string | null | undefined>, newStatus: string) {
+  for (const id of ids) {
+    if (!id) continue;
+    await updateMessageStatus(id, newStatus);
+  }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -193,19 +277,25 @@ Deno.serve(async (req: Request) => {
       const payload = body.payload ?? {};
 
       // Eventos de estado: enqueued/sent/delivered/read/failed
-      if (type === "message-event" || ["enqueued","sent","delivered","read","failed"].includes(payload?.type)) {
+        if (type === "message-event" || ["enqueued","sent","delivered","read","failed"].includes(payload?.type)) {
         const evType = payload.type ?? type;
-        const wppId  = payload.id ?? payload.gsId ?? null;
-        if (wppId) {
           const map: Record<string, string> = {
-            enqueued: "enviado",
-            sent:      "enviado",
+            enqueued: "pendiente",
+            sent: "enviado",
             delivered: "entregado",
-            read:      "leido",
-            failed:    "fallido",
+            read: "leido",
+            failed: "fallido",
           };
-          await updateMessageStatus(wppId, map[evType] ?? "enviado");
-        }
+          await updateMessageStatusByCandidates([
+            payload.id,
+            payload.gsId,
+            payload.messageId,
+            payload.whatsappMessageId,
+            payload.payload?.id,
+            payload.payload?.gsId,
+            payload.payload?.messageId,
+            payload.payload?.whatsappMessageId,
+          ], map[evType] ?? "enviado");
         return new Response("OK", { status: 200 });
       }
 
@@ -228,16 +318,15 @@ Deno.serve(async (req: Request) => {
       if (innerTyp === "text") {
         contenido = inner.text ?? "[mensaje vacío]";
       } else if (["image","audio","voice","video","file","document","sticker"].includes(innerTyp)) {
-        const mediaUrl = inner.url ?? inner.urls?.preview ?? inner.urls?.original ?? null;
-        const mimeType = inner.contentType ?? inner.mime_type ?? null;
-        const fileName = inner.name ?? inner.filename ?? null;
+        const media = extractMediaInfo(innerTyp, payload, inner);
+        const mediaUrl = media.url;
+        const mimeType = media.mimeType;
+        const fileName = media.fileName;
         if (mediaUrl) {
           const stored = await downloadAndStoreMedia(mediaUrl, mimeType, fileName);
-          if (stored) {
-            adjUrl  = stored.url;
-            adjNom  = fileName ?? `${innerTyp}.${extFromMime(mimeType, fileName)}`;
-            adjTipo = mimeType ?? `${categoryFromMime(mimeType)}/${extFromMime(mimeType, fileName)}`;
-          }
+          adjUrl  = stored?.url ?? mediaUrl;
+          adjNom  = fileName ?? `${innerTyp}.${extFromMime(mimeType, fileName)}`;
+          adjTipo = mimeType ?? guessMimeFromType(innerTyp, fileName);
         }
         if (!contenido) {
           const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", voice:"🎤 Nota de voz", video:"🎥 Video", document:"📎 Documento", file:"📎 Archivo", sticker:"😀 Sticker" };
@@ -290,8 +379,8 @@ Deno.serve(async (req: Request) => {
               contenido = msg.text?.body ?? "";
             } else if (["image","audio","voice","video","document","sticker"].includes(msg.type)) {
               const mediaObj = msg[msg.type] ?? {};
-              const mimeType = mediaObj.mime_type ?? null;
-              const fileName = mediaObj.filename ?? null;
+              const mimeType = mediaObj.mime_type ?? guessMimeFromType(msg.type, mediaObj.filename ?? null);
+              const fileName = mediaObj.filename ?? fileNameFromUrl(mediaObj.link ?? mediaObj.url ?? null);
               if (mediaObj.id && metaToken) {
                 const stored = await downloadMetaMedia(mediaObj.id, metaToken, mimeType);
                 if (stored) {
@@ -299,6 +388,10 @@ Deno.serve(async (req: Request) => {
                   adjNom  = fileName ?? `${msg.type}.${extFromMime(mimeType, fileName)}`;
                   adjTipo = mimeType;
                 }
+              } else if (mediaObj.link || mediaObj.url) {
+                adjUrl = mediaObj.link ?? mediaObj.url;
+                adjNom = fileName ?? `${msg.type}.${extFromMime(mimeType, fileName)}`;
+                adjTipo = mimeType;
               }
               const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", voice:"🎤 Nota de voz", video:"🎥 Video", document:"📎 Documento", sticker:"😀 Sticker" };
               contenido = mediaObj.caption ?? labelMap[msg.type] ?? `[${msg.type}]`;
