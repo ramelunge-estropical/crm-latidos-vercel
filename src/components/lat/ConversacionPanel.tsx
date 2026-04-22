@@ -154,6 +154,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
   const [mostrarTodasGest, setMostrarTodasGest]   = useState(true);
   const [showTemplates, setShowTemplates]         = useState(false);
+  const [showAi, setShowAi]                       = useState(false);
   const [liberando, setLiberando]                 = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -754,11 +755,26 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 >
                   <StickyNote className="w-4 h-4" />
                 </button>
+                {/* Copiloto IA: copiloto estratégico del asesor (responder mejor, resumir, intención, etc.) */}
+                {!isMock && (
+                  <button
+                    onClick={() => setShowAi(true)}
+                    className="p-1.5 rounded-md hover:bg-primary/10 text-primary"
+                    title="Copiloto IA: sugerir respuesta, resumir, detectar intención/objeciones, generar nota interna…"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </button>
+                )}
+                {/* Plantillas Gupshup: SOLO para reabrir conversaciones de WhatsApp fuera de ventana */}
                 {isWhatsapp && !isMock && (
                   <button
                     onClick={() => setShowTemplates(true)}
                     className={`p-1.5 rounded-md hover:bg-accent/50 ${isOutOfWindow ? 'text-primary' : 'text-muted-foreground'}`}
-                    title="Plantillas WhatsApp aprobadas (Gupshup)"
+                    title={
+                      isOutOfWindow
+                        ? "Plantillas WhatsApp aprobadas (Gupshup) — usalas para reabrir esta conversación"
+                        : "Plantillas WhatsApp aprobadas — solo para reactivar fuera de ventana de 24 h"
+                    }
                   >
                     <FileText className="w-4 h-4" />
                   </button>
@@ -785,10 +801,11 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isWhatsapp && isOutOfWindow && !isMock && !showNota && pendingItems.length === 0 ? (
                 <button
                   onClick={() => setShowTemplates(true)}
-                  className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1 text-xs"
-                  title="Enviar plantilla aprobada"
+                  className="px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1.5 text-xs font-medium"
+                  title="Enviar plantilla aprobada para reabrir la conversación"
                 >
                   <FileText className="w-4 h-4" />
+                  <span className="hidden sm:inline">Reabrir con plantilla</span>
                 </button>
               ) : (
                 <button
