@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
@@ -10,7 +10,7 @@ interface Process {
   area: string | null;
 }
 
-export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos" | "lat-bandeja" | "lat-dashboard" | "lat-funnel";
+export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos" | "lat-bandeja" | "lat-dashboard";
 
 interface ProcessSidebarProps {
   processes: Process[];
@@ -38,7 +38,6 @@ const specializedItems: { view: SidebarView; label: string; icon: typeof Calenda
 const latItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "lat-bandeja",   label: "Bandeja",   icon: MessageSquare },
   { view: "lat-dashboard", label: "Dashboard", icon: TrendingUp },
-  { view: "lat-funnel",    label: "Funnel",    icon: GitBranch },
 ];
 
 const utilItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
