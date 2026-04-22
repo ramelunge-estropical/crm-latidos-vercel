@@ -199,6 +199,65 @@ export function useLatMensajes(conversacionId: string | null, isMock: boolean) {
 
 // ── useSendMensaje ────────────────────────────────────────────────────────────
 
+// ── useSendAdjunto ────────────────────────────────────────────────────────────
+
+export function useSendAdjunto() {
+  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(false);
+
+  const sendAdjunto = useCallback(async (
+    conversacionId: string,
+    file: File,
+    caption: string,
+    isMock: boolean,
+    autorNombre?: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (isMock) return { ok: false, error: "Disponible solo en modo real" };
+    setLoading(true);
+    try {
+      // File → base64
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload  = () => resolve(String(r.result));
+        r.onerror = () => reject(new Error("Error leyendo archivo"));
+        r.readAsDataURL(file);
+      });
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const res = await fetch(`${supabaseUrl}/functions/v1/wpp-send-media`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: JSON.stringify({
+          conversacion_id: conversacionId,
+          file_name:       file.name || `adjunto-${Date.now()}`,
+          mime_type:       file.type || "application/octet-stream",
+          file_base64:     base64,
+          caption:         caption?.trim() || null,
+          autor_nombre:    autorNombre ?? null,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: json?.error ?? `Error ${res.status}` };
+
+      queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] });
+      queryClient.invalidateQueries({ queryKey: ["lat_conversaciones"] });
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  }, [queryClient]);
+
+  return { sendAdjunto, loading };
+}
+
+// ── useSendMensaje ────────────────────────────────────────────────────────────
+
 export function useSendMensaje() {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
