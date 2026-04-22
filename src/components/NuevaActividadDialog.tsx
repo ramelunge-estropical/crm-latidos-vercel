@@ -271,7 +271,7 @@ export function NuevaActividadDialog({
         description:      description.trim() || null,
         scheduled_at:     scheduledAt,
         duration_minutes: duration ? parseInt(duration) : 30,
-        assigned_to:      responsable?.nombre || null,
+        assigned_to_id:   responsableId || null,
         cliente_id:       cliente?.id || null,
         cliente_nombre:   cliente?.nombre || null,
         created_by:       colaboradorId || null,

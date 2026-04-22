@@ -141,7 +141,7 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
   const [date,          setDate]          = useState(activity?.scheduled_at ? format(new Date(activity.scheduled_at), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"));
   const [time,          setTime]          = useState(activity?.scheduled_at ? format(new Date(activity.scheduled_at), "HH:mm") : format(new Date(), "HH:mm"));
   const [duration,      setDuration]      = useState(String(activity?.duration_minutes || 30));
-  const [responsableId, setResponsableId] = useState(() => { const f = colaboradores.find(c => c.nombre === activity?.assigned_to); return f?.id || colaboradorId; });
+  const [responsableId, setResponsableId] = useState(activity?.assigned_to_id || activity?.responsable?.id || colaboradorId);
   const [attendees,     setAttendees]     = useState<string[]>([]);
   const [cliente,       setCliente]       = useState<{ id: string; nombre: string } | null>(activity?.cliente_id ? { id: activity.cliente_id, nombre: activity.cliente_nombre || "" } : null);
   const [loading,       setLoading]       = useState(false);
@@ -165,10 +165,14 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
       dt.setHours(h, m, 0, 0);
       const responsable = colaboradores.find(c => c.id === responsableId);
       const { error } = await (supabase as any).from("activities").update({
-        activity_type: type, title: title.trim(), description: description.trim() || null,
-        scheduled_at: dt.toISOString(), duration_minutes: parseInt(duration) || 30,
-        assigned_to: responsable?.nombre || null,
-        cliente_id: cliente?.id || null, cliente_nombre: cliente?.nombre || null,
+        activity_type:    type,
+        title:            title.trim(),
+        description:      description.trim() || null,
+        scheduled_at:     dt.toISOString(),
+        duration_minutes: parseInt(duration) || 30,
+        assigned_to_id:   responsableId || null,
+        cliente_id:       cliente?.id || null,
+        cliente_nombre:   cliente?.nombre || null,
       }).eq("id", activity.id);
       if (error) throw error;
       toast.success("Actividad actualizada");
@@ -295,7 +299,14 @@ function ActivityCard({ activity: a, onToggle, onEdit }: {
               </span>
             )}
             {a.gestiones && <span className="text-[11px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">{a.gestiones.title}</span>}
-            {a.assigned_to && <span className="text-[11px] text-muted-foreground">· {a.assigned_to}</span>}
+            {a.responsable && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                <span className="w-3.5 h-3.5 rounded-full inline-flex items-center justify-center text-white text-[8px] font-bold" style={{ backgroundColor: a.responsable.color || "#6366f1" }}>
+                  {a.responsable.nombre?.charAt(0)}
+                </span>
+                {a.responsable.nombre}
+              </span>
+            )}
           </div>
 
           {(a.meet_link || a.meetLink) && (
@@ -457,25 +468,21 @@ export function AgendaView() {
                    : view === "week"  ? weekEnd
                    : endOfWeek(monthEnd, { weekStartsOn: 1 });
 
-  // CRM activities — only mine: where I'm responsable OR I created it
+  // CRM activities — only mine: assigned_to_id = me OR created_by = me
   const { data: activities = [] } = useQuery({
-    queryKey: ["agenda-activities", rangeStart.toISOString(), rangeEnd.toISOString(), colaboradorId, currentUser?.nombre],
+    queryKey: ["agenda-activities", rangeStart.toISOString(), rangeEnd.toISOString(), colaboradorId],
     queryFn: async () => {
       if (!colaboradorId) return [];
-      const nombre = currentUser?.nombre;
-      // Show if: assigned_to = my nombre OR created_by = my id
-      const orFilter = nombre
-        ? `assigned_to.eq.${nombre},created_by.eq.${colaboradorId}`
-        : `created_by.eq.${colaboradorId}`;
       const { data } = await (supabase as any)
-        .from("activities").select("*, gestiones(title)")
+        .from("activities")
+        .select("*, gestiones(title), responsable:colaboradores!activities_assigned_to_id_fkey(id, nombre, color)")
         .gte("scheduled_at", rangeStart.toISOString())
         .lte("scheduled_at", rangeEnd.toISOString())
-        .or(orFilter)
+        .or(`assigned_to_id.eq.${colaboradorId},created_by.eq.${colaboradorId}`)
         .order("scheduled_at", { ascending: true });
       return (data || []) as any[];
     },
-    enabled: !!colaboradorId && !!currentUser,
+    enabled: !!colaboradorId,
   });
 
   // Google Calendar events
