@@ -3,6 +3,7 @@ import { getCliente } from '@/data/latMockData';
 import { LatConversacion } from '@/hooks/useLatData';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { getFunnelStage, getFlags, FUNNEL_STAGES } from '@/lib/latFunnel';
 
 const canalIcons: Record<string, { icon: typeof MessageSquare; color: string }> = {
   whatsapp: { icon: MessageSquare, color: 'text-whatsapp' },
@@ -10,15 +11,9 @@ const canalIcons: Record<string, { icon: typeof MessageSquare; color: string }> 
   email:    { icon: Mail,          color: 'text-email'    },
 };
 
-const estadoBadge: Record<string, { label: string; className: string }> = {
-  nuevo:                { label: 'Nuevo',        className: 'bg-info/10 text-info'                       },
-  pendiente_respuesta:  { label: 'Pendiente',    className: 'bg-warning/10 text-warning'                 },
-  en_seguimiento:       { label: 'Seguimiento',  className: 'bg-primary/10 text-primary'                 },
-  urgente:              { label: 'Urgente',       className: 'bg-urgent/10 text-urgent'                   },
-  fuera_ventana:        { label: 'Fuera ventana',className: 'bg-muted text-muted-foreground'              },
-  con_tarea:            { label: 'Con tarea',    className: 'bg-accent/20 text-accent-foreground'         },
-  finalizado:           { label: 'Finalizado',   className: 'bg-success/10 text-success'                 },
-};
+const stageBadgeMap = Object.fromEntries(
+  FUNNEL_STAGES.map(s => [s.key, { label: s.label, className: `${s.bg} ${s.text}` }])
+);
 
 const prioridadDot: Record<string, string> = {
   urgente: 'bg-urgent',
