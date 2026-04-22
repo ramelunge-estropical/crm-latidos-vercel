@@ -187,6 +187,11 @@ export function useLatMensajes(conversacionId: string | null, isMock: boolean) {
         { event: "INSERT", schema: "public", table: "lat_mensajes", filter: `conversacion_id=eq.${conversacionId}` },
         () => queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] })
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "lat_mensajes", filter: `conversacion_id=eq.${conversacionId}` },
+        () => queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] })
+      )
       .subscribe();
 
     return () => {
