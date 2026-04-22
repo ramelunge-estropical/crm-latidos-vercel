@@ -40,16 +40,33 @@ const statusColors: Record<string, string> = {
   done:   "bg-status-done",
 };
 
-// Translate default English stage names to Spanish
 const nameTranslations: Record<string, string> = {
   "to do":       "Por hacer",
   "todo":        "Por hacer",
+  "to_do":       "Por hacer",
+  "backlog":     "Por hacer",
+  "new":         "Por hacer",
   "doing":       "En curso",
   "in progress": "En curso",
+  "in_progress": "En curso",
+  "wip":         "En curso",
+  "active":      "En curso",
   "review":      "En revisión",
   "in review":   "En revisión",
+  "in_review":   "En revisión",
+  "testing":     "En revisión",
   "done":        "Completo",
   "completed":   "Completo",
+  "finished":    "Completo",
+  "closed":      "Completo",
+};
+
+// globalStatus is canonical — use as fallback when name has no translation
+const statusTranslations: Record<string, string> = {
+  to_do:  "Por hacer",
+  doing:  "En curso",
+  review: "En revisión",
+  done:   "Completo",
 };
 
 export function BoardColumn({
@@ -57,7 +74,7 @@ export function BoardColumn({
   taskCountMap, areasMap, hasRules, canAdd = true,
   onAddGestion, onEditGestion, onMarkDone,
 }: BoardColumnProps) {
-  const displayName = nameTranslations[name.toLowerCase()] ?? name;
+  const displayName = nameTranslations[name.toLowerCase()] ?? statusTranslations[globalStatus] ?? name;
   const isDoneColumn = globalStatus === "done";
 
   // Done cards at the bottom within the column
