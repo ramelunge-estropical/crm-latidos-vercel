@@ -1,8 +1,49 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Sparkles, Send, X, Search, FileText, AlertCircle } from 'lucide-react';
+import { Loader2, Sparkles, Send, X, Search, FileText, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+/** Normaliza un nombre de plantilla para comparar (minúsculas, sin separadores). */
+function normalizeName(s: string): string {
+  return (s ?? '').toLowerCase().trim().replace(/[\s_\-.]+/g, '');
+}
+
+/** Busca la plantilla que mejor coincide con `suggestedName` devuelto por la IA. */
+function resolveSuggestedTemplate(
+  suggestedName: string,
+  templates: WppTemplate[],
+): WppTemplate | null {
+  if (!suggestedName) return null;
+  const target = normalizeName(suggestedName);
+  // 1) match exacto por name
+  let tpl = templates.find(t => t.name === suggestedName);
+  if (tpl) return tpl;
+  // 2) case-insensitive
+  tpl = templates.find(t => t.name.toLowerCase() === suggestedName.toLowerCase());
+  if (tpl) return tpl;
+  // 3) normalizado (sin guiones/underscores/espacios)
+  tpl = templates.find(t => normalizeName(t.name) === target);
+  if (tpl) return tpl;
+  // 4) match por id (por si la IA devuelve un UUID)
+  tpl = templates.find(t => t.id === suggestedName);
+  if (tpl) return tpl;
+  // 5) contains
+  tpl = templates.find(t => normalizeName(t.name).includes(target) || target.includes(normalizeName(t.name)));
+  return tpl ?? null;
+}
+
+/** Normaliza el objeto de variables devuelto por la IA: quita `{{}}` de las claves. */
+function normalizeAiVariables(raw: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const key = String(k).replace(/[{}\s]/g, '');
+    if (!key) continue;
+    out[key] = v == null ? '' : String(v);
+  }
+  return out;
+}
 
 export interface WppTemplate {
   id: string;
@@ -41,6 +82,8 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
   const [sending, setSending]             = useState(false);
   const [aiLoading, setAiLoading]         = useState(false);
   const [aiReason, setAiReason]           = useState<string | null>(null);
+  const [aiSuggestedId, setAiSuggestedId] = useState<string | null>(null);
+  const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const { data, isLoading, error, refetch } = useQuery<{ templates: WppTemplate[] }>({
     queryKey: ['gupshup-templates'],
@@ -86,8 +129,18 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
       setSelectedId(null);
       setSearch('');
       setAiReason(null);
+      setAiSuggestedId(null);
     }
   }, [open]);
+
+  // Auto-scroll a la plantilla seleccionada (especialmente útil tras "Sugerir IA")
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = itemRefs.current[selectedId];
+    if (el) {
+      try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* */ }
+    }
+  }, [selectedId]);
 
   const handleAiSuggest = async () => {
     if (templates.length === 0) {
@@ -127,19 +180,26 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
         toast.error('La IA no pudo sugerir una plantilla');
         return;
       }
-      const tpl = templates.find(t =>
-        t.name.toLowerCase() === suggestion.suggested_name.toLowerCase()
-      );
+      const tpl = resolveSuggestedTemplate(suggestion.suggested_name, templates);
       if (!tpl) {
         toast.error(`Plantilla sugerida "${suggestion.suggested_name}" no encontrada`);
         return;
       }
+      // Limpiar el filtro para garantizar que la plantilla sugerida quede visible.
+      setSearch('');
+      // Marcar y seleccionar la plantilla resuelta — única fuente de verdad para preview/envío.
+      setAiSuggestedId(tpl.id);
       setSelectedId(tpl.id);
       setAiReason(suggestion.reason ?? null);
-      if (suggestion.variables) {
-        setVarsByTpl(prev => ({ ...prev, [tpl.id]: { ...suggestion.variables } }));
+      // Aplicar variables normalizadas SOBRE la plantilla resuelta (no otra).
+      const aiVars = normalizeAiVariables(suggestion.variables);
+      if (Object.keys(aiVars).length > 0) {
+        setVarsByTpl(prev => ({
+          ...prev,
+          [tpl.id]: { ...(prev[tpl.id] ?? {}), ...aiVars },
+        }));
       }
-      toast.success('Plantilla sugerida y variables completadas');
+      toast.success(`Plantilla sugerida: ${tpl.name}`);
     } catch (e: any) {
       toast.error(e.message ?? 'Error al sugerir plantilla');
     } finally {
@@ -224,24 +284,44 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
                     : 'Sin resultados para tu búsqueda.'}
                 </p>
               ) : (
-                filtered.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setSelectedId(t.id)}
-                    className={`w-full text-left px-3 py-2 border-b border-border/50 hover:bg-accent/40 transition-colors ${
-                      selectedId === t.id ? 'bg-primary/10' : ''
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-medium truncate">{t.name}</p>
-                      <span className="text-[9px] text-muted-foreground uppercase shrink-0">{t.language}</span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground line-clamp-2 mt-0.5">{t.body}</p>
-                    {t.category && (
-                      <span className="text-[9px] text-primary mt-1 inline-block">{t.category}</span>
-                    )}
-                  </button>
-                ))
+                filtered.map(t => {
+                  const isSelected = selectedId === t.id;
+                  const isAiPick = aiSuggestedId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      ref={el => { itemRefs.current[t.id] = el; }}
+                      onClick={() => {
+                        // Selección manual: limpiar marca de "sugerida por IA" para
+                        // evitar que el badge persista sobre una plantilla distinta.
+                        if (t.id !== aiSuggestedId) setAiSuggestedId(null);
+                        setSelectedId(t.id);
+                      }}
+                      className={`w-full text-left px-3 py-2 border-b border-border/50 hover:bg-accent/40 transition-colors ${
+                        isSelected ? 'bg-primary/10 ring-1 ring-inset ring-primary/40' : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isSelected && <CheckCircle2 className="w-3 h-3 text-primary shrink-0" />}
+                          <p className="text-[11px] font-medium truncate">{t.name}</p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isAiPick && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/15 text-primary flex items-center gap-0.5">
+                              <Sparkles className="w-2.5 h-2.5" /> IA
+                            </span>
+                          )}
+                          <span className="text-[9px] text-muted-foreground uppercase">{t.language}</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground line-clamp-2 mt-0.5">{t.body}</p>
+                      {t.category && (
+                        <span className="text-[9px] text-primary mt-1 inline-block">{t.category}</span>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>
@@ -264,7 +344,12 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
                     </div>
                   )}
                   <div>
-                    <p className="text-[10px] text-muted-foreground uppercase font-semibold mb-1">Vista previa</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold">Vista previa</p>
+                      <span className="text-[10px] font-mono text-foreground/80 truncate ml-2" title={selected.name}>
+                        {selected.name}
+                      </span>
+                    </div>
                     <div className="bg-muted/40 border border-border rounded-md p-2.5 text-[12px] whitespace-pre-wrap leading-relaxed">
                       {preview}
                     </div>
@@ -299,10 +384,11 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
                   <button
                     onClick={handleSend}
                     disabled={!allVarsFilled || sending}
+                    title={selected ? `Enviar plantilla: ${selected.name}` : ''}
                     className="flex-1 flex items-center justify-center gap-1.5 text-[11px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 font-medium"
                   >
                     {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                    Enviar plantilla
+                    Enviar “{selected.name}”
                   </button>
                 </div>
               </>
