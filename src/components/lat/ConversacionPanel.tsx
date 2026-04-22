@@ -706,6 +706,24 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </div>
       </div>
 
+      {/* ── Banner: conversación en cola del equipo ── */}
+      {!isMock && conversacion.en_cola && (
+        <div className="px-4 py-2 bg-warning/10 border-b border-warning/20 flex items-center gap-2">
+          <Users className="w-3.5 h-3.5 text-warning shrink-0" />
+          <span className="text-[11px] text-warning flex-1">
+            En cola del equipo {conversacion.cola_area_nombre ?? ''}. Sin responsable asignado.
+          </span>
+          <button
+            onClick={handleTomarDeCola}
+            disabled={tomandoCola}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-warning text-warning-foreground hover:bg-warning/90 transition-colors disabled:opacity-60"
+          >
+            {tomandoCola ? <Loader2 className="w-3 h-3 animate-spin" /> : <Hand className="w-3 h-3" />}
+            Tomar conversación
+          </button>
+        </div>
+      )}
+
       {/* ── Tab: CHAT ── */}
       {activeTab === 'chat' && (
         <>
