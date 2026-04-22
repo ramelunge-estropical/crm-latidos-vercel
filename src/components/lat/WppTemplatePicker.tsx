@@ -384,10 +384,11 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
                   <button
                     onClick={handleSend}
                     disabled={!allVarsFilled || sending}
+                    title={selected ? `Enviar plantilla: ${selected.name}` : ''}
                     className="flex-1 flex items-center justify-center gap-1.5 text-[11px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 font-medium"
                   >
                     {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                    Enviar plantilla
+                    Enviar “{selected.name}”
                   </button>
                 </div>
               </>
