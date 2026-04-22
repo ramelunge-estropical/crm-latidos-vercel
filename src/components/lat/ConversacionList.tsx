@@ -102,7 +102,9 @@ export function ConversacionList({
 
           const canal      = canalIcons[conv.canal] ?? canalIcons.whatsapp;
           const CanalIcon  = canal.icon;
-          const badge      = estadoBadge[conv.estado] ?? estadoBadge.en_seguimiento;
+          const stage      = getFunnelStage(conv);
+          const stageBadge = stageBadgeMap[stage];
+          const flags      = getFlags(conv);
           const isSelected = conv.id === selectedId;
           const hasUnread  = conv.no_leidos > 0;
           const timeAgo    = formatDistanceToNow(new Date(conv.ultima_interaccion), { addSuffix: false, locale: es });
@@ -142,14 +144,36 @@ export function ConversacionList({
                     <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">{conv.telefono}</p>
                   )}
 
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${badge.className}`}>
-                      {badge.label}
+                  {/* Etapa funnel + flags operativos */}
+                  <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${stageBadge.className}`}>
+                      {stageBadge.label}
                     </span>
-                    {hasUnread && (
-                      <span className="bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center justify-center">
-                        {conv.no_leidos > 9 ? '9+' : conv.no_leidos} nuevo{conv.no_leidos !== 1 ? 's' : ''}
+                    {flags.urgente && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-urgent/10 text-urgent">urgente</span>
+                    )}
+                    {flags.nuevo && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-info/10 text-info">nuevo</span>
+                    )}
+                    {flags.sin_leer && !flags.nuevo && (
+                      <span className="bg-primary text-primary-foreground text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                        {conv.no_leidos > 9 ? '9+' : conv.no_leidos}
                       </span>
+                    )}
+                    {flags.fuera_ventana && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">fuera ventana</span>
+                    )}
+                    {flags.reabierto && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-warning/10 text-warning">reabierto</span>
+                    )}
+                    {flags.sla_vencido && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-urgent/10 text-urgent">SLA</span>
+                    )}
+                    {flags.con_gestion && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-accent/30 text-accent-foreground">gestión</span>
+                    )}
+                    {flags.en_cola && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-warning/10 text-warning">en cola</span>
                     )}
                     {conv.proxima_accion && (
                       <span className="text-[9px] text-muted-foreground truncate">
