@@ -902,23 +902,87 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
     );
   }
 
+  // Categoría del adjunto (si existe)
+  const adjUrl   = mensaje.adjunto_url;
+  const adjTipo  = mensaje.adjunto_tipo ?? '';
+  const isImage  = !!adjUrl && (adjTipo.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(mensaje.adjunto_nombre ?? ''));
+  const isAudio  = !!adjUrl && (adjTipo.startsWith('audio/') || /\.(ogg|mp3|m4a|wav|opus)$/i.test(mensaje.adjunto_nombre ?? ''));
+  const isVideo  = !!adjUrl && (adjTipo.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(mensaje.adjunto_nombre ?? ''));
+  const isFile   = !!adjUrl && !isImage && !isAudio && !isVideo;
+  const hasMedia = isImage || isAudio || isVideo || isFile;
+
+  // Si el contenido es un placeholder genérico y hay imagen, evitamos texto repetido
+  const showText = mensaje.contenido && !(isImage && /^📷|^\[image\]|^\[adjunto\]$/i.test(mensaje.contenido.trim()));
+
   return (
     <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[70%] rounded-2xl px-3.5 py-2 ${
+      <div className={`max-w-[78%] rounded-2xl ${hasMedia ? 'p-1.5' : 'px-3.5 py-2'} ${
         isOutbound
           ? 'bg-primary text-primary-foreground rounded-br-md'
           : 'bg-muted text-foreground rounded-bl-md'
       }`}>
-        <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{mensaje.contenido}</p>
-        {mensaje.adjunto_nombre && (
-          <div className={`mt-1.5 flex items-center gap-1.5 text-[10px] ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'} bg-black/5 rounded px-2 py-1`}>
-            <Paperclip className="w-3 h-3" />
-            {mensaje.adjunto_nombre}
+        {/* Imagen */}
+        {isImage && (
+          <a href={adjUrl!} target="_blank" rel="noopener noreferrer" className="block">
+            <img
+              src={adjUrl!}
+              alt={mensaje.adjunto_nombre ?? 'Imagen'}
+              className="rounded-xl max-h-72 w-auto object-cover bg-black/5"
+              loading="lazy"
+            />
+          </a>
+        )}
+
+        {/* Audio / nota de voz */}
+        {isAudio && (
+          <div className={`px-2 py-1.5 ${isOutbound ? 'bg-primary-foreground/10' : 'bg-background/40'} rounded-xl flex items-center gap-2 min-w-[220px]`}>
+            <Play className={`w-4 h-4 ${isOutbound ? 'text-primary-foreground/80' : 'text-primary'}`} />
+            <audio controls preload="metadata" src={adjUrl!} className="flex-1 h-7 max-w-[260px]" />
           </div>
         )}
-        <div className={`flex items-center justify-end gap-1 mt-1 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+
+        {/* Video */}
+        {isVideo && (
+          <video controls preload="metadata" src={adjUrl!} className="rounded-xl max-h-72 w-auto bg-black/10" />
+        )}
+
+        {/* Documento / archivo genérico */}
+        {isFile && (
+          <a
+            href={adjUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={mensaje.adjunto_nombre ?? undefined}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isOutbound ? 'bg-primary-foreground/10 hover:bg-primary-foreground/20' : 'bg-background/40 hover:bg-background/60'} transition-colors min-w-[200px]`}
+          >
+            <FileText className={`w-5 h-5 shrink-0 ${isOutbound ? 'text-primary-foreground/80' : 'text-primary'}`} />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-medium truncate">{mensaje.adjunto_nombre ?? 'Archivo'}</p>
+              <p className={`text-[10px] ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>{adjTipo || 'documento'}</p>
+            </div>
+            <Download className={`w-3.5 h-3.5 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`} />
+          </a>
+        )}
+
+        {/* Texto / caption */}
+        {showText && (
+          <p className={`text-[13px] leading-relaxed whitespace-pre-wrap ${hasMedia ? 'px-2 pt-1.5' : ''}`}>{mensaje.contenido}</p>
+        )}
+
+        {/* Footer: hora + tickets */}
+        <div className={`flex items-center justify-end gap-1 ${hasMedia ? 'px-2 pb-1' : 'mt-1'} ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
           <span className="text-[9px]">{format(ts, 'HH:mm', { locale: es })}</span>
-          {StatusIcon && <StatusIcon className={`w-3 h-3 ${isOutbound ? 'text-primary-foreground/60' : estadoIcon!.className}`} />}
+          {StatusIcon && (
+            <span title={`Estado: ${mensaje.estado}`}>
+              <StatusIcon className={`w-3.5 h-3.5 ${
+                mensaje.estado === 'leido'
+                  ? (isOutbound ? 'text-sky-300' : 'text-sky-500')
+                  : mensaje.estado === 'fallido'
+                  ? 'text-destructive'
+                  : isOutbound ? 'text-primary-foreground/70' : estadoIcon!.className
+              }`} />
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -926,3 +990,5 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
 }
 
 void Building2;
+void ImageIcon;
+
