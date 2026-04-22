@@ -129,8 +129,18 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
       setSelectedId(null);
       setSearch('');
       setAiReason(null);
+      setAiSuggestedId(null);
     }
   }, [open]);
+
+  // Auto-scroll a la plantilla seleccionada (especialmente útil tras "Sugerir IA")
+  useEffect(() => {
+    if (!selectedId) return;
+    const el = itemRefs.current[selectedId];
+    if (el) {
+      try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch { /* */ }
+    }
+  }, [selectedId]);
 
   const handleAiSuggest = async () => {
     if (templates.length === 0) {
