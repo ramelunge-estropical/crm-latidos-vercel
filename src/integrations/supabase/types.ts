@@ -24,7 +24,9 @@ export type Database = {
           description: string | null
           duration_minutes: number | null
           gestion_id: string
+          google_event_id: string | null
           id: string
+          meet_link: string | null
           scheduled_at: string | null
           title: string
           updated_at: string
@@ -38,7 +40,9 @@ export type Database = {
           description?: string | null
           duration_minutes?: number | null
           gestion_id: string
+          google_event_id?: string | null
           id?: string
+          meet_link?: string | null
           scheduled_at?: string | null
           title: string
           updated_at?: string
@@ -52,7 +56,9 @@ export type Database = {
           description?: string | null
           duration_minutes?: number | null
           gestion_id?: string
+          google_event_id?: string | null
           id?: string
+          meet_link?: string | null
           scheduled_at?: string | null
           title?: string
           updated_at?: string
@@ -714,6 +720,47 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      colaborador_google_tokens: {
+        Row: {
+          access_token: string | null
+          colaborador_id: string
+          created_at: string | null
+          google_email: string | null
+          id: string
+          refresh_token: string
+          token_expiry: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          access_token?: string | null
+          colaborador_id: string
+          created_at?: string | null
+          google_email?: string | null
+          id?: string
+          refresh_token: string
+          token_expiry?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          access_token?: string | null
+          colaborador_id?: string
+          created_at?: string | null
+          google_email?: string | null
+          id?: string
+          refresh_token?: string
+          token_expiry?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colaborador_google_tokens_colaborador_id_fkey"
+            columns: ["colaborador_id"]
+            isOneToOne: true
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       colaborador_presencia: {
         Row: {
