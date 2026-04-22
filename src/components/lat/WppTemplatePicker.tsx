@@ -229,25 +229,35 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
       <div onClick={e => e.stopPropagation()} className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-primary" />
-            <h2 className="text-sm font-semibold">Plantillas de WhatsApp</h2>
-            <span className="text-[10px] text-muted-foreground">Gupshup · aprobadas</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <FileText className="w-4 h-4 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold leading-tight">Plantillas de WhatsApp</h2>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Gupshup · aprobadas — para reactivar conversaciones fuera de ventana de 24 h
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleAiSuggest}
-              disabled={aiLoading || templates.length === 0}
-              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
-              title="La IA analiza la conversación y sugiere la plantilla más adecuada"
-            >
-              {aiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-              Sugerir con IA
-            </button>
-            <button onClick={() => onOpenChange(false)} className="p-1 rounded hover:bg-accent/50">
-              <X className="w-4 h-4 text-muted-foreground" />
-            </button>
-          </div>
+          <button onClick={() => onOpenChange(false)} className="p-1 rounded hover:bg-accent/50 shrink-0">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* Banda explicativa: alcance del modal y apoyo IA opcional */}
+        <div className="px-4 py-2 bg-muted/30 border-b border-border flex items-center justify-between gap-2">
+          <p className="text-[10px] text-muted-foreground leading-snug">
+            Usá una plantilla aprobada cuando la ventana de texto libre esté cerrada.
+            Para responder dentro de ventana o pedir ideas de redacción, usá el <strong className="text-foreground">Copiloto IA</strong> en el composer.
+          </p>
+          <button
+            onClick={handleAiSuggest}
+            disabled={aiLoading || templates.length === 0}
+            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border border-border hover:bg-accent/60 text-muted-foreground hover:text-foreground disabled:opacity-50 shrink-0"
+            title="Apoyo IA: sugerir qué plantilla aprobada conviene para reabrir esta conversación"
+          >
+            {aiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            Apoyo IA: ¿qué plantilla usar?
+          </button>
         </div>
 
         {/* Body: lista + detalle */}
