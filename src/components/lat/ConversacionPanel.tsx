@@ -258,8 +258,59 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     toast.success('Chat reactivado al foco');
   };
 
+  // ── Adjuntos ──────────────────────────────────────────────────────────────
+  const handleFileSelected = (file: File | null) => {
+    if (!file) return;
+    if (file.size > 16 * 1024 * 1024) {
+      toast.error('Archivo demasiado grande (máx. 16 MB)');
+      return;
+    }
+    setPendingFile(file);
+    if (file.type.startsWith('image/')) {
+      setPendingPreview(URL.createObjectURL(file));
+    } else {
+      setPendingPreview(null);
+    }
+  };
+
+  const clearPending = () => {
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    setPendingFile(null);
+    setPendingPreview(null);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (isMock || !isWhatsapp) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          handleFileSelected(file);
+          return;
+        }
+      }
+    }
+  };
+
+  const handleSendAdjunto = async () => {
+    if (!pendingFile) return;
+    if (isMock) { toast.info('Disponible solo en modo real'); return; }
+    const result = await sendAdjunto(conversacion.id, pendingFile, inputValue, isMock);
+    if (result.ok) {
+      clearPending();
+      setInputValue('');
+      toast.success('Adjunto enviado');
+    } else {
+      toast.error(result.error ?? 'Error al enviar adjunto', { duration: 6000 });
+    }
+  };
+
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = async () => {
+    if (pendingFile) { await handleSendAdjunto(); return; }
     if (!inputValue.trim()) return;
     const tipo = showNota ? 'nota_interna' : 'outbound';
     const result = await send(conversacion.id, inputValue, tipo, isMock);
@@ -284,8 +335,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         },
         body: JSON.stringify({
           conversacion_id: conversacion.id,
-          template_id: template.id,            // UUID Gupshup (requerido por /template/msg)
-          template_name: template.name,        // fallback / trazabilidad
+          template_id: template.id,
+          template_name: template.name,
           template_language: template.language,
           template_variables: variables,
           template_body_preview: bodyPreview,
@@ -293,7 +344,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // Mostramos el error REAL del proveedor; no marcamos como enviado.
         const msg = json?.error ?? `Error ${res.status} al enviar plantilla`;
         toast.error(msg, { duration: 6000 });
         console.error('wpp-send error:', json);
