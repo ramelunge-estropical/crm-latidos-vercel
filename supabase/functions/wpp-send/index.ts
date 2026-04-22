@@ -22,6 +22,25 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+async function persistOutboundAttempt(params: {
+  conversacion_id: string;
+  contenido: string;
+  autor_nombre?: string | null;
+  estado: "enviado" | "fallido" | "pendiente";
+  wpp_message_id?: string | null;
+}) {
+  const { conversacion_id, contenido, autor_nombre, estado, wpp_message_id } = params;
+  const { error } = await supabase.from("lat_mensajes").insert({
+    conversacion_id,
+    tipo: "outbound",
+    contenido,
+    estado,
+    autor_nombre: autor_nombre ?? null,
+    wpp_message_id: wpp_message_id ?? null,
+  });
+  if (error) console.error("Error persistiendo mensaje outbound:", error);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS });
@@ -148,6 +167,12 @@ Deno.serve(async (req: Request) => {
         ? "Timeout: Gupshup no respondió en 8 segundos"
         : `Error de red al llamar Gupshup: ${fetchErr?.message}`;
       console.error(msg);
+      await persistOutboundAttempt({
+        conversacion_id,
+        contenido: messageContent,
+        autor_nombre,
+        estado: "fallido",
+      });
       return new Response(
         JSON.stringify({ error: msg }),
         { status: 502, headers: { ...CORS, "Content-Type": "application/json" } },
@@ -174,6 +199,13 @@ Deno.serve(async (req: Request) => {
         gupshupData?.error   ||
         gupshupText           ||
         `HTTP ${gupshupRes.status}`;
+      await persistOutboundAttempt({
+        conversacion_id,
+        contenido: messageContent,
+        autor_nombre,
+        estado: "fallido",
+        wpp_message_id: gupshupData?.messageId ?? gupshupData?.id ?? null,
+      });
       return new Response(
         JSON.stringify({
           error:  `Gupshup rechazó el envío: ${detailMsg}`,
@@ -184,18 +216,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { error: insertErr } = await supabase.from("lat_mensajes").insert({
+    await persistOutboundAttempt({
       conversacion_id,
-      tipo:           "outbound",
-      contenido:      messageContent,
-      estado:         "enviado",
-      autor_nombre:   autor_nombre ?? null,
-      wpp_message_id: gupshupData?.messageId ?? null,
+      contenido: messageContent,
+      autor_nombre,
+      estado: "enviado",
+      wpp_message_id: gupshupData?.messageId ?? gupshupData?.id ?? null,
     });
-
-    if (insertErr) {
-      console.error("Error insertando mensaje:", insertErr);
-    }
 
     // Actualizar última interacción y reabrir si estaba liberada/cerrada
     await supabase

@@ -51,6 +51,31 @@ function decodeBase64(input: string): Uint8Array {
   return arr;
 }
 
+async function persistOutboundMedia(params: {
+  conversacion_id: string;
+  contenido: string;
+  autor_nombre?: string | null;
+  estado: "enviado" | "fallido" | "pendiente";
+  wpp_message_id?: string | null;
+  adjunto_url: string;
+  adjunto_nombre: string;
+  adjunto_tipo: string;
+}) {
+  const { conversacion_id, contenido, autor_nombre, estado, wpp_message_id, adjunto_url, adjunto_nombre, adjunto_tipo } = params;
+  const { error } = await supabase.from("lat_mensajes").insert({
+    conversacion_id,
+    tipo: "outbound",
+    contenido,
+    estado,
+    autor_nombre: autor_nombre ?? null,
+    wpp_message_id: wpp_message_id ?? null,
+    adjunto_url,
+    adjunto_nombre,
+    adjunto_tipo,
+  });
+  if (error) console.error("persistOutboundMedia error:", error);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -122,6 +147,7 @@ Deno.serve(async (req: Request) => {
 
     let gupshupRes: Response;
     let gupshupText = "";
+    const previewText = caption?.trim() || labelMap[cat] || `📎 ${file_name}`;
     try {
       gupshupRes = await fetch("https://api.gupshup.io/wa/api/v1/msg", {
         method: "POST",
@@ -130,6 +156,15 @@ Deno.serve(async (req: Request) => {
       });
       gupshupText = await gupshupRes.text();
     } catch (e: any) {
+      await persistOutboundMedia({
+        conversacion_id,
+        contenido: previewText,
+        autor_nombre,
+        estado: "fallido",
+        adjunto_url: publicUrl,
+        adjunto_nombre: file_name,
+        adjunto_tipo: mime_type,
+      });
       return new Response(JSON.stringify({ error: `Error de red Gupshup: ${e?.message ?? e}` }),
         { status: 502, headers: { ...CORS, "Content-Type": "application/json" } });
     }
@@ -139,6 +174,16 @@ Deno.serve(async (req: Request) => {
 
     const ok = gupshupRes.ok && (gupshupData?.status === "submitted" || !!gupshupData?.messageId);
     if (!ok) {
+      await persistOutboundMedia({
+        conversacion_id,
+        contenido: previewText,
+        autor_nombre,
+        estado: "fallido",
+        wpp_message_id: gupshupData?.messageId ?? gupshupData?.id ?? null,
+        adjunto_url: publicUrl,
+        adjunto_nombre: file_name,
+        adjunto_tipo: mime_type,
+      });
       return new Response(JSON.stringify({
         error:  `Gupshup rechazó el adjunto: ${gupshupData?.message ?? gupshupText ?? gupshupRes.status}`,
         detail: gupshupData,
@@ -147,20 +192,19 @@ Deno.serve(async (req: Request) => {
 
     // 4) Persistir en lat_mensajes
     const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", video:"🎥 Video", file:"📎 "+file_name };
-    await supabase.from("lat_mensajes").insert({
+    await persistOutboundMedia({
       conversacion_id,
-      tipo:           "outbound",
-      contenido:      caption?.trim() || labelMap[cat] || `📎 ${file_name}`,
-      estado:         "enviado",
-      autor_nombre:   autor_nombre ?? null,
-      wpp_message_id: gupshupData?.messageId ?? null,
-      adjunto_url:    publicUrl,
+      contenido: previewText,
+      autor_nombre,
+      estado: "enviado",
+      wpp_message_id: gupshupData?.messageId ?? gupshupData?.id ?? null,
+      adjunto_url: publicUrl,
       adjunto_nombre: file_name,
-      adjunto_tipo:   mime_type,
+      adjunto_tipo: mime_type,
     });
 
     await supabase.from("lat_conversaciones").update({
-      ultimo_mensaje:     (caption?.trim() || labelMap[cat] || `📎 ${file_name}`).slice(0, 100),
+      ultimo_mensaje:     previewText.slice(0, 100),
       ultima_interaccion: new Date().toISOString(),
       en_foco:            true,
     }).eq("id", conversacion_id);
