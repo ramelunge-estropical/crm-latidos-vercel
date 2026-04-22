@@ -1,18 +1,27 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, ChevronRight, Phone, Users, CheckSquare, Clock, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight, Phone, Users, CheckSquare, Clock, CalendarDays, CalendarCheck, Unlink } from "lucide-react";
 import { format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks, isSameDay, startOfDay, endOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 
+const SUPABASE_URL = "https://qadfjbgfdejmhblgvaef.supabase.co";
+const GOOGLE_CLIENT_ID = "894714399449-tqn21sgssiispg8roqj4s5qicmqtv6t1.apps.googleusercontent.com";
+const GOOGLE_REDIRECT_URI = `${SUPABASE_URL}/functions/v1/google-auth-callback`;
+const GOOGLE_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/userinfo.email",
+].join(" ");
+
 const activityTypeConfig = {
-  tarea: { label: "Tarea", icon: CheckSquare, className: "bg-blue-500/10 text-blue-600" },
-  llamada: { label: "Llamada", icon: Phone, className: "bg-green-500/10 text-green-600" },
-  reunión: { label: "Reunión", icon: Users, className: "bg-violet-500/10 text-violet-600" },
+  tarea:   { label: "Tarea",   icon: CheckSquare, className: "bg-blue-500/10 text-blue-600"   },
+  llamada: { label: "Llamada", icon: Phone,        className: "bg-green-500/10 text-green-600" },
+  reunión: { label: "Reunión", icon: Users,        className: "bg-violet-500/10 text-violet-600" },
 };
 
 export function AgendaView() {
@@ -20,10 +29,69 @@ export function AgendaView() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"day" | "week">("week");
 
+  const colaboradorId = localStorage.getItem("mis_gestiones_colaborador") || "";
+
+  // ── Google Calendar token status ──────────────────────
+  const { data: googleToken, refetch: refetchToken } = useQuery({
+    queryKey: ["google-token", colaboradorId],
+    queryFn: async () => {
+      if (!colaboradorId) return null;
+      const { data } = await (supabase as any)
+        .from("colaborador_google_tokens")
+        .select("google_email, updated_at")
+        .eq("colaborador_id", colaboradorId)
+        .single();
+      return data as { google_email: string; updated_at: string } | null;
+    },
+    enabled: !!colaboradorId,
+  });
+
+  const isGoogleConnected = !!googleToken?.google_email;
+
+  // Handle redirect back from Google OAuth
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const googleStatus = params.get("google");
+    if (googleStatus === "connected") {
+      toast.success("Google Calendar conectado correctamente");
+      refetchToken();
+      // Clean up URL
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (googleStatus === "error") {
+      const msg = params.get("msg") || "Error desconocido";
+      toast.error(`Error al conectar Google Calendar: ${msg}`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  const handleConnectGoogle = () => {
+    if (!colaboradorId) { toast.error("No hay colaborador seleccionado"); return; }
+    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    authUrl.searchParams.set("client_id",     GOOGLE_CLIENT_ID);
+    authUrl.searchParams.set("redirect_uri",  GOOGLE_REDIRECT_URI);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope",         GOOGLE_SCOPES);
+    authUrl.searchParams.set("access_type",   "offline");
+    authUrl.searchParams.set("prompt",        "consent");
+    authUrl.searchParams.set("state",         colaboradorId);
+    window.location.href = authUrl.toString();
+  };
+
+  const handleDisconnectGoogle = async () => {
+    if (!colaboradorId) return;
+    await (supabase as any)
+      .from("colaborador_google_tokens")
+      .delete()
+      .eq("colaborador_id", colaboradorId);
+    refetchToken();
+    toast.success("Google Calendar desconectado");
+  };
+
+  // ── Calendar activities ───────────────────────────────
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+  const weekEnd   = endOfWeek(currentDate,   { weekStartsOn: 1 });
   const rangeStart = view === "day" ? startOfDay(currentDate) : weekStart;
-  const rangeEnd = view === "day" ? endOfDay(currentDate) : weekEnd;
+  const rangeEnd   = view === "day" ? endOfDay(currentDate)   : weekEnd;
 
   const { data: activities = [] } = useQuery({
     queryKey: ["agenda-activities", rangeStart.toISOString(), rangeEnd.toISOString()],
@@ -68,6 +136,7 @@ export function AgendaView() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
           <CalendarDays className="w-5 h-5 text-primary" />
@@ -76,19 +145,57 @@ export function AgendaView() {
         <div className="flex items-center gap-2">
           <Tabs value={view} onValueChange={(v) => setView(v as "day" | "week")}>
             <TabsList className="h-8">
-              <TabsTrigger value="day" className="text-xs px-3 h-6">Día</TabsTrigger>
+              <TabsTrigger value="day"  className="text-xs px-3 h-6">Día</TabsTrigger>
               <TabsTrigger value="week" className="text-xs px-3 h-6">Semana</TabsTrigger>
             </TabsList>
           </Tabs>
           <div className="flex items-center gap-1 ml-2">
-            <Button variant="ghost" size="sm" aria-label="Período anterior" className="h-7 w-7 p-0" onClick={() => navigate(-1)}><ChevronLeft className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => navigate(-1)}><ChevronLeft className="w-4 h-4" /></Button>
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setCurrentDate(new Date())}>Hoy</Button>
-            <Button variant="ghost" size="sm" aria-label="Período siguiente" className="h-7 w-7 p-0" onClick={() => navigate(1)}><ChevronRight className="w-4 h-4" /></Button>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => navigate(1)}><ChevronRight className="w-4 h-4" /></Button>
           </div>
         </div>
       </div>
 
-      <div className="px-4 py-2">
+      {/* Google Calendar banner */}
+      <div className={`mx-4 mt-3 rounded-xl border px-4 py-3 flex items-center gap-3 ${
+        isGoogleConnected
+          ? "bg-emerald-500/5 border-emerald-200"
+          : "bg-muted/50 border-border"
+      }`}>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+          isGoogleConnected ? "bg-emerald-500/10" : "bg-muted"
+        }`}>
+          <CalendarCheck className={`w-4 h-4 ${isGoogleConnected ? "text-emerald-600" : "text-muted-foreground"}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          {isGoogleConnected ? (
+            <>
+              <p className="text-xs font-medium text-emerald-700">Google Calendar conectado</p>
+              <p className="text-[11px] text-muted-foreground truncate">{googleToken.google_email}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-medium text-foreground">Conectá tu Google Calendar</p>
+              <p className="text-[11px] text-muted-foreground">Sincronizá tus actividades automáticamente</p>
+            </>
+          )}
+        </div>
+        {isGoogleConnected ? (
+          <button
+            onClick={handleDisconnectGoogle}
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-red-500 transition-colors shrink-0"
+          >
+            <Unlink className="w-3.5 h-3.5" /> Desconectar
+          </button>
+        ) : (
+          <Button size="sm" className="h-7 text-xs shrink-0 gap-1.5" onClick={handleConnectGoogle}>
+            <CalendarCheck className="w-3.5 h-3.5" /> Conectar
+          </Button>
+        )}
+      </div>
+
+      <div className="px-4 py-2 mt-1">
         <p className="text-sm font-medium text-foreground capitalize">{headerLabel}</p>
       </div>
 
@@ -117,7 +224,8 @@ export function AgendaView() {
           </div>
         ) : (
           <div className="space-y-2">
-            {activities.length > 0 ? activities.map((a) => <ActivityItem key={a.id} activity={a} onToggle={toggleComplete} />) 
+            {activities.length > 0
+              ? activities.map((a) => <ActivityItem key={a.id} activity={a} onToggle={toggleComplete} />)
               : <p className="text-sm text-muted-foreground text-center py-8">No hay actividades para este día</p>}
           </div>
         )}
