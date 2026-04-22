@@ -42,7 +42,9 @@ export default function Login() {
     setLoading(true);
     const id = await loginByEmail(email);
     if (id) {
+      const expiry = Date.now() + 8 * 60 * 60 * 1000; // 8 horas
       localStorage.setItem("mis_gestiones_colaborador", id);
+      localStorage.setItem("crm_session_expiry", String(expiry));
       window.location.href = "/";
     } else {
       toast.error("No se encontró un colaborador activo con ese email");

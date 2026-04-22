@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
@@ -52,6 +54,28 @@ export function ProcessSidebar({
   mobileOpen = false, onMobileClose,
 }: ProcessSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const colaboradorId = localStorage.getItem("mis_gestiones_colaborador") || "";
+
+  const { data: currentUser } = useQuery({
+    queryKey: ["sidebar-user", colaboradorId],
+    queryFn: async () => {
+      if (!colaboradorId) return null;
+      const { data } = await (supabase as any)
+        .from("colaboradores")
+        .select("nombre, cargo, color, email")
+        .eq("id", colaboradorId)
+        .single();
+      return data as { nombre: string; cargo: string; color: string; email: string } | null;
+    },
+    enabled: !!colaboradorId,
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem("mis_gestiones_colaborador");
+    localStorage.removeItem("crm_session_expiry");
+    supabase.auth.signOut();
+    window.location.reload();
+  };
 
   const handleNav = (view: SidebarView) => {
     onChangeView(view);
@@ -238,6 +262,33 @@ export function ProcessSidebar({
             )}
           </div>
 
+        </div>
+
+        {/* User footer */}
+        <div className="border-t border-sidebar-border p-3 mt-auto">
+          <div className="flex items-center gap-2.5">
+            {currentUser && (
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                style={{ backgroundColor: currentUser.color || "#6366f1" }}
+              >
+                {currentUser.nombre.charAt(0)}
+              </div>
+            )}
+            {!collapsed && currentUser && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-sidebar-foreground truncate">{currentUser.nombre}</p>
+                <p className="text-[10px] text-sidebar-foreground/50 truncate">{currentUser.cargo}</p>
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              title="Cerrar sesión"
+              className="p-1.5 rounded-md hover:bg-sidebar-accent transition-colors shrink-0 ml-auto"
+            >
+              <LogOut className="w-3.5 h-3.5 text-sidebar-foreground/50 hover:text-sidebar-foreground" />
+            </button>
+          </div>
         </div>
 
         {/* Collapse toggle — desktop only */}

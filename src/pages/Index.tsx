@@ -58,7 +58,9 @@ const Index = () => {
             .ilike("email", session.user.email)
             .single();
           if (colab && colab.activo !== false) {
+            const expiry = Date.now() + 8 * 60 * 60 * 1000;
             localStorage.setItem("mis_gestiones_colaborador", colab.id);
+            localStorage.setItem("crm_session_expiry", String(expiry));
             window.history.replaceState({}, "", "/");
           } else {
             await supabase.auth.signOut();
@@ -68,8 +70,14 @@ const Index = () => {
         }
       }
 
-      const colabId = localStorage.getItem("mis_gestiones_colaborador");
-      setIsLoggedIn(!!colabId);
+        const colabId  = localStorage.getItem("mis_gestiones_colaborador");
+      const expiry   = localStorage.getItem("crm_session_expiry");
+      const valid    = colabId && expiry && Date.now() < parseInt(expiry);
+      if (!valid) {
+        localStorage.removeItem("mis_gestiones_colaborador");
+        localStorage.removeItem("crm_session_expiry");
+      }
+      setIsLoggedIn(!!valid);
       setAuthReady(true);
     };
     init();
