@@ -1,8 +1,49 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Loader2, Sparkles, Send, X, Search, FileText, AlertCircle } from 'lucide-react';
+import { Loader2, Sparkles, Send, X, Search, FileText, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+/** Normaliza un nombre de plantilla para comparar (minúsculas, sin separadores). */
+function normalizeName(s: string): string {
+  return (s ?? '').toLowerCase().trim().replace(/[\s_\-.]+/g, '');
+}
+
+/** Busca la plantilla que mejor coincide con `suggestedName` devuelto por la IA. */
+function resolveSuggestedTemplate(
+  suggestedName: string,
+  templates: WppTemplate[],
+): WppTemplate | null {
+  if (!suggestedName) return null;
+  const target = normalizeName(suggestedName);
+  // 1) match exacto por name
+  let tpl = templates.find(t => t.name === suggestedName);
+  if (tpl) return tpl;
+  // 2) case-insensitive
+  tpl = templates.find(t => t.name.toLowerCase() === suggestedName.toLowerCase());
+  if (tpl) return tpl;
+  // 3) normalizado (sin guiones/underscores/espacios)
+  tpl = templates.find(t => normalizeName(t.name) === target);
+  if (tpl) return tpl;
+  // 4) match por id (por si la IA devuelve un UUID)
+  tpl = templates.find(t => t.id === suggestedName);
+  if (tpl) return tpl;
+  // 5) contains
+  tpl = templates.find(t => normalizeName(t.name).includes(target) || target.includes(normalizeName(t.name)));
+  return tpl ?? null;
+}
+
+/** Normaliza el objeto de variables devuelto por la IA: quita `{{}}` de las claves. */
+function normalizeAiVariables(raw: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const key = String(k).replace(/[{}\s]/g, '');
+    if (!key) continue;
+    out[key] = v == null ? '' : String(v);
+  }
+  return out;
+}
 
 export interface WppTemplate {
   id: string;
