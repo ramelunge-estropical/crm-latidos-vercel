@@ -343,58 +343,147 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   };
 
   // ── Adjuntos ──────────────────────────────────────────────────────────────
-  const handleFileSelected = (file: File | null) => {
-    if (!file) return;
-    if (file.size > 16 * 1024 * 1024) {
-      toast.error('Archivo demasiado grande (máx. 16 MB)');
-      return;
-    }
-    setPendingFile(file);
-    if (file.type.startsWith('image/')) {
-      setPendingPreview(URL.createObjectURL(file));
-    } else {
-      setPendingPreview(null);
-    }
+  const addFilesToQueue = (files: File[]) => {
+    if (!files.length) return;
+    if (isMock) { toast.info('Disponible solo en modo real'); return; }
+    if (!isWhatsapp) { toast.error('Adjuntos solo disponibles en WhatsApp'); return; }
+
+    setPendingItems(prev => {
+      const next = [...prev];
+      let rejectedSize = 0;
+      let rejectedQueue = 0;
+      for (const file of files) {
+        if (next.length >= MAX_QUEUE) { rejectedQueue++; continue; }
+        if (file.size > MAX_FILE_SIZE) { rejectedSize++; continue; }
+        const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+        next.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          file,
+          preview,
+        });
+      }
+      if (rejectedSize > 0) toast.error(`${rejectedSize} archivo(s) superan 16 MB`);
+      if (rejectedQueue > 0) toast.error(`Máximo ${MAX_QUEUE} adjuntos por envío`);
+      return next;
+    });
+  };
+
+  const removePendingItem = (id: string) => {
+    setPendingItems(prev => {
+      const item = prev.find(p => p.id === id);
+      if (item?.preview) URL.revokeObjectURL(item.preview);
+      return prev.filter(p => p.id !== id);
+    });
   };
 
   const clearPending = () => {
-    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
-    setPendingFile(null);
-    setPendingPreview(null);
+    setPendingItems(prev => {
+      prev.forEach(p => { if (p.preview) URL.revokeObjectURL(p.preview); });
+      return [];
+    });
   };
+
+  // Limpiar object URLs al desmontar
+  useEffect(() => {
+    return () => {
+      pendingItems.forEach(p => { if (p.preview) URL.revokeObjectURL(p.preview); });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePaste = (e: React.ClipboardEvent) => {
     if (isMock || !isWhatsapp) return;
     const items = e.clipboardData?.items;
     if (!items) return;
+    const files: File[] = [];
     for (const item of items) {
       if (item.kind === 'file') {
         const file = item.getAsFile();
-        if (file) {
-          e.preventDefault();
-          handleFileSelected(file);
-          return;
-        }
+        if (file) files.push(file);
       }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      addFilesToQueue(files);
     }
   };
 
-  const handleSendAdjunto = async () => {
-    if (!pendingFile) return;
-    if (isMock) { toast.info('Disponible solo en modo real'); return; }
-    const result = await sendAdjunto(conversacion.id, pendingFile, inputValue, isMock);
-    if (result.ok) {
-      clearPending();
-      setInputValue('');
-      toast.success('Adjunto enviado');
-    } else {
-      toast.error(result.error ?? 'Error al enviar adjunto', { duration: 6000 });
+  // ── Drag & Drop ───────────────────────────────────────────────────────────
+  const dropzoneEnabled = !isMock && isWhatsapp;
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+    e.preventDefault();
+    dragCounterRef.current += 1;
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    e.preventDefault();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!dropzoneEnabled) return;
+    e.preventDefault();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length > 0) addFilesToQueue(files);
+  };
+
+  const handleSendQueue = async (): Promise<boolean> => {
+    if (pendingItems.length === 0) return false;
+    if (isMock) { toast.info('Disponible solo en modo real'); return false; }
+
+    const caption = inputValue.trim();
+    let okCount = 0;
+    let failCount = 0;
+    const failures: string[] = [];
+
+    // Snapshot de la cola — enviamos secuencialmente y aplicamos el caption sólo al primero
+    const queue = [...pendingItems];
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      const cap = i === 0 ? caption : '';
+      const result = await sendAdjunto(conversacion.id, item.file, cap, isMock);
+      if (result.ok) {
+        okCount++;
+        // Quitar el item enviado de la cola para feedback progresivo
+        setPendingItems(prev => {
+          const found = prev.find(p => p.id === item.id);
+          if (found?.preview) URL.revokeObjectURL(found.preview);
+          return prev.filter(p => p.id !== item.id);
+        });
+      } else {
+        failCount++;
+        failures.push(`${item.file.name}: ${result.error ?? 'error'}`);
+      }
     }
+
+    if (okCount > 0) {
+      setInputValue('');
+      toast.success(`${okCount} adjunto${okCount > 1 ? 's enviados' : ' enviado'}`);
+    }
+    if (failCount > 0) {
+      toast.error(`${failCount} fallido(s)\n${failures.slice(0, 3).join('\n')}`, { duration: 7000 });
+    }
+    return failCount === 0;
   };
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = async () => {
-    if (pendingFile) { await handleSendAdjunto(); return; }
+    if (pendingItems.length > 0) { await handleSendQueue(); return; }
     if (!inputValue.trim()) return;
     const tipo = showNota ? 'nota_interna' : 'outbound';
     const result = await send(conversacion.id, inputValue, tipo, isMock);
