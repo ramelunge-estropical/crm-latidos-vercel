@@ -82,6 +82,8 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
   const [sending, setSending]             = useState(false);
   const [aiLoading, setAiLoading]         = useState(false);
   const [aiReason, setAiReason]           = useState<string | null>(null);
+  const [aiSuggestedId, setAiSuggestedId] = useState<string | null>(null);
+  const itemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const { data, isLoading, error, refetch } = useQuery<{ templates: WppTemplate[] }>({
     queryKey: ['gupshup-templates'],
