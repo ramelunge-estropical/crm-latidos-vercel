@@ -4,41 +4,110 @@
  * Recibe mensajes entrantes de WhatsApp Business API y los persiste
  * en las tablas lat_conversaciones + lat_mensajes.
  *
- * Compatible con:
- *  - Meta Cloud API (oficial)
- *  - WATI
- *  - Gupshup
- *  - 360dialog
+ * Soporta:
+ *  - Mensajes de texto, imagen, documento, audio (notas de voz)
+ *  - Estados de entrega: sent / delivered / read / failed
+ *  - Descarga + persistencia de adjuntos en bucket lat-adjuntos
  *
- * URL del webhook: https://<project>.supabase.co/functions/v1/wpp-webhook
- *
- * Variables de entorno requeridas (Supabase → Project → Edge Functions → Secrets):
- *   SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY
- *   WPP_VERIFY_TOKEN   → token que vos elegís para verificar el webhook con Meta
+ * Compatible con: Meta Cloud API, Gupshup, WATI, 360dialog
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+const SUPABASE_URL          = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY      = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const VERIFY_TOKEN          = Deno.env.get("WPP_VERIFY_TOKEN") ?? "latidos_wpp_2026";
+const GUPSHUP_API_KEY       = Deno.env.get("GUPSHUP_API_KEY") ?? "";
 
-const VERIFY_TOKEN = Deno.env.get("WPP_VERIFY_TOKEN") ?? "latidos_wpp_2026";
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+const BUCKET = "lat-adjuntos";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Normaliza número de teléfono: quita + y espacios */
 function normalizePhone(phone: string): string {
-  return phone.replace(/[^0-9]/g, "");
+  return (phone ?? "").replace(/[^0-9]/g, "");
 }
 
-/** Busca conversación activa por teléfono (últimas 24h) */
+function extFromMime(mime?: string | null, fallbackName?: string | null): string {
+  if (mime?.startsWith("image/")) return mime.split("/")[1].split(";")[0] || "jpg";
+  if (mime?.startsWith("audio/")) {
+    const sub = mime.split("/")[1].split(";")[0];
+    if (sub === "ogg" || sub === "opus") return "ogg";
+    if (sub === "mpeg") return "mp3";
+    return sub || "ogg";
+  }
+  if (mime?.startsWith("video/")) return mime.split("/")[1].split(";")[0] || "mp4";
+  if (fallbackName?.includes(".")) return fallbackName.split(".").pop()!.toLowerCase();
+  return "bin";
+}
+
+function categoryFromMime(mime?: string | null): "image" | "audio" | "video" | "document" {
+  if (!mime) return "document";
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("video/")) return "video";
+  return "document";
+}
+
+/** Sube binario al bucket y devuelve la public URL */
+async function uploadBinary(buf: ArrayBuffer, mime: string, originalName?: string | null): Promise<{ url: string; path: string } | null> {
+  try {
+    const ext  = extFromMime(mime, originalName);
+    const path = `inbound/${new Date().toISOString().slice(0,10)}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from(BUCKET).upload(path, new Uint8Array(buf), {
+      contentType: mime || "application/octet-stream",
+      upsert: false,
+    });
+    if (error) { console.error("upload error:", error); return null; }
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    return { url: data.publicUrl, path };
+  } catch (e) {
+    console.error("uploadBinary error:", e);
+    return null;
+  }
+}
+
+/** Descarga y persiste un media de Gupshup (URL directa) */
+async function downloadAndStoreMedia(url: string, mimeHint?: string | null, fileName?: string | null) {
+  try {
+    const res = await fetch(url, { headers: { "apikey": GUPSHUP_API_KEY } });
+    if (!res.ok) {
+      console.error("media download failed", res.status, url);
+      return null;
+    }
+    const mime = res.headers.get("content-type") ?? mimeHint ?? "application/octet-stream";
+    const buf  = await res.arrayBuffer();
+    return await uploadBinary(buf, mime, fileName);
+  } catch (e) {
+    console.error("downloadAndStoreMedia error:", e);
+    return null;
+  }
+}
+
+/** Descarga media de Meta Cloud API (requiere 2 calls + bearer token) */
+async function downloadMetaMedia(mediaId: string, accessToken: string, mimeHint?: string | null) {
+  try {
+    const meta = await fetch(`https://graph.facebook.com/v19.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!meta.ok) return null;
+    const { url, mime_type } = await meta.json();
+    const file = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!file.ok) return null;
+    const buf  = await file.arrayBuffer();
+    const mime = file.headers.get("content-type") ?? mime_type ?? mimeHint ?? "application/octet-stream";
+    return await uploadBinary(buf, mime);
+  } catch (e) {
+    console.error("downloadMetaMedia error:", e);
+    return null;
+  }
+}
+
+/** Busca conversación activa por teléfono o crea una nueva */
 async function findOrCreateConversacion(telefono: string, clienteNombre: string | null): Promise<string> {
   const phone = normalizePhone(telefono);
 
-  // Buscar conversación reciente (< 24h)
   const { data: existing } = await supabase
     .from("lat_conversaciones")
     .select("id")
@@ -46,19 +115,17 @@ async function findOrCreateConversacion(telefono: string, clienteNombre: string 
     .neq("estado", "finalizado")
     .order("ultima_interaccion", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (existing) return existing.id;
 
-  // Buscar si el teléfono pertenece a un cliente registrado
   const { data: cliente } = await supabase
     .from("clientes")
     .select("id, nombre_completo")
     .or(`telefono.eq.${phone},telefono.eq.+${phone}`)
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  // Crear nueva conversación
   const { data: conv, error } = await supabase
     .from("lat_conversaciones")
     .insert({
@@ -77,110 +144,216 @@ async function findOrCreateConversacion(telefono: string, clienteNombre: string 
   return conv!.id;
 }
 
-// ── Handler principal ─────────────────────────────────────────────────────────
+/** Actualiza estado de un mensaje outbound por wpp_message_id */
+async function updateMessageStatus(wppId: string, newStatus: string) {
+  // status priority: enviado < entregado < leido < fallido (no degradar)
+  const order: Record<string, number> = { enviado: 1, entregado: 2, leido: 3, fallido: 4 };
+
+  const { data: msg } = await supabase
+    .from("lat_mensajes")
+    .select("id, estado")
+    .eq("wpp_message_id", wppId)
+    .maybeSingle();
+
+  if (!msg) return;
+  const cur = (order[msg.estado ?? "enviado"] ?? 0);
+  const nxt = (order[newStatus] ?? 0);
+  if (nxt < cur && newStatus !== "fallido") return;
+
+  await supabase.from("lat_mensajes").update({ estado: newStatus }).eq("id", msg.id);
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  // ── GET: verificación del webhook (Meta / WhatsApp Cloud API) ─────────────
+  // GET: verificación Meta
   if (req.method === "GET") {
-    const url    = new URL(req.url);
-    const mode   = url.searchParams.get("hub.mode");
-    const token  = url.searchParams.get("hub.verify_token");
-    const challenge = url.searchParams.get("hub.challenge");
-
+    const url        = new URL(req.url);
+    const mode       = url.searchParams.get("hub.mode");
+    const token      = url.searchParams.get("hub.verify_token");
+    const challenge  = url.searchParams.get("hub.challenge");
     if (mode === "subscribe" && token === VERIFY_TOKEN) {
       return new Response(challenge, { status: 200 });
     }
     return new Response("Forbidden", { status: 403 });
   }
 
-  // ── POST: mensaje entrante ────────────────────────────────────────────────
-  if (req.method === "POST") {
-    let body: any;
-    try {
-      body = await req.json();
-    } catch {
-      return new Response("Invalid JSON", { status: 400 });
-    }
-
-    try {
-      // ── Meta Cloud API format ──
-      if (body?.object === "whatsapp_business_account" || body?.entry) {
-        for (const entry of (body.entry ?? [])) {
-          for (const change of (entry.changes ?? [])) {
-            const messages = change.value?.messages ?? [];
-            const contacts = change.value?.contacts ?? [];
-
-            for (const msg of messages) {
-              if (msg.type !== "text" && msg.type !== "image" && msg.type !== "document") continue;
-
-              const telefono     = msg.from;
-              const contactName  = contacts.find((c: any) => c.wa_id === msg.from)?.profile?.name ?? null;
-              const contenido    = msg.text?.body ?? msg.image?.caption ?? msg.document?.filename ?? "[adjunto]";
-              const wppMessageId = msg.id;
-
-              const convId = await findOrCreateConversacion(telefono, contactName);
-
-              await supabase.from("lat_mensajes").insert({
-                conversacion_id: convId,
-                tipo:            "inbound",
-                contenido,
-                estado:          "leido",
-                wpp_message_id:  wppMessageId,
-              });
-            }
-          }
-        }
-        return new Response("OK", { status: 200 });
-      }
-
-      // ── WATI format ──
-      if (body?.waId || body?.senderName) {
-        const telefono  = body.waId ?? body.from;
-        const nombre    = body.senderName ?? null;
-        const contenido = body.text ?? body.caption ?? body.fileName ?? "[adjunto]";
-        const wppId     = body.id ?? null;
-
-        const convId = await findOrCreateConversacion(telefono, nombre);
-        await supabase.from("lat_mensajes").insert({
-          conversacion_id: convId,
-          tipo:            "inbound",
-          contenido,
-          estado:          "leido",
-          wpp_message_id:  wppId,
-        });
-        return new Response("OK", { status: 200 });
-      }
-
-      // ── Gupshup format ──
-      if (body?.app || body?.payload?.source) {
-        const payload  = body.payload ?? {};
-        const telefono = payload.source ?? payload.sender?.phone ?? "";
-        const nombre   = payload.sender?.name ?? null;
-        const contenido = payload.payload?.text ?? payload.payload?.url ?? "[adjunto]";
-        const wppId     = payload.id ?? null;
-
-        if (telefono) {
-          const convId = await findOrCreateConversacion(telefono, nombre);
-          await supabase.from("lat_mensajes").insert({
-            conversacion_id: convId,
-            tipo:            "inbound",
-            contenido,
-            estado:          "leido",
-            wpp_message_id:  wppId,
-          });
-        }
-        return new Response("OK", { status: 200 });
-      }
-
-      // Formato desconocido — loguear y retornar OK (para no reintentos)
-      console.warn("wpp-webhook: formato desconocido", JSON.stringify(body).slice(0, 300));
-      return new Response("OK", { status: 200 });
-
-    } catch (err) {
-      console.error("wpp-webhook error:", err);
-      return new Response("Internal error", { status: 500 });
-    }
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
   }
 
-  return new Response("Method not allowed", { status: 405 });
+  let body: any;
+  try { body = await req.json(); } catch { return new Response("Invalid JSON", { status: 400 }); }
+
+  try {
+    // ── Gupshup format ─────────────────────────────────────────────────────
+    // Body: { app, type: "message"|"message-event", payload: {...} }
+    if (body?.app !== undefined || body?.payload?.source) {
+      const type    = body.type ?? body.payload?.type ?? "";
+      const payload = body.payload ?? {};
+
+      // Eventos de estado: enqueued/sent/delivered/read/failed
+      if (type === "message-event" || ["enqueued","sent","delivered","read","failed"].includes(payload?.type)) {
+        const evType = payload.type ?? type;
+        const wppId  = payload.id ?? payload.gsId ?? null;
+        if (wppId) {
+          const map: Record<string, string> = {
+            enqueued: "enviado",
+            sent:      "enviado",
+            delivered: "entregado",
+            read:      "leido",
+            failed:    "fallido",
+          };
+          await updateMessageStatus(wppId, map[evType] ?? "enviado");
+        }
+        return new Response("OK", { status: 200 });
+      }
+
+      // Mensajes entrantes
+      const telefono = payload.source ?? payload.sender?.phone ?? "";
+      const nombre   = payload.sender?.name ?? null;
+      const wppId    = payload.id ?? null;
+      const inner    = payload.payload ?? {};
+      const innerTyp = (inner.type ?? payload.type ?? "text") as string;
+
+      if (!telefono) return new Response("OK", { status: 200 });
+
+      const convId = await findOrCreateConversacion(telefono, nombre);
+
+      let contenido = inner.text ?? inner.caption ?? "";
+      let adjUrl: string | null = null;
+      let adjNom: string | null = null;
+      let adjTipo: string | null = null;
+
+      if (innerTyp === "text") {
+        contenido = inner.text ?? "[mensaje vacío]";
+      } else if (["image","audio","voice","video","file","document","sticker"].includes(innerTyp)) {
+        const mediaUrl = inner.url ?? inner.urls?.preview ?? inner.urls?.original ?? null;
+        const mimeType = inner.contentType ?? inner.mime_type ?? null;
+        const fileName = inner.name ?? inner.filename ?? null;
+        if (mediaUrl) {
+          const stored = await downloadAndStoreMedia(mediaUrl, mimeType, fileName);
+          if (stored) {
+            adjUrl  = stored.url;
+            adjNom  = fileName ?? `${innerTyp}.${extFromMime(mimeType, fileName)}`;
+            adjTipo = mimeType ?? `${categoryFromMime(mimeType)}/${extFromMime(mimeType, fileName)}`;
+          }
+        }
+        if (!contenido) {
+          const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", voice:"🎤 Nota de voz", video:"🎥 Video", document:"📎 Documento", file:"📎 Archivo", sticker:"😀 Sticker" };
+          contenido = labelMap[innerTyp] ?? `[${innerTyp}]`;
+        }
+      } else {
+        contenido = `[${innerTyp}]`;
+      }
+
+      await supabase.from("lat_mensajes").insert({
+        conversacion_id: convId,
+        tipo:            "inbound",
+        contenido,
+        estado:          "entregado",
+        wpp_message_id:  wppId,
+        adjunto_url:     adjUrl,
+        adjunto_nombre:  adjNom,
+        adjunto_tipo:    adjTipo,
+      });
+
+      return new Response("OK", { status: 200 });
+    }
+
+    // ── Meta Cloud API format ──────────────────────────────────────────────
+    if (body?.object === "whatsapp_business_account" || body?.entry) {
+      const metaToken = Deno.env.get("META_WPP_ACCESS_TOKEN") ?? "";
+      for (const entry of (body.entry ?? [])) {
+        for (const change of (entry.changes ?? [])) {
+          // Status updates
+          for (const st of (change.value?.statuses ?? [])) {
+            const map: Record<string,string> = { sent:"enviado", delivered:"entregado", read:"leido", failed:"fallido" };
+            await updateMessageStatus(st.id, map[st.status] ?? "enviado");
+          }
+
+          const messages = change.value?.messages ?? [];
+          const contacts = change.value?.contacts ?? [];
+
+          for (const msg of messages) {
+            const telefono    = msg.from;
+            const contactName = contacts.find((c: any) => c.wa_id === msg.from)?.profile?.name ?? null;
+            const wppId       = msg.id;
+            const convId      = await findOrCreateConversacion(telefono, contactName);
+
+            let contenido = "";
+            let adjUrl: string | null = null;
+            let adjNom: string | null = null;
+            let adjTipo: string | null = null;
+
+            if (msg.type === "text") {
+              contenido = msg.text?.body ?? "";
+            } else if (["image","audio","voice","video","document","sticker"].includes(msg.type)) {
+              const mediaObj = msg[msg.type] ?? {};
+              const mimeType = mediaObj.mime_type ?? null;
+              const fileName = mediaObj.filename ?? null;
+              if (mediaObj.id && metaToken) {
+                const stored = await downloadMetaMedia(mediaObj.id, metaToken, mimeType);
+                if (stored) {
+                  adjUrl  = stored.url;
+                  adjNom  = fileName ?? `${msg.type}.${extFromMime(mimeType, fileName)}`;
+                  adjTipo = mimeType;
+                }
+              }
+              const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", voice:"🎤 Nota de voz", video:"🎥 Video", document:"📎 Documento", sticker:"😀 Sticker" };
+              contenido = mediaObj.caption ?? labelMap[msg.type] ?? `[${msg.type}]`;
+            } else {
+              contenido = `[${msg.type}]`;
+            }
+
+            await supabase.from("lat_mensajes").insert({
+              conversacion_id: convId,
+              tipo:            "inbound",
+              contenido,
+              estado:          "entregado",
+              wpp_message_id:  wppId,
+              adjunto_url:     adjUrl,
+              adjunto_nombre:  adjNom,
+              adjunto_tipo:    adjTipo,
+            });
+          }
+        }
+      }
+      return new Response("OK", { status: 200 });
+    }
+
+    // ── WATI format ────────────────────────────────────────────────────────
+    if (body?.waId || body?.senderName) {
+      const telefono = body.waId ?? body.from;
+      const nombre   = body.senderName ?? null;
+      const convId   = await findOrCreateConversacion(telefono, nombre);
+      const mediaUrl = body.data ?? body.fileUrl ?? null;
+      const mime     = body.mimeType ?? null;
+      let adjUrl: string | null = null;
+      let adjNom: string | null = null;
+      let adjTipo: string | null = null;
+      if (mediaUrl) {
+        const stored = await downloadAndStoreMedia(mediaUrl, mime, body.fileName);
+        if (stored) { adjUrl = stored.url; adjNom = body.fileName ?? null; adjTipo = mime; }
+      }
+      await supabase.from("lat_mensajes").insert({
+        conversacion_id: convId,
+        tipo:            "inbound",
+        contenido:       body.text ?? body.caption ?? body.fileName ?? "[adjunto]",
+        estado:          "entregado",
+        wpp_message_id:  body.id ?? null,
+        adjunto_url:     adjUrl,
+        adjunto_nombre:  adjNom,
+        adjunto_tipo:    adjTipo,
+      });
+      return new Response("OK", { status: 200 });
+    }
+
+    console.warn("wpp-webhook: formato desconocido", JSON.stringify(body).slice(0, 300));
+    return new Response("OK", { status: 200 });
+
+  } catch (err) {
+    console.error("wpp-webhook error:", err);
+    return new Response("Internal error", { status: 500 });
+  }
 });

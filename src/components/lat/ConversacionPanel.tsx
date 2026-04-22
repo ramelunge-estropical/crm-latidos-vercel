@@ -4,10 +4,10 @@ import {
   Send, Paperclip, StickyNote, AlertTriangle,
   Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
   ClipboardList, Plus, ChevronRight, User, Building2, Loader2, Search, X,
-  Unlink, FileText, Sparkles,
+  Unlink, FileText, Sparkles, Image as ImageIcon, Download, Play,
 } from 'lucide-react';
 import { getCliente } from '@/data/latMockData';
-import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
+import { useLatMensajes, useSendMensaje, useSendAdjunto, LatConversacion, LatMensaje } from '@/hooks/useLatData';
 import { GestionDialog } from '@/components/GestionDialog';
 import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
@@ -103,6 +103,10 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   // ── Mensajes ──────────────────────────────────────────────────────────────
   const { data: mensajes, isLoading: loadingMsgs } = useLatMensajes(conversacion.id, isMock);
   const { send, loading: sendingMsg } = useSendMensaje();
+  const { sendAdjunto, loading: sendingAdj } = useSendAdjunto();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -254,8 +258,59 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     toast.success('Chat reactivado al foco');
   };
 
+  // ── Adjuntos ──────────────────────────────────────────────────────────────
+  const handleFileSelected = (file: File | null) => {
+    if (!file) return;
+    if (file.size > 16 * 1024 * 1024) {
+      toast.error('Archivo demasiado grande (máx. 16 MB)');
+      return;
+    }
+    setPendingFile(file);
+    if (file.type.startsWith('image/')) {
+      setPendingPreview(URL.createObjectURL(file));
+    } else {
+      setPendingPreview(null);
+    }
+  };
+
+  const clearPending = () => {
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    setPendingFile(null);
+    setPendingPreview(null);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (isMock || !isWhatsapp) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          handleFileSelected(file);
+          return;
+        }
+      }
+    }
+  };
+
+  const handleSendAdjunto = async () => {
+    if (!pendingFile) return;
+    if (isMock) { toast.info('Disponible solo en modo real'); return; }
+    const result = await sendAdjunto(conversacion.id, pendingFile, inputValue, isMock);
+    if (result.ok) {
+      clearPending();
+      setInputValue('');
+      toast.success('Adjunto enviado');
+    } else {
+      toast.error(result.error ?? 'Error al enviar adjunto', { duration: 6000 });
+    }
+  };
+
   // ── Send ──────────────────────────────────────────────────────────────────
   const handleSend = async () => {
+    if (pendingFile) { await handleSendAdjunto(); return; }
     if (!inputValue.trim()) return;
     const tipo = showNota ? 'nota_interna' : 'outbound';
     const result = await send(conversacion.id, inputValue, tipo, isMock);
@@ -280,8 +335,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         },
         body: JSON.stringify({
           conversacion_id: conversacion.id,
-          template_id: template.id,            // UUID Gupshup (requerido por /template/msg)
-          template_name: template.name,        // fallback / trazabilidad
+          template_id: template.id,
+          template_name: template.name,
           template_language: template.language,
           template_variables: variables,
           template_body_preview: bodyPreview,
@@ -289,7 +344,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // Mostramos el error REAL del proveedor; no marcamos como enviado.
         const msg = json?.error ?? `Error ${res.status} al enviar plantilla`;
         toast.error(msg, { duration: 6000 });
         console.error('wpp-send error:', json);
@@ -424,9 +478,45 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 Modo demo — los mensajes no se guardan. Conectá WhatsApp para activar el chat real.
               </div>
             )}
+
+            {/* Preview de adjunto pendiente */}
+            {pendingFile && (
+              <div className="mb-2 flex items-center gap-2 p-2 rounded-lg border border-border bg-muted/30">
+                {pendingPreview ? (
+                  <img src={pendingPreview} alt="" className="w-10 h-10 rounded object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded bg-primary/10 flex items-center justify-center text-primary">
+                    {pendingFile.type.startsWith('audio/') ? <Play className="w-4 h-4" /> :
+                     pendingFile.type.startsWith('video/') ? <Play className="w-4 h-4" /> :
+                     <FileText className="w-4 h-4" />}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{pendingFile.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{(pendingFile.size / 1024).toFixed(1)} KB · {pendingFile.type || 'archivo'}</p>
+                </div>
+                <button onClick={clearPending} className="p-1 hover:bg-accent/50 rounded text-muted-foreground" title="Quitar">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              hidden
+              accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+              onChange={(e) => { handleFileSelected(e.target.files?.[0] ?? null); e.target.value = ''; }}
+            />
+
             <div className="flex items-end gap-2">
               <div className="flex gap-1">
-                <button className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground" title="Adjuntar (próximamente)">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isMock || !isWhatsapp || sendingAdj}
+                  className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground disabled:opacity-40"
+                  title={isWhatsapp ? "Adjuntar imagen, audio o documento" : "Solo disponible en WhatsApp"}
+                >
                   <Paperclip className="w-4 h-4" />
                 </button>
                 <button
@@ -451,17 +541,20 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={(isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                onPaste={handlePaste}
+                disabled={(isWhatsapp && isOutOfWindow && !showNota && !pendingFile) || sendingMsg || sendingAdj}
                 placeholder={
-                  isWhatsapp && isOutOfWindow && !showNota
+                  pendingFile
+                    ? 'Comentario opcional para el adjunto...'
+                    : isWhatsapp && isOutOfWindow && !showNota
                     ? 'Ventana expirada. Usá una plantilla aprobada →'
                     : showNota
                     ? 'Nota interna...'
-                    : 'Escribí un mensaje... (Enter para enviar)'
+                    : 'Escribí un mensaje, pegá una imagen o adjuntá un archivo...'
                 }
                 className="flex-1 bg-muted/50 text-sm rounded-lg px-3 py-2 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
               />
-              {isWhatsapp && isOutOfWindow && !isMock && !showNota ? (
+              {isWhatsapp && isOutOfWindow && !isMock && !showNota && !pendingFile ? (
                 <button
                   onClick={() => setShowTemplates(true)}
                   className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1 text-xs"
@@ -472,10 +565,14 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               ) : (
                 <button
                   onClick={handleSend}
-                  disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                  disabled={
+                    (!inputValue.trim() && !pendingFile) ||
+                    (isWhatsapp && isOutOfWindow && !showNota && !pendingFile) ||
+                    sendingMsg || sendingAdj
+                  }
                   className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
                 >
-                  {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {(sendingMsg || sendingAdj) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               )}
             </div>
@@ -805,23 +902,87 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
     );
   }
 
+  // Categoría del adjunto (si existe)
+  const adjUrl   = mensaje.adjunto_url;
+  const adjTipo  = mensaje.adjunto_tipo ?? '';
+  const isImage  = !!adjUrl && (adjTipo.startsWith('image/') || /\.(jpe?g|png|gif|webp)$/i.test(mensaje.adjunto_nombre ?? ''));
+  const isAudio  = !!adjUrl && (adjTipo.startsWith('audio/') || /\.(ogg|mp3|m4a|wav|opus)$/i.test(mensaje.adjunto_nombre ?? ''));
+  const isVideo  = !!adjUrl && (adjTipo.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(mensaje.adjunto_nombre ?? ''));
+  const isFile   = !!adjUrl && !isImage && !isAudio && !isVideo;
+  const hasMedia = isImage || isAudio || isVideo || isFile;
+
+  // Si el contenido es un placeholder genérico y hay imagen, evitamos texto repetido
+  const showText = mensaje.contenido && !(isImage && /^📷|^\[image\]|^\[adjunto\]$/i.test(mensaje.contenido.trim()));
+
   return (
     <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[70%] rounded-2xl px-3.5 py-2 ${
+      <div className={`max-w-[78%] rounded-2xl ${hasMedia ? 'p-1.5' : 'px-3.5 py-2'} ${
         isOutbound
           ? 'bg-primary text-primary-foreground rounded-br-md'
           : 'bg-muted text-foreground rounded-bl-md'
       }`}>
-        <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{mensaje.contenido}</p>
-        {mensaje.adjunto_nombre && (
-          <div className={`mt-1.5 flex items-center gap-1.5 text-[10px] ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'} bg-black/5 rounded px-2 py-1`}>
-            <Paperclip className="w-3 h-3" />
-            {mensaje.adjunto_nombre}
+        {/* Imagen */}
+        {isImage && (
+          <a href={adjUrl!} target="_blank" rel="noopener noreferrer" className="block">
+            <img
+              src={adjUrl!}
+              alt={mensaje.adjunto_nombre ?? 'Imagen'}
+              className="rounded-xl max-h-72 w-auto object-cover bg-black/5"
+              loading="lazy"
+            />
+          </a>
+        )}
+
+        {/* Audio / nota de voz */}
+        {isAudio && (
+          <div className={`px-2 py-1.5 ${isOutbound ? 'bg-primary-foreground/10' : 'bg-background/40'} rounded-xl flex items-center gap-2 min-w-[220px]`}>
+            <Play className={`w-4 h-4 ${isOutbound ? 'text-primary-foreground/80' : 'text-primary'}`} />
+            <audio controls preload="metadata" src={adjUrl!} className="flex-1 h-7 max-w-[260px]" />
           </div>
         )}
-        <div className={`flex items-center justify-end gap-1 mt-1 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+
+        {/* Video */}
+        {isVideo && (
+          <video controls preload="metadata" src={adjUrl!} className="rounded-xl max-h-72 w-auto bg-black/10" />
+        )}
+
+        {/* Documento / archivo genérico */}
+        {isFile && (
+          <a
+            href={adjUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={mensaje.adjunto_nombre ?? undefined}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isOutbound ? 'bg-primary-foreground/10 hover:bg-primary-foreground/20' : 'bg-background/40 hover:bg-background/60'} transition-colors min-w-[200px]`}
+          >
+            <FileText className={`w-5 h-5 shrink-0 ${isOutbound ? 'text-primary-foreground/80' : 'text-primary'}`} />
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-medium truncate">{mensaje.adjunto_nombre ?? 'Archivo'}</p>
+              <p className={`text-[10px] ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>{adjTipo || 'documento'}</p>
+            </div>
+            <Download className={`w-3.5 h-3.5 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`} />
+          </a>
+        )}
+
+        {/* Texto / caption */}
+        {showText && (
+          <p className={`text-[13px] leading-relaxed whitespace-pre-wrap ${hasMedia ? 'px-2 pt-1.5' : ''}`}>{mensaje.contenido}</p>
+        )}
+
+        {/* Footer: hora + tickets */}
+        <div className={`flex items-center justify-end gap-1 ${hasMedia ? 'px-2 pb-1' : 'mt-1'} ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
           <span className="text-[9px]">{format(ts, 'HH:mm', { locale: es })}</span>
-          {StatusIcon && <StatusIcon className={`w-3 h-3 ${isOutbound ? 'text-primary-foreground/60' : estadoIcon!.className}`} />}
+          {StatusIcon && (
+            <span title={`Estado: ${mensaje.estado}`}>
+              <StatusIcon className={`w-3.5 h-3.5 ${
+                mensaje.estado === 'leido'
+                  ? (isOutbound ? 'text-sky-300' : 'text-sky-500')
+                  : mensaje.estado === 'fallido'
+                  ? 'text-destructive'
+                  : isOutbound ? 'text-primary-foreground/70' : estadoIcon!.className
+              }`} />
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -829,3 +990,5 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
 }
 
 void Building2;
+void ImageIcon;
+
