@@ -34,6 +34,86 @@ const estadoIconMap: Record<string, { icon: typeof Check; className: string }> =
   pendiente: { icon: Clock,      className: 'text-warning'          },
 };
 
+const estadoLabelMap: Record<string, string> = {
+  enviado: 'Enviado',
+  entregado: 'Entregado',
+  leido: 'Leído',
+  fallido: 'Fallido',
+  pendiente: 'Pendiente',
+};
+
+const estadoAliasMap: Record<string, keyof typeof estadoIconMap> = {
+  submitted: 'enviado',
+  sent: 'enviado',
+  enviado: 'enviado',
+  delivered: 'entregado',
+  received: 'entregado',
+  entregado: 'entregado',
+  read: 'leido',
+  seen: 'leido',
+  leido: 'leido',
+  leído: 'leido',
+  failed: 'fallido',
+  error: 'fallido',
+  rejected: 'fallido',
+  fallido: 'fallido',
+  pending: 'pendiente',
+  enqueued: 'pendiente',
+  queued: 'pendiente',
+  pendiente: 'pendiente',
+};
+
+const genericMediaPlaceholderPattern = /^(?:\[(?:adjunto|image|audio|video|file|document|sticker)(?:[^\]]*)\]|(?:📷\s*Imagen|🎤\s*Nota de voz|🎥\s*Video|📎\s*(?:Documento|Archivo)|😀\s*Sticker))$/i;
+const inlineLinkPattern = /\[([^,\]]+),(https?:\/\/[^\]\s]+)\]|((?:https?:\/\/|www\.)[^\s<]+)/gi;
+
+function normalizeMensajeEstado(estado?: string | null): keyof typeof estadoIconMap {
+  const raw = String(estado ?? '').trim().toLowerCase();
+  const normalized = estadoAliasMap[raw] ?? (raw as keyof typeof estadoIconMap);
+  return normalized in estadoIconMap ? normalized : 'pendiente';
+}
+
+function normalizeHref(url: string) {
+  return url.startsWith('www.') ? `https://${url}` : url;
+}
+
+function renderMessageContent(content: string, linkClassName: string) {
+  const fragments: JSX.Element[] = [];
+  let lastIndex = 0;
+
+  for (const match of content.matchAll(inlineLinkPattern)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      fragments.push(<span key={`text-${start}`}>{content.slice(lastIndex, start)}</span>);
+    }
+
+    const bracketLabel = match[1];
+    const bracketUrl = match[2];
+    const plainUrl = match[3];
+    const href = normalizeHref(bracketUrl ?? plainUrl ?? '');
+    const label = bracketLabel ?? plainUrl ?? href;
+
+    fragments.push(
+      <a
+        key={`link-${start}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={linkClassName}
+      >
+        {label}
+      </a>
+    );
+
+    lastIndex = start + match[0].length;
+  }
+
+  if (lastIndex < content.length) {
+    fragments.push(<span key={`text-${lastIndex}`}>{content.slice(lastIndex)}</span>);
+  }
+
+  return fragments.length > 0 ? fragments : [<span key="text-full">{content}</span>];
+}
+
 const priorityCfg: Record<string, { label: string; className: string }> = {
   urgent: { label: 'Urgente', className: 'bg-red-500/15 text-red-600'       },
   high:   { label: 'Alta',    className: 'bg-orange-500/15 text-orange-600' },
@@ -345,6 +425,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg = json?.error ?? `Error ${res.status} al enviar plantilla`;
+        queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacion.id] });
+        queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
         toast.error(msg, { duration: 6000 });
         console.error('wpp-send error:', json);
         return false;
@@ -871,7 +953,8 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   const isOutbound = mensaje.tipo === 'outbound';
   const isNota     = mensaje.tipo === 'nota_interna';
   const isSistema  = mensaje.tipo === 'sistema';
-  const estadoIcon = isOutbound ? estadoIconMap[mensaje.estado] : null;
+  const normalizedStatus = normalizeMensajeEstado(mensaje.estado);
+  const estadoIcon = isOutbound ? estadoIconMap[normalizedStatus] : null;
   const StatusIcon = estadoIcon?.icon;
   const ts         = new Date(mensaje.created_at);
 
@@ -910,9 +993,18 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   const isVideo  = !!adjUrl && (adjTipo.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(mensaje.adjunto_nombre ?? ''));
   const isFile   = !!adjUrl && !isImage && !isAudio && !isVideo;
   const hasMedia = isImage || isAudio || isVideo || isFile;
-
-  // Si el contenido es un placeholder genérico y hay imagen, evitamos texto repetido
-  const showText = mensaje.contenido && !(isImage && /^📷|^\[image\]|^\[adjunto\]$/i.test(mensaje.contenido.trim()));
+  const trimmedContent = mensaje.contenido?.trim() ?? '';
+  const showText = !!trimmedContent && !(hasMedia && genericMediaPlaceholderPattern.test(trimmedContent));
+  const linkClassName = isOutbound
+    ? 'underline underline-offset-2 decoration-primary-foreground/60 font-medium break-all hover:opacity-80'
+    : 'underline underline-offset-2 decoration-primary/60 text-primary font-medium break-all hover:opacity-80';
+  const statusTextClassName = normalizedStatus === 'fallido'
+    ? 'text-destructive'
+    : normalizedStatus === 'leido'
+    ? (isOutbound ? 'text-primary-foreground' : 'text-primary')
+    : isOutbound
+    ? 'text-primary-foreground/80'
+    : (estadoIcon?.className ?? 'text-muted-foreground');
 
   return (
     <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'}`}>
@@ -966,21 +1058,18 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
 
         {/* Texto / caption */}
         {showText && (
-          <p className={`text-[13px] leading-relaxed whitespace-pre-wrap ${hasMedia ? 'px-2 pt-1.5' : ''}`}>{mensaje.contenido}</p>
+          <div className={`text-[13px] leading-relaxed whitespace-pre-wrap break-words ${hasMedia ? 'px-2 pt-1.5' : ''}`}>
+            {renderMessageContent(trimmedContent, linkClassName)}
+          </div>
         )}
 
         {/* Footer: hora + tickets */}
         <div className={`flex items-center justify-end gap-1 ${hasMedia ? 'px-2 pb-1' : 'mt-1'} ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
           <span className="text-[9px]">{format(ts, 'HH:mm', { locale: es })}</span>
           {StatusIcon && (
-            <span title={`Estado: ${mensaje.estado}`}>
-              <StatusIcon className={`w-3.5 h-3.5 ${
-                mensaje.estado === 'leido'
-                  ? (isOutbound ? 'text-sky-300' : 'text-sky-500')
-                  : mensaje.estado === 'fallido'
-                  ? 'text-destructive'
-                  : isOutbound ? 'text-primary-foreground/70' : estadoIcon!.className
-              }`} />
+            <span title={`Estado: ${estadoLabelMap[normalizedStatus]}`} className={`inline-flex items-center gap-1 text-[9px] font-medium ${statusTextClassName}`}>
+              <span>{estadoLabelMap[normalizedStatus]}</span>
+              <StatusIcon className={`w-3.5 h-3.5 ${statusTextClassName}`} />
             </span>
           )}
         </div>
