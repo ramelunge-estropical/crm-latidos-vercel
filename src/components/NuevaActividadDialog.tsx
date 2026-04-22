@@ -229,8 +229,6 @@ export function NuevaActividadDialog({
     }
   };
 
-  const responsable = colaboradores.find(c => c.id === responsableId);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -315,14 +313,16 @@ export function NuevaActividadDialog({
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Responsable</label>
-              <ColaboradorSearch
-                colaboradores={colaboradores}
-                selected={responsableId ? [responsableId] : []}
-                onAdd={id => setResponsableId(id)}
-                onRemove={() => setResponsableId("")}
-                placeholder={responsable ? responsable.nombre : "Buscar..."}
-                exclude={[]}
-              />
+              <Select value={responsableId} onValueChange={setResponsableId}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Seleccionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {colaboradores.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
