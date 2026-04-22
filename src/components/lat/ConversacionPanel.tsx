@@ -568,6 +568,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
           )}
+          {!isMock && (
+            <button
+              onClick={() => setShowDerivar(true)}
+              title="Derivar conversación a un usuario o cola de equipo"
+              className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border border-border hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <GitBranch className="w-3 h-3" />
+              Derivar
+            </button>
+          )}
           {!isMock && tieneVinculoGestion && !conversacionEstaLiberada && (
             <button
               onClick={handleLiberarChat}
