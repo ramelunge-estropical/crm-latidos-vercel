@@ -4,10 +4,10 @@ import {
   Send, Paperclip, StickyNote, AlertTriangle,
   Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
   ClipboardList, Plus, ChevronRight, User, Building2, Loader2, Search, X,
-  Unlink, FileText, Sparkles,
+  Unlink, FileText, Sparkles, Image as ImageIcon, Download, Play,
 } from 'lucide-react';
 import { getCliente } from '@/data/latMockData';
-import { useLatMensajes, useSendMensaje, LatConversacion, LatMensaje } from '@/hooks/useLatData';
+import { useLatMensajes, useSendMensaje, useSendAdjunto, LatConversacion, LatMensaje } from '@/hooks/useLatData';
 import { GestionDialog } from '@/components/GestionDialog';
 import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
@@ -103,6 +103,10 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   // ── Mensajes ──────────────────────────────────────────────────────────────
   const { data: mensajes, isLoading: loadingMsgs } = useLatMensajes(conversacion.id, isMock);
   const { send, loading: sendingMsg } = useSendMensaje();
+  const { sendAdjunto, loading: sendingAdj } = useSendAdjunto();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeTab === 'chat') {
