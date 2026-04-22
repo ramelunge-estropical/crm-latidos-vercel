@@ -12,6 +12,7 @@ import { GestionDialog } from '@/components/GestionDialog';
 import { GestionDetailView } from '@/components/GestionDetailView';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 import { WppTemplatePicker, WppTemplate } from '@/components/lat/WppTemplatePicker';
+import { AiAsesorPopover } from '@/components/lat/AiAsesorPopover';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
