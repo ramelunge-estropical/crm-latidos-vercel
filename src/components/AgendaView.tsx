@@ -398,6 +398,18 @@ export function AgendaView() {
 
   const colaboradorId = localStorage.getItem("mis_gestiones_colaborador") || "";
 
+  // Fetch current user's nombre for filtering
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user-nombre", colaboradorId],
+    queryFn: async () => {
+      if (!colaboradorId) return null;
+      const { data } = await (supabase as any)
+        .from("colaboradores").select("nombre").eq("id", colaboradorId).single();
+      return data as { nombre: string } | null;
+    },
+    enabled: !!colaboradorId,
+  });
+
   const { data: googleToken, refetch: refetchToken } = useQuery({
     queryKey: ["google-token", colaboradorId],
     queryFn: async () => {
@@ -445,17 +457,25 @@ export function AgendaView() {
                    : view === "week"  ? weekEnd
                    : endOfWeek(monthEnd, { weekStartsOn: 1 });
 
-  // CRM activities
+  // CRM activities — only mine: where I'm responsable OR I created it
   const { data: activities = [] } = useQuery({
-    queryKey: ["agenda-activities", rangeStart.toISOString(), rangeEnd.toISOString()],
+    queryKey: ["agenda-activities", rangeStart.toISOString(), rangeEnd.toISOString(), colaboradorId, currentUser?.nombre],
     queryFn: async () => {
+      if (!colaboradorId) return [];
+      const nombre = currentUser?.nombre;
+      // Show if: assigned_to = my nombre OR created_by = my id
+      const orFilter = nombre
+        ? `assigned_to.eq.${nombre},created_by.eq.${colaboradorId}`
+        : `created_by.eq.${colaboradorId}`;
       const { data } = await (supabase as any)
         .from("activities").select("*, gestiones(title)")
         .gte("scheduled_at", rangeStart.toISOString())
         .lte("scheduled_at", rangeEnd.toISOString())
+        .or(orFilter)
         .order("scheduled_at", { ascending: true });
       return (data || []) as any[];
     },
+    enabled: !!colaboradorId && !!currentUser,
   });
 
   // Google Calendar events

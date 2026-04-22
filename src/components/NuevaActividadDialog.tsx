@@ -274,6 +274,7 @@ export function NuevaActividadDialog({
         assigned_to:      responsable?.nombre || null,
         cliente_id:       cliente?.id || null,
         cliente_nombre:   cliente?.nombre || null,
+        created_by:       colaboradorId || null,
       }).select().single();
 
       if (error) throw error;
