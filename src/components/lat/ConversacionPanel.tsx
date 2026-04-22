@@ -1107,6 +1107,31 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           onSend={handleSendTemplate}
         />
       )}
+
+      {!isMock && (
+        <AiAsesorPopover
+          open={showAi}
+          onOpenChange={setShowAi}
+          conversacionId={conversacion.id}
+          conversacion={{
+            canal: conversacion.canal,
+            asunto: conversacion.asunto,
+            cliente_nombre: clienteNombre,
+            ultimo_mensaje: conversacion.ultimo_mensaje,
+            en_ventana: !isOutOfWindow,
+          }}
+          onInsertReply={(text) => {
+            setShowNota(false);
+            setInputValue((prev) => (prev ? `${prev}\n${text}` : text));
+            toast.success('Respuesta insertada en el composer. Revisala antes de enviar.');
+          }}
+          onInsertNote={(text) => {
+            setShowNota(true);
+            setInputValue((prev) => (prev ? `${prev}\n${text}` : text));
+            toast.success('Nota insertada. Revisala antes de guardar.');
+          }}
+        />
+      )}
     </div>
   );
 }
