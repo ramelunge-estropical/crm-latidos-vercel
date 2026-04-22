@@ -180,19 +180,26 @@ export function WppTemplatePicker({ open, onOpenChange, conversacionId, onSend }
         toast.error('La IA no pudo sugerir una plantilla');
         return;
       }
-      const tpl = templates.find(t =>
-        t.name.toLowerCase() === suggestion.suggested_name.toLowerCase()
-      );
+      const tpl = resolveSuggestedTemplate(suggestion.suggested_name, templates);
       if (!tpl) {
         toast.error(`Plantilla sugerida "${suggestion.suggested_name}" no encontrada`);
         return;
       }
+      // Limpiar el filtro para garantizar que la plantilla sugerida quede visible.
+      setSearch('');
+      // Marcar y seleccionar la plantilla resuelta — única fuente de verdad para preview/envío.
+      setAiSuggestedId(tpl.id);
       setSelectedId(tpl.id);
       setAiReason(suggestion.reason ?? null);
-      if (suggestion.variables) {
-        setVarsByTpl(prev => ({ ...prev, [tpl.id]: { ...suggestion.variables } }));
+      // Aplicar variables normalizadas SOBRE la plantilla resuelta (no otra).
+      const aiVars = normalizeAiVariables(suggestion.variables);
+      if (Object.keys(aiVars).length > 0) {
+        setVarsByTpl(prev => ({
+          ...prev,
+          [tpl.id]: { ...(prev[tpl.id] ?? {}), ...aiVars },
+        }));
       }
-      toast.success('Plantilla sugerida y variables completadas');
+      toast.success(`Plantilla sugerida: ${tpl.name}`);
     } catch (e: any) {
       toast.error(e.message ?? 'Error al sugerir plantilla');
     } finally {
