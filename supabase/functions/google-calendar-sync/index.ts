@@ -69,12 +69,21 @@ serve(async (req) => {
       const start = new Date(activity.scheduled_at);
       const end   = new Date(start.getTime() + (activity.duration_minutes || 30) * 60000);
 
+      const isReunion = activity.activity_type === "reunión";
+
       const eventBody: any = {
         summary:     activity.title,
         description: activity.description || "",
         start: { dateTime: start.toISOString() },
         end:   { dateTime: end.toISOString() },
       };
+
+      // Auto-generate Google Meet link for reuniones
+      if (isReunion) {
+        eventBody.conferenceData = {
+          createRequest: { requestId: activity.id, conferenceSolutionKey: { type: "hangoutsMeet" } },
+        };
+      }
 
       // Add attendees — Google Calendar sends invites automatically
       if (attendeeEmails.length > 0) {
@@ -85,16 +94,29 @@ serve(async (req) => {
 
       let res, data;
       if (action === "create") {
-        res  = await fetch(calUrl, {
+        // conferenceDataVersion=1 is required to trigger Meet link generation
+        res  = await fetch(`${calUrl}?conferenceDataVersion=1`, {
           method:  "POST",
           headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
           body:    JSON.stringify(eventBody),
         });
         data = await res.json();
-        // Save google_event_id back to activity
-        await supabase.from("activities").update({ google_event_id: data.id } as any).eq("id", activity.id);
+
+        // Extract Meet link from response
+        const meetLink = data.conferenceData?.entryPoints?.find(
+          (ep: any) => ep.entryPointType === "video"
+        )?.uri ?? null;
+
+        // Save google_event_id and meet_link back to activity
+        await supabase.from("activities")
+          .update({ google_event_id: data.id, meet_link: meetLink } as any)
+          .eq("id", activity.id);
+
+        return new Response(JSON.stringify({ ok: true, eventId: data.id, meetLink }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       } else {
-        res  = await fetch(`${calUrl}/${activity.google_event_id}`, {
+        res  = await fetch(`${calUrl}/${activity.google_event_id}?conferenceDataVersion=1`, {
           method:  "PUT",
           headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
           body:    JSON.stringify(eventBody),
