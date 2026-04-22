@@ -1221,6 +1221,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           }}
         />
       )}
+
+      {!isMock && (
+        <DerivarChatDialog
+          open={showDerivar}
+          onOpenChange={setShowDerivar}
+          conversacionId={conversacion.id}
+          conversacionAsunto={conversacion.asunto}
+          clienteNombre={clienteNombre}
+        />
+      )}
     </div>
   );
 }
