@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAreasEmpresa } from "@/hooks/useSharedQueries";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart3, CheckCircle2, Clock, AlertTriangle, TrendingUp,
@@ -56,12 +57,16 @@ type GestionRow = {
   cliente_nombre: string | null;
   responsable_nombre: string | null;
   type: string | null;
+  area_id: string | null;
   pipeline_stages: { global_status: string } | null;
 };
 
 export function ResumenDiarioView() {
   const today = new Date();
   const todayStr = format(today, "yyyy-MM-dd");
+  const [filterArea, setFilterArea] = useState<string | null>(null);
+
+  const { data: areas = [] } = useAreasEmpresa();
 
   // ── Stats cards (existing) ───────────────────────────
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -88,7 +93,7 @@ export function ResumenDiarioView() {
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from("gestiones")
-        .select("id, title, priority, due_date, cliente_nombre, responsable_nombre, type, pipeline_stages(global_status)")
+        .select("id, title, priority, due_date, cliente_nombre, responsable_nombre, type, area_id, pipeline_stages(global_status)")
         .order("due_date", { ascending: true, nullsFirst: false });
       return (data || []) as GestionRow[];
     },
@@ -96,14 +101,15 @@ export function ResumenDiarioView() {
 
   // ── Derivados ────────────────────────────────────────
   const { vencidas, proximas, dist } = useMemo(() => {
+    const filtered = filterArea ? gestiones.filter(g => g.area_id === filterArea) : gestiones;
     const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
     const in7 = new Date(todayMidnight); in7.setDate(in7.getDate() + 7);
 
-    const nonDone = gestiones.filter(g => g.pipeline_stages?.global_status !== "done");
+    const nonDone = filtered.filter(g => g.pipeline_stages?.global_status !== "done");
 
     const vencidas = nonDone
       .filter(g => g.due_date && new Date(`${g.due_date}T00:00:00`) < todayMidnight)
-      .sort((a, b) => (a.due_date! < b.due_date! ? 1 : -1)); // más reciente primero
+      .sort((a, b) => (a.due_date! < b.due_date! ? 1 : -1));
 
     const proximas = nonDone.filter(g => {
       if (!g.due_date) return false;
@@ -112,13 +118,13 @@ export function ResumenDiarioView() {
     });
 
     const dist: Record<string, number> = { to_do: 0, doing: 0, review: 0, done: 0 };
-    for (const g of gestiones) {
+    for (const g of filtered) {
       const s = g.pipeline_stages?.global_status;
       if (s && s in dist) dist[s]++;
     }
 
     return { vencidas, proximas, dist };
-  }, [gestiones]);
+  }, [gestiones, filterArea]);
 
   const total = gestiones.length || 1;
 
@@ -133,10 +139,44 @@ export function ResumenDiarioView() {
   return (
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-border bg-card sticky top-0 z-10">
-        <BarChart3 className="w-5 h-5 text-primary" />
-        <h2 className="text-lg font-semibold text-foreground">Resumen Diario</h2>
-        <span className="text-xs text-muted-foreground">{format(today, "EEEE d 'de' MMMM", { locale: es })}</span>
+      <div className="px-6 py-4 border-b border-border bg-card sticky top-0 z-10 space-y-3">
+        <div className="flex items-center gap-3">
+          <BarChart3 className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Resumen Diario</h2>
+          <span className="text-xs text-muted-foreground">{format(today, "EEEE d 'de' MMMM", { locale: es })}</span>
+        </div>
+        {/* Filtros por área */}
+        {areas.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setFilterArea(null)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
+                filterArea === null
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              }`}
+            >
+              Todas las áreas
+            </button>
+            {areas.map(area => (
+              <button
+                key={area.id}
+                onClick={() => setFilterArea(filterArea === area.id ? null : area.id)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
+                  filterArea === area.id
+                    ? "text-white border-transparent"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+                style={filterArea === area.id ? { backgroundColor: area.color, borderColor: area.color } : {}}
+              >
+                {filterArea !== area.id && (
+                  <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ backgroundColor: area.color }} />
+                )}
+                {area.nombre}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 p-6 space-y-6">
