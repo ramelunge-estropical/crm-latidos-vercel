@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { useProcesses } from "@/hooks/useSharedQueries";
+import Login from "./Login";
 import { ProcessSidebar, SidebarView } from "@/components/ProcessSidebar";
 import { BoardView } from "@/components/BoardView";
 import { AgendaView } from "@/components/AgendaView";
@@ -36,8 +38,45 @@ const Index = () => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [activeView, setActiveView] = useState<SidebarView>("mis-gestiones");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const { data: processes = [] } = useProcesses();
+
+  // Handle Google OAuth callback + check existing session
+  useEffect(() => {
+    const init = async () => {
+      const params = new URLSearchParams(window.location.search);
+
+      // Coming back from Google OAuth
+      if (params.get("auth") === "google") {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.email) {
+          const { data: colab } = await (supabase as any)
+            .from("colaboradores")
+            .select("id, activo")
+            .ilike("email", session.user.email)
+            .single();
+          if (colab && colab.activo !== false) {
+            localStorage.setItem("mis_gestiones_colaborador", colab.id);
+            window.history.replaceState({}, "", "/");
+          } else {
+            await supabase.auth.signOut();
+            window.location.href = "/login";
+            return;
+          }
+        }
+      }
+
+      const colabId = localStorage.getItem("mis_gestiones_colaborador");
+      setIsLoggedIn(!!colabId);
+      setAuthReady(true);
+    };
+    init();
+  }, []);
+
+  if (!authReady) return null;
+  if (!isLoggedIn) return <Login />;
 
   const selectedProcess = processes.find((p) => p.id === selectedProcessId);
 
