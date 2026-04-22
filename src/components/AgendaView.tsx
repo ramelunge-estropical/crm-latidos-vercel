@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ChevronLeft, ChevronRight, Phone, Users, CheckSquare, Clock,
-  CalendarDays, CalendarCheck, Unlink, Plus, Video, Pencil, Check, X, Search, UserRound,
+  CalendarDays, CalendarCheck, Unlink, Plus, Video, Pencil, Check, X, Search, UserRound, ChevronDown,
 } from "lucide-react";
 import { NuevaActividadDialog } from "./NuevaActividadDialog";
 import {
@@ -129,6 +129,40 @@ function ColaboradorSearch({ colaboradores, selected, onAdd, onRemove, placehold
   );
 }
 
+// ── Single-select responsable search ──────────────────────────────────────────
+function ResponsableSearch({ colaboradores, value, onChange }: {
+  colaboradores: { id: string; nombre: string; color: string }[];
+  value: string; onChange: (id: string) => void;
+}) {
+  const selected = colaboradores.find(c => c.id === value);
+  const [query, setQuery] = useState(selected?.nombre || "");
+  const [open,  setOpen]  = useState(false);
+  useEffect(() => { const c = colaboradores.find(c => c.id === value); if (c) setQuery(c.nombre); }, [value, colaboradores.length]);
+  const filtered = colaboradores.filter(c => c.nombre.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div className="relative">
+      {selected
+        ? <span className="absolute left-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold pointer-events-none" style={{ backgroundColor: selected.color || "#6366f1" }}>{selected.nombre.charAt(0)}</span>
+        : <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />}
+      <Input value={query} onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Buscar responsable..." className="pl-8 h-9 text-sm" />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md max-h-48 overflow-y-auto">
+          {filtered.map(c => (
+            <button key={c.id} onMouseDown={e => { e.preventDefault(); onChange(c.id); setQuery(c.nombre); setOpen(false); }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent transition-colors text-left ${value === c.id ? "bg-accent/50" : ""}`}>
+              <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0" style={{ backgroundColor: c.color || "#6366f1" }}>{c.nombre.charAt(0)}</span>
+              <span>{c.nombre}</span>
+              {value === c.id && <Check className="w-3.5 h-3.5 ml-auto text-primary" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Edit dialog ────────────────────────────────────────────────────────────────
 function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
   activity: any; open: boolean; onOpenChange: (o: boolean) => void; onSaved: () => void;
@@ -213,10 +247,7 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Responsable</label>
-              <Select value={responsableId} onValueChange={setResponsableId}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                <SelectContent>{colaboradores.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}</SelectContent>
-              </Select>
+              <ResponsableSearch colaboradores={colaboradores} value={responsableId} onChange={setResponsableId} />
             </div>
           </div>
           {type === "reunión" && (
