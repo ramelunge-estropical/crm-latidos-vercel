@@ -280,18 +280,24 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         },
         body: JSON.stringify({
           conversacion_id: conversacion.id,
-          template_name: template.name,
+          template_id: template.id,            // UUID Gupshup (requerido por /template/msg)
+          template_name: template.name,        // fallback / trazabilidad
           template_language: template.language,
           template_variables: variables,
-          contenido: bodyPreview,
+          template_body_preview: bodyPreview,
         }),
       });
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e.error ?? 'Error al enviar plantilla');
+        // Mostramos el error REAL del proveedor; no marcamos como enviado.
+        const msg = json?.error ?? `Error ${res.status} al enviar plantilla`;
+        toast.error(msg, { duration: 6000 });
+        console.error('wpp-send error:', json);
+        return false;
       }
       queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacion.id] });
-      toast.success('Plantilla enviada');
+      queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+      toast.success('Plantilla enviada al cliente');
       return true;
     } catch (e: any) {
       toast.error(e.message ?? 'Error al enviar plantilla');

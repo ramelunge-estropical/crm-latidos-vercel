@@ -34,14 +34,17 @@ Deno.serve(async (req: Request) => {
       contenido,
       autor_nombre,
       // Soporte para plantilla aprobada Gupshup:
-      template_name,           // string
+      template_id,             // string (UUID Gupshup) — preferido
+      template_name,           // string (elementName) — fallback
       template_language,       // string (ej: "es")
       template_variables,      // string[] en orden {{1}} {{2}} ...
       template_body_preview,   // string para guardar como contenido legible
     } = body;
 
-    const isTemplate = !!template_name;
-    const messageContent = isTemplate ? (template_body_preview ?? contenido ?? template_name) : contenido;
+    const isTemplate = !!(template_id || template_name);
+    const messageContent = isTemplate
+      ? (template_body_preview ?? contenido ?? template_name ?? "[plantilla]")
+      : contenido;
 
     if (!conversacion_id || (!isTemplate && !contenido)) {
       return new Response(
@@ -94,15 +97,25 @@ Deno.serve(async (req: Request) => {
 
     if (isTemplate) {
       // Endpoint de plantilla: /wa/api/v1/template/msg
+      // Gupshup REQUIERE el UUID de la plantilla en `id`. El `elementName` NO funciona.
+      const tplParams = (Array.isArray(template_variables) ? template_variables : []).map(v => String(v ?? ""));
+      const tplPayload: Record<string, unknown> = {
+        id:     template_id ?? template_name,   // preferimos UUID; fallback a name
+        params: tplParams,
+      };
       formBody = new URLSearchParams({
+        channel:     "whatsapp",
         source:      source,
         destination: destination,
         "src.name":  appName,
-        template:    JSON.stringify({
-          id:     template_name,                          // Gupshup acepta name como id
-          params: Array.isArray(template_variables) ? template_variables : [],
-        }),
+        template:    JSON.stringify(tplPayload),
       });
+      // También incluimos `message` con el preview por compatibilidad con cuentas que
+      // requieren el cuerpo renderizado.
+      if (template_body_preview) {
+        formBody.append("message", JSON.stringify({ type: "text", text: template_body_preview }));
+      }
+      console.log("wpp-send template payload:", { id: tplPayload.id, params: tplParams });
       gupshupUrl = "https://api.gupshup.io/wa/api/v1/template/msg";
     } else {
       formBody = new URLSearchParams({
@@ -146,19 +159,30 @@ Deno.serve(async (req: Request) => {
     console.log("Gupshup status:", gupshupRes.status);
     console.log("Gupshup response:", gupshupText);
 
-    if (!gupshupRes.ok) {
+    let gupshupData: any = {};
+    try { gupshupData = JSON.parse(gupshupText); } catch { /* no JSON */ }
+
+    // Gupshup devuelve 200 con `status:"submitted"` cuando acepta el envío.
+    // Cualquier otra cosa = fallo real (no marcamos como enviado).
+    const gupshupOk =
+      gupshupRes.ok &&
+      (gupshupData?.status === "submitted" || !!gupshupData?.messageId);
+
+    if (!gupshupOk) {
+      const detailMsg =
+        gupshupData?.message ||
+        gupshupData?.error   ||
+        gupshupText           ||
+        `HTTP ${gupshupRes.status}`;
       return new Response(
         JSON.stringify({
-          error: `Gupshup error ${gupshupRes.status}`,
-          detail: gupshupText,
+          error:  `Gupshup rechazó el envío: ${detailMsg}`,
+          detail: gupshupData ?? gupshupText,
+          status: gupshupRes.status,
         }),
         { status: 502, headers: { ...CORS, "Content-Type": "application/json" } },
       );
     }
-
-    // ── Guardar mensaje en BD ─────────────────────────────────────────────────
-    let gupshupData: any = {};
-    try { gupshupData = JSON.parse(gupshupText); } catch { /* no JSON */ }
 
     const { error: insertErr } = await supabase.from("lat_mensajes").insert({
       conversacion_id,

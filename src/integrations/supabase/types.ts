@@ -126,6 +126,53 @@ export type Database = {
           },
         ]
       }
+      cliente_cobranzas: {
+        Row: {
+          cliente_id: string
+          concepto: string
+          created_at: string | null
+          estado: string
+          fecha_emision: string | null
+          fecha_vencimiento: string | null
+          id: string
+          moneda: string
+          monto: number
+          notas: string | null
+        }
+        Insert: {
+          cliente_id: string
+          concepto: string
+          created_at?: string | null
+          estado?: string
+          fecha_emision?: string | null
+          fecha_vencimiento?: string | null
+          id?: string
+          moneda?: string
+          monto?: number
+          notas?: string | null
+        }
+        Update: {
+          cliente_id?: string
+          concepto?: string
+          created_at?: string | null
+          estado?: string
+          fecha_emision?: string | null
+          fecha_vencimiento?: string | null
+          id?: string
+          moneda?: string
+          monto?: number
+          notas?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_cobranzas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cliente_documentos: {
         Row: {
           cliente_id: string
@@ -451,6 +498,7 @@ export type Database = {
           contacto_cargo: string | null
           contacto_nombre: string | null
           created_at: string
+          dias_credito: number | null
           documento_numero: string | null
           documento_tipo: string | null
           email: string | null
@@ -486,6 +534,7 @@ export type Database = {
           contacto_cargo?: string | null
           contacto_nombre?: string | null
           created_at?: string
+          dias_credito?: number | null
           documento_numero?: string | null
           documento_tipo?: string | null
           email?: string | null
@@ -521,6 +570,7 @@ export type Database = {
           contacto_cargo?: string | null
           contacto_nombre?: string | null
           created_at?: string
+          dias_credito?: number | null
           documento_numero?: string | null
           documento_tipo?: string | null
           email?: string | null
