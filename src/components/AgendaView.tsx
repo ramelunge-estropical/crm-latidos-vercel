@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ChevronLeft, ChevronRight, Phone, Users, CheckSquare, Clock, CalendarDays, CalendarCheck, Unlink } from "lucide-react";
+import { ChevronLeft, ChevronRight, Phone, Users, CheckSquare, Clock, CalendarDays, CalendarCheck, Unlink, Plus } from "lucide-react";
+import { NuevaActividadDialog } from "./NuevaActividadDialog";
 import { format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks, isSameDay, startOfDay, endOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -28,6 +29,8 @@ export function AgendaView() {
   const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<"day" | "week">("week");
+  const [showNueva, setShowNueva] = useState(false);
+  const [defaultNewDate, setDefaultNewDate] = useState<Date | undefined>();
 
   const colaboradorId = localStorage.getItem("mis_gestiones_colaborador") || "";
 
@@ -154,6 +157,9 @@ export function AgendaView() {
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setCurrentDate(new Date())}>Hoy</Button>
             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => navigate(1)}><ChevronRight className="w-4 h-4" /></Button>
           </div>
+          <Button size="sm" className="h-8 gap-1.5 text-xs ml-1" onClick={() => { setDefaultNewDate(currentDate); setShowNueva(true); }}>
+            <Plus className="w-3.5 h-3.5" /> Nueva
+          </Button>
         </div>
       </div>
 
@@ -206,11 +212,13 @@ export function AgendaView() {
               const isToday = isSameDay(date, new Date());
               return (
                 <div key={date.toISOString()} className={`rounded-lg ${isToday ? "bg-primary/5" : ""}`}>
-                  <div className="flex items-center gap-2 px-3 py-2">
+                  <div className="flex items-center gap-2 px-3 py-2 cursor-pointer group"
+                    onClick={() => { setDefaultNewDate(date); setShowNueva(true); }}>
                     <span className={`text-xs font-semibold ${isToday ? "text-primary" : "text-muted-foreground"} uppercase w-20`}>
                       {format(date, "EEE d", { locale: es })}
                     </span>
                     <div className="flex-1 h-px bg-border" />
+                    <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mr-1">+ agregar</span>
                     <span className="text-[10px] text-muted-foreground">{dayActs.length}</span>
                   </div>
                   {dayActs.length > 0 && (
@@ -233,6 +241,12 @@ export function AgendaView() {
           <p className="text-sm text-muted-foreground text-center py-8">No hay actividades programadas esta semana</p>
         )}
       </div>
+
+      <NuevaActividadDialog
+        open={showNueva}
+        onOpenChange={setShowNueva}
+        defaultDate={defaultNewDate}
+      />
     </div>
   );
 }

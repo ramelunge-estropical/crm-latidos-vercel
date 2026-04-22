@@ -33,7 +33,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, colaboradorId, activity } = body;
+    const { action, colaboradorId, activity, attendeeEmails = [] } = body;
     // action: "create" | "update" | "delete"
     // activity: { id, title, description, scheduled_at, duration_minutes, activity_type, google_event_id? }
 
@@ -69,12 +69,19 @@ serve(async (req) => {
       const start = new Date(activity.scheduled_at);
       const end   = new Date(start.getTime() + (activity.duration_minutes || 30) * 60000);
 
-      const eventBody = {
+      const eventBody: any = {
         summary:     activity.title,
         description: activity.description || "",
         start: { dateTime: start.toISOString() },
         end:   { dateTime: end.toISOString() },
       };
+
+      // Add attendees — Google Calendar sends invites automatically
+      if (attendeeEmails.length > 0) {
+        eventBody.attendees = attendeeEmails.map((email: string) => ({ email }));
+        eventBody.guestsCanSeeOtherGuests = true;
+        eventBody.sendUpdates = "all";
+      }
 
       let res, data;
       if (action === "create") {
