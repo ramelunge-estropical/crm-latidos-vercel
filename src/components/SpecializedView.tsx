@@ -28,10 +28,10 @@ const typeConfig = {
 } as const;
 
 const COLUMNS = [
-  { id: "to_do",  label: "To Do",  dot: "bg-status-todo"   },
-  { id: "doing",  label: "Doing",  dot: "bg-status-doing"  },
-  { id: "review", label: "Review", dot: "bg-status-review" },
-  { id: "done",   label: "Done",   dot: "bg-status-done"   },
+  { id: "to_do",  label: "Por hacer",   dot: "bg-status-todo"   },
+  { id: "doing",  label: "En curso",    dot: "bg-status-doing"  },
+  { id: "review", label: "En revisión", dot: "bg-status-review" },
+  { id: "done",   label: "Completo",    dot: "bg-status-done"   },
 ];
 
 const priorityConfig: Record<string, { label: string; className: string }> = {
