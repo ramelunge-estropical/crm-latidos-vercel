@@ -157,6 +157,86 @@ export function LatDashboardView() {
           </div>
         </section>
 
+        {/* ── FUNNEL OPERATIVO INTEGRADO ──────────────────────────── */}
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <GitBranch className="w-3.5 h-3.5 text-primary" />
+            <h2 className="text-xs font-semibold text-foreground uppercase tracking-wide">Funnel operativo</h2>
+            <span className="text-[10px] text-muted-foreground ml-1">· {conversaciones.length} conversaciones</span>
+          </div>
+
+          {/* Visual de barras por etapa */}
+          <div className="bg-card rounded-xl border border-border p-4 sm:p-6">
+            {(() => {
+              const maxCount = Math.max(...FUNNEL_STAGES.map(s => groups[s.key].length), 1);
+              return (
+                <div className="flex items-end gap-2 sm:gap-3 h-36 sm:h-44">
+                  {FUNNEL_STAGES.map(stage => {
+                    const count = groups[stage.key].length;
+                    const height = (count / maxCount) * 100;
+                    return (
+                      <div key={stage.key} className="flex-1 flex flex-col items-center gap-2">
+                        <span className="text-base sm:text-lg font-bold text-foreground">{count}</span>
+                        <div className="w-full rounded-t-lg relative" style={{ height: `${Math.max(height, 8)}%` }}>
+                          <div className={`absolute inset-0 rounded-t-lg ${stage.color} opacity-80`} />
+                        </div>
+                        <span className="text-[10px] sm:text-xs font-medium text-foreground text-center leading-tight">{stage.label}</span>
+                        <span className="text-[9px] text-muted-foreground text-center leading-tight hidden sm:block">{stage.description}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Detalle compacto por etapa */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+            {FUNNEL_STAGES.map(stage => {
+              const stageConvs = groups[stage.key];
+              return (
+                <div key={stage.key} className="bg-card rounded-xl border border-border p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`w-2 h-2 rounded-full ${stage.color}`} />
+                    <h3 className="text-[11px] font-semibold text-foreground">{stage.label}</h3>
+                    <span className="text-[10px] text-muted-foreground ml-auto">{stageConvs.length}</span>
+                  </div>
+                  {stageConvs.length > 0 ? (
+                    <div className="space-y-1">
+                      {stageConvs.slice(0, 5).map(conv => {
+                        const mockCl = conv._source === 'mock' ? getCliente(conv.id) : null;
+                        const nombre = conv.cliente_nombre ?? mockCl?.nombre ?? conv.telefono ?? 'Sin nombre';
+                        const flags = getFlags(conv);
+                        return (
+                          <div key={conv.id} className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-accent/30">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              flags.urgente ? 'bg-urgent' : conv.prioridad === 'alta' ? 'bg-warning' : 'bg-primary'
+                            }`} />
+                            <span className="text-[11px] text-foreground flex-1 truncate">{nombre}</span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {flags.urgente && <span className="text-[8px] px-1 rounded bg-urgent/10 text-urgent">urg</span>}
+                              {flags.sin_leer && <span className="text-[8px] px-1 rounded bg-primary/10 text-primary">{conv.no_leidos}</span>}
+                              {flags.fuera_ventana && <span className="text-[8px] px-1 rounded bg-muted text-muted-foreground">fv</span>}
+                              {flags.con_gestion && <span className="text-[8px] px-1 rounded bg-accent/30 text-accent-foreground">G</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {stageConvs.length > 5 && (
+                        <p className="text-[10px] text-muted-foreground text-center pt-0.5">
+                          +{stageConvs.length - 5} más
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground">Sin conversaciones</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         {/* ── ACTIVIDAD RECIENTE ──────────────────────────────────── */}
         <section>
           <div className="bg-card rounded-xl border border-border p-4">
