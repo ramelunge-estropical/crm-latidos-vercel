@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ChevronLeft, ChevronRight, Phone, Users, CheckSquare, Clock,
-  CalendarDays, CalendarCheck, Unlink, Plus, Video, Pencil, Check, X, Search,
+  CalendarDays, CalendarCheck, Unlink, Plus, Video, Pencil, Check, X, Search, UserRound,
 } from "lucide-react";
 import { NuevaActividadDialog } from "./NuevaActividadDialog";
 import { format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks, isSameDay, startOfDay, endOfDay } from "date-fns";
@@ -31,6 +31,77 @@ const TYPE_CONFIG = {
   llamada: { label: "Llamada", icon: Phone,        badge: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300", border: "border-l-green-400",  dot: "bg-green-400"  },
   reunión: { label: "Reunión", icon: Users,        badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300", border: "border-l-violet-400", dot: "bg-violet-400" },
 };
+
+// ── Cliente search ────────────────────────────────────────────────────────────
+function useClienteSearch(q: string) {
+  return useQuery({
+    queryKey: ["clientes-search", q],
+    queryFn: async () => {
+      if (q.trim().length < 2) return [];
+      const { data } = await (supabase as any)
+        .from("clientes")
+        .select("id, nombre_completo, telefono")
+        .ilike("nombre_completo", `%${q}%`)
+        .eq("estado", "activo")
+        .order("nombre_completo")
+        .limit(10);
+      return (data || []) as { id: string; nombre_completo: string; telefono: string | null }[];
+    },
+    enabled: q.trim().length >= 2,
+  });
+}
+
+function ClienteSearch({
+  value, onChange, required = false,
+}: {
+  value: { id: string; nombre: string } | null;
+  onChange: (c: { id: string; nombre: string } | null) => void;
+  required?: boolean;
+}) {
+  const [query, setQuery] = useState(value?.nombre || "");
+  const [open,  setOpen]  = useState(false);
+  const { data: results = [] } = useClienteSearch(query);
+
+  useEffect(() => {
+    if (!value) setQuery("");
+    else setQuery(value.nombre);
+  }, [value?.id]);
+
+  return (
+    <div className="relative">
+      <UserRound className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      <Input
+        value={query}
+        onChange={e => { setQuery(e.target.value); onChange(null); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={required ? "Buscar cliente *" : "Buscar cliente (opcional)"}
+        className={`pl-8 h-9 text-sm ${required && !value ? "border-orange-400 focus-visible:ring-orange-400" : ""}`}
+      />
+      {value && (
+        <button onClick={() => { onChange(null); setQuery(""); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {open && results.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md max-h-40 overflow-y-auto">
+          {results.map(c => (
+            <button key={c.id} onMouseDown={e => { e.preventDefault(); onChange({ id: c.id, nombre: c.nombre_completo }); setQuery(c.nombre_completo); setOpen(false); }}
+              className="w-full flex flex-col px-3 py-2 text-left hover:bg-accent transition-colors">
+              <span className="text-sm font-medium">{c.nombre_completo}</span>
+              {c.telefono && <span className="text-[11px] text-muted-foreground">{c.telefono}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && query.length >= 2 && results.length === 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md px-3 py-2 text-xs text-muted-foreground">
+          Sin resultados
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Searchable picker (same as NuevaActividadDialog) ─────────────────────────
 function ColaboradorSearch({
@@ -107,6 +178,9 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
     return found?.id || colaboradorId;
   });
   const [attendees,     setAttendees]     = useState<string[]>([]);
+  const [cliente,       setCliente]       = useState<{ id: string; nombre: string } | null>(
+    activity?.cliente_id ? { id: activity.cliente_id, nombre: activity.cliente_nombre || "" } : null
+  );
   const [loading,       setLoading]       = useState(false);
 
   // sync when activity changes
@@ -118,6 +192,7 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
     setDate(activity.scheduled_at ? format(new Date(activity.scheduled_at), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"));
     setTime(activity.scheduled_at ? format(new Date(activity.scheduled_at), "HH:mm") : format(new Date(), "HH:mm"));
     setDuration(String(activity.duration_minutes || 30));
+    setCliente(activity.cliente_id ? { id: activity.cliente_id, nombre: activity.cliente_nombre || "" } : null);
   }, [activity?.id]);
 
   const handleSave = async () => {
@@ -130,6 +205,8 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
 
       const responsable = colaboradores.find(c => c.id === responsableId);
 
+      if (type === "llamada" && !cliente) { toast.error("Seleccioná un cliente para la llamada"); setLoading(false); return; }
+
       const { error } = await (supabase as any).from("activities").update({
         activity_type:    type,
         title:            title.trim(),
@@ -137,6 +214,8 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
         scheduled_at:     dt.toISOString(),
         duration_minutes: parseInt(duration) || 30,
         assigned_to:      responsable?.nombre || null,
+        cliente_id:       cliente?.id || null,
+        cliente_nombre:   cliente?.nombre || null,
       }).eq("id", activity.id);
 
       if (error) throw error;
@@ -174,6 +253,13 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
             })}
           </div>
           <Input placeholder="Título *" value={title} onChange={e => setTitle(e.target.value)} />
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+              <UserRound className="w-3 h-3" />
+              Cliente {type === "llamada" ? <span className="text-orange-500 font-medium">*</span> : <span className="text-muted-foreground/60">(opcional)</span>}
+            </label>
+            <ClienteSearch value={cliente} onChange={setCliente} required={type === "llamada"} />
+          </div>
           <Textarea placeholder="Descripción" value={description} onChange={e => setDescription(e.target.value)} className="resize-none h-20 text-sm" />
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -298,14 +384,20 @@ function ActivityCard({
           )}
 
           {/* Meta row */}
-          <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-            {a.assigned_to && (
-              <span className="text-[11px] text-muted-foreground">· {a.assigned_to}</span>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            {a.cliente_nombre && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground bg-muted px-2 py-0.5 rounded-full">
+                <UserRound className="w-3 h-3 text-muted-foreground" />
+                {a.cliente_nombre}
+              </span>
             )}
             {a.gestiones && (
               <span className="text-[11px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">
                 {a.gestiones.title}
               </span>
+            )}
+            {a.assigned_to && (
+              <span className="text-[11px] text-muted-foreground">· {a.assigned_to}</span>
             )}
           </div>
 

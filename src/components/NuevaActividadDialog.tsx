@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useColaboradores } from "@/hooks/useSharedQueries";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Phone, Users, CheckSquare, Calendar, Clock, X, Search, Video } from "lucide-react";
+import { Phone, Users, CheckSquare, Calendar, Clock, X, Search, Video, UserRound } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -41,6 +41,89 @@ async function syncToGoogleCalendar(colaboradorId: string, activity: any, attend
   } catch {
     return null;
   }
+}
+
+// ── Cliente search ────────────────────────────────────────────────────────────
+function useClienteSearch(q: string) {
+  return useQuery({
+    queryKey: ["clientes-search", q],
+    queryFn: async () => {
+      if (q.trim().length < 2) return [];
+      const { data } = await (supabase as any)
+        .from("clientes")
+        .select("id, nombre_completo, telefono, email")
+        .ilike("nombre_completo", `%${q}%`)
+        .eq("estado", "activo")
+        .order("nombre_completo")
+        .limit(10);
+      return (data || []) as { id: string; nombre_completo: string; telefono: string | null; email: string | null }[];
+    },
+    enabled: q.trim().length >= 2,
+  });
+}
+
+function ClienteSearch({
+  value, onChange, required = false,
+}: {
+  value: { id: string; nombre: string } | null;
+  onChange: (c: { id: string; nombre: string } | null) => void;
+  required?: boolean;
+}) {
+  const [query, setQuery] = useState(value?.nombre || "");
+  const [open,  setOpen]  = useState(false);
+  const { data: results = [] } = useClienteSearch(query);
+
+  useEffect(() => {
+    if (!value) setQuery("");
+    else setQuery(value.nombre);
+  }, [value?.id]);
+
+  const handleSelect = (c: { id: string; nombre_completo: string }) => {
+    onChange({ id: c.id, nombre: c.nombre_completo });
+    setQuery(c.nombre_completo);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <UserRound className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      <Input
+        value={query}
+        onChange={e => { setQuery(e.target.value); onChange(null); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={required ? "Buscar cliente *" : "Buscar cliente (opcional)"}
+        className={`pl-8 h-9 text-sm ${required && !value ? "border-orange-400 focus-visible:ring-orange-400" : ""}`}
+      />
+      {value && (
+        <button
+          onClick={() => { onChange(null); setQuery(""); }}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
+      {open && results.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md max-h-48 overflow-y-auto">
+          {results.map(c => (
+            <button
+              key={c.id}
+              onMouseDown={e => { e.preventDefault(); handleSelect(c); }}
+              className="w-full flex flex-col px-3 py-2 text-left hover:bg-accent transition-colors"
+            >
+              <span className="text-sm font-medium text-foreground">{c.nombre_completo}</span>
+              {c.telefono && <span className="text-[11px] text-muted-foreground">{c.telefono}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && query.length >= 2 && results.length === 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md px-3 py-2 text-xs text-muted-foreground">
+          Sin resultados para "{query}"
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Searchable collaborator picker that shows chips for selected items
@@ -160,17 +243,19 @@ export function NuevaActividadDialog({
   const [duration,      setDuration]      = useState("30");
   const [responsableId, setResponsableId] = useState(colaboradorId);
   const [attendees,     setAttendees]     = useState<string[]>([]);
+  const [cliente,       setCliente]       = useState<{ id: string; nombre: string } | null>(null);
   const [loading,       setLoading]       = useState(false);
   const [meetLink,      setMeetLink]      = useState<string | null>(null);
 
   const reset = () => {
     setType("reunión"); setTitle(""); setDescription("");
     setDate(format(new Date(), "yyyy-MM-dd")); setTime(format(new Date(), "HH:mm"));
-    setDuration("30"); setResponsableId(colaboradorId); setAttendees([]); setMeetLink(null);
+    setDuration("30"); setResponsableId(colaboradorId); setAttendees([]); setCliente(null); setMeetLink(null);
   };
 
   const handleSave = async () => {
     if (!title.trim()) { toast.error("El título es requerido"); return; }
+    if (type === "llamada" && !cliente) { toast.error("Seleccioná un cliente para la llamada"); return; }
     setLoading(true);
     try {
       const [h, m] = time.split(":").map(Number);
@@ -188,6 +273,8 @@ export function NuevaActividadDialog({
         scheduled_at:     scheduledAt,
         duration_minutes: duration ? parseInt(duration) : 30,
         assigned_to:      responsable?.nombre || null,
+        cliente_id:       cliente?.id || null,
+        cliente_nombre:   cliente?.nombre || null,
       }).select().single();
 
       if (error) throw error;
@@ -267,6 +354,15 @@ export function NuevaActividadDialog({
             value={title}
             onChange={e => setTitle(e.target.value)}
           />
+
+          {/* Cliente */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+              <UserRound className="w-3 h-3" />
+              Cliente {type === "llamada" ? <span className="text-orange-500 font-medium">*</span> : <span className="text-muted-foreground/60">(opcional)</span>}
+            </label>
+            <ClienteSearch value={cliente} onChange={setCliente} required={type === "llamada"} />
+          </div>
 
           {/* Descripción */}
           <Textarea
@@ -380,7 +476,7 @@ export function NuevaActividadDialog({
               <Button variant="outline" size="sm" onClick={() => { reset(); onOpenChange(false); }}>
                 Cancelar
               </Button>
-              <Button size="sm" onClick={handleSave} disabled={loading || !title.trim()}>
+              <Button size="sm" onClick={handleSave} disabled={loading || !title.trim() || (type === "llamada" && !cliente)}>
                 {loading ? "Guardando..." : "Crear actividad"}
               </Button>
             </>
