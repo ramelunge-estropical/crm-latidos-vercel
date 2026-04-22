@@ -348,6 +348,81 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     toast.success('Chat reactivado al foco');
   };
 
+  // ── Tomar conversación desde cola ────────────────────────────────────────
+  // Cuando una conversación está en cola del equipo, cualquier agente puede
+  // tomarla. En ese momento pasa a ser responsable efectivo y desde ahí
+  // corren sus métricas personales.
+  const handleTomarDeCola = async () => {
+    if (isMock) return;
+    setTomandoCola(true);
+    try {
+      // Buscamos un colaborador para identificar al "tomador". Si no podemos
+      // resolverlo (no auth) usamos la etiqueta "Agente" — la trazabilidad
+      // queda igual visible en el hilo.
+      let tomadorId: string | null = null;
+      let tomadorNombre = 'Agente';
+      try {
+        const { data: { user } } = await (supabase as any).auth.getUser();
+        if (user?.id) {
+          const { data: col } = await (supabase as any)
+            .from('colaboradores')
+            .select('id, nombre, area_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (col) {
+            tomadorId = col.id;
+            tomadorNombre = col.nombre;
+          }
+        }
+      } catch { /* ignore */ }
+
+      // Actualizar conversación: sale de cola, queda asignada al tomador
+      const colaArea = conversacion.cola_area_nombre;
+      await (supabase as any)
+        .from('lat_conversaciones')
+        .update({
+          en_cola: false,
+          cola_area_id: null,
+          cola_area_nombre: null,
+          responsable_id: tomadorId,
+          responsable_nombre: tomadorNombre,
+          en_foco: true,
+          estado: 'abierto',
+        })
+        .eq('id', conversacion.id);
+
+      // Mensaje de sistema visible en el hilo
+      await (supabase as any).from('lat_mensajes').insert({
+        conversacion_id: conversacion.id,
+        tipo: 'sistema',
+        contenido: `🙋 Conversación tomada desde la cola${colaArea ? ` de ${colaArea}` : ''} por ${tomadorNombre}.`,
+        estado: 'enviado',
+      });
+
+      // Bitácora
+      await (supabase as any).from('chat_derivaciones').insert({
+        conversacion_id: conversacion.id,
+        derivado_por_id: tomadorId,
+        derivado_por_nombre: tomadorNombre,
+        destino_tipo: 'usuario',
+        destino_usuario_id: tomadorId,
+        destino_usuario_nombre: tomadorNombre,
+        efectivo_tipo: 'usuario',
+        efectivo_usuario_id: tomadorId,
+        efectivo_usuario_nombre: tomadorNombre,
+        hubo_fallback: false,
+        nota: `Tomada desde cola${colaArea ? ` de ${colaArea}` : ''}`,
+      });
+
+      invalidateAll();
+      toast.success(`Conversación asignada a ${tomadorNombre}`);
+    } catch (e: any) {
+      toast.error(e.message ?? 'Error al tomar la conversación');
+    } finally {
+      setTomandoCola(false);
+    }
+  };
+
   // ── Adjuntos ──────────────────────────────────────────────────────────────
   const addFilesToQueue = (files: File[]) => {
     if (!files.length) return;
