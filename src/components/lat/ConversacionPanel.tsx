@@ -185,8 +185,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const { send, loading: sendingMsg } = useSendMensaje();
   const { sendAdjunto, loading: sendingAdj } = useSendAdjunto();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  type PendingItem = { id: string; file: File; preview: string | null };
+  const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+  const MAX_FILE_SIZE = 16 * 1024 * 1024;
+  const MAX_QUEUE = 10;
 
   useEffect(() => {
     if (activeTab === 'chat') {
