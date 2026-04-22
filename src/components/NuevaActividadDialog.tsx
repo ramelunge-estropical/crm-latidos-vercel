@@ -53,7 +53,6 @@ function useClienteSearch(q: string) {
         .from("clientes")
         .select("id, nombre_completo, telefono, email")
         .ilike("nombre_completo", `%${q}%`)
-        .eq("estado", "activo")
         .order("nombre_completo")
         .limit(10);
       return (data || []) as { id: string; nombre_completo: string; telefono: string | null; email: string | null }[];
