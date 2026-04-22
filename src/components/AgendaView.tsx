@@ -7,18 +7,21 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ChevronLeft, ChevronRight, Phone, Users, CheckSquare, Clock,
   CalendarDays, CalendarCheck, Unlink, Plus, Video, Pencil, Check, X, Search, UserRound,
 } from "lucide-react";
 import { NuevaActividadDialog } from "./NuevaActividadDialog";
-import { format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks, isSameDay, startOfDay, endOfDay } from "date-fns";
+import {
+  format, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks,
+  addMonths, subMonths, startOfMonth, endOfMonth,
+  isSameDay, isSameMonth, startOfDay, endOfDay,
+} from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 
-const SUPABASE_URL    = "https://qadfjbgfdejmhblgvaef.supabase.co";
-const GOOGLE_CLIENT_ID   = "894714399449-tqn21sgssiispg8roqj4s5qicmqtv6t1.apps.googleusercontent.com";
+const SUPABASE_URL     = "https://qadfjbgfdejmhblgvaef.supabase.co";
+const GOOGLE_CLIENT_ID    = "894714399449-tqn21sgssiispg8roqj4s5qicmqtv6t1.apps.googleusercontent.com";
 const GOOGLE_REDIRECT_URI = `${SUPABASE_URL}/functions/v1/google-auth-callback`;
 const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
@@ -27,32 +30,27 @@ const GOOGLE_SCOPES = [
 ].join(" ");
 
 const TYPE_CONFIG = {
-  tarea:   { label: "Tarea",   icon: CheckSquare, badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",   border: "border-l-blue-400",   dot: "bg-blue-400"   },
-  llamada: { label: "Llamada", icon: Phone,        badge: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300", border: "border-l-green-400",  dot: "bg-green-400"  },
-  reunión: { label: "Reunión", icon: Users,        badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300", border: "border-l-violet-400", dot: "bg-violet-400" },
+  tarea:   { label: "Tarea",   icon: CheckSquare, badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",       border: "border-l-blue-400",   dot: "bg-blue-400"    },
+  llamada: { label: "Llamada", icon: Phone,        badge: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300",   border: "border-l-green-400",  dot: "bg-green-400"   },
+  reunión: { label: "Reunión", icon: Users,        badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300", border: "border-l-violet-400", dot: "bg-violet-400"  },
 };
 
-// ── Cliente search ────────────────────────────────────────────────────────────
+// ── Cliente search ─────────────────────────────────────────────────────────────
 function useClienteSearch(q: string) {
   return useQuery({
     queryKey: ["clientes-search", q],
     queryFn: async () => {
       if (q.trim().length < 2) return [];
       const { data } = await (supabase as any)
-        .from("clientes")
-        .select("id, nombre_completo, telefono")
-        .ilike("nombre_completo", `%${q}%`)
-        .order("nombre_completo")
-        .limit(10);
+        .from("clientes").select("id, nombre_completo, telefono")
+        .ilike("nombre_completo", `%${q}%`).order("nombre_completo").limit(10);
       return (data || []) as { id: string; nombre_completo: string; telefono: string | null }[];
     },
     enabled: q.trim().length >= 2,
   });
 }
 
-function ClienteSearch({
-  value, onChange, required = false,
-}: {
+function ClienteSearch({ value, onChange, required = false }: {
   value: { id: string; nombre: string } | null;
   onChange: (c: { id: string; nombre: string } | null) => void;
   required?: boolean;
@@ -60,28 +58,15 @@ function ClienteSearch({
   const [query, setQuery] = useState(value?.nombre || "");
   const [open,  setOpen]  = useState(false);
   const { data: results = [] } = useClienteSearch(query);
-
-  useEffect(() => {
-    if (!value) setQuery("");
-    else setQuery(value.nombre);
-  }, [value?.id]);
-
+  useEffect(() => { if (!value) setQuery(""); else setQuery(value.nombre); }, [value?.id]);
   return (
     <div className="relative">
       <UserRound className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-      <Input
-        value={query}
-        onChange={e => { setQuery(e.target.value); onChange(null); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      <Input value={query} onChange={e => { setQuery(e.target.value); onChange(null); setOpen(true); }}
+        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder={required ? "Buscar cliente *" : "Buscar cliente (opcional)"}
-        className={`pl-8 h-9 text-sm ${required && !value ? "border-orange-400 focus-visible:ring-orange-400" : ""}`}
-      />
-      {value && (
-        <button onClick={() => { onChange(null); setQuery(""); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
+        className={`pl-8 h-9 text-sm ${required && !value ? "border-orange-400 focus-visible:ring-orange-400" : ""}`} />
+      {value && <button onClick={() => { onChange(null); setQuery(""); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}
       {open && results.length > 0 && (
         <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md max-h-40 overflow-y-auto">
           {results.map(c => (
@@ -94,41 +79,29 @@ function ClienteSearch({
         </div>
       )}
       {open && query.length >= 2 && results.length === 0 && (
-        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md px-3 py-2 text-xs text-muted-foreground">
-          Sin resultados
-        </div>
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md px-3 py-2 text-xs text-muted-foreground">Sin resultados</div>
       )}
     </div>
   );
 }
 
-// ── Searchable picker (same as NuevaActividadDialog) ─────────────────────────
-function ColaboradorSearch({
-  colaboradores, selected, onAdd, onRemove, placeholder = "Buscar...", exclude = [],
-}: {
+// ── Collab search ──────────────────────────────────────────────────────────────
+function ColaboradorSearch({ colaboradores, selected, onAdd, onRemove, placeholder = "Buscar...", exclude = [] }: {
   colaboradores: { id: string; nombre: string; color: string }[];
   selected: string[]; onAdd: (id: string) => void; onRemove: (id: string) => void;
   placeholder?: string; exclude?: string[];
 }) {
   const [query, setQuery] = useState("");
   const [open,  setOpen]  = useState(false);
-  const ref = useState<HTMLDivElement | null>(null);
-
-  const filtered = colaboradores.filter(c =>
-    !selected.includes(c.id) && !exclude.includes(c.id) &&
-    c.nombre.toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered = colaboradores.filter(c => !selected.includes(c.id) && !exclude.includes(c.id) && c.nombre.toLowerCase().includes(query.toLowerCase()));
   const selectedColabs = colaboradores.filter(c => selected.includes(c.id));
-
   return (
     <div className="space-y-2">
       {selectedColabs.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {selectedColabs.map(c => (
             <span key={c.id} className="inline-flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-              <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0" style={{ backgroundColor: c.color }}>
-                {c.nombre.charAt(0)}
-              </span>
+              <span className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0" style={{ backgroundColor: c.color }}>{c.nombre.charAt(0)}</span>
               {c.nombre}
               <button onClick={() => onRemove(c.id)} className="hover:text-destructive transition-colors ml-0.5"><X className="w-3 h-3" /></button>
             </span>
@@ -145,9 +118,7 @@ function ColaboradorSearch({
             {filtered.map(c => (
               <button key={c.id} onMouseDown={e => { e.preventDefault(); onAdd(c.id); setQuery(""); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-accent transition-colors text-left">
-                <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0" style={{ backgroundColor: c.color }}>
-                  {c.nombre.charAt(0)}
-                </span>
+                <span className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0" style={{ backgroundColor: c.color }}>{c.nombre.charAt(0)}</span>
                 {c.nombre}
               </button>
             ))}
@@ -158,36 +129,26 @@ function ColaboradorSearch({
   );
 }
 
-// ── Edit dialog ───────────────────────────────────────────────────────────────
+// ── Edit dialog ────────────────────────────────────────────────────────────────
 function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
   activity: any; open: boolean; onOpenChange: (o: boolean) => void; onSaved: () => void;
 }) {
   const { data: colaboradores = [] } = useColaboradores();
   const colaboradorId = localStorage.getItem("mis_gestiones_colaborador") || "";
-
   const [type,          setType]          = useState<"tarea" | "llamada" | "reunión">(activity?.activity_type || "reunión");
   const [title,         setTitle]         = useState(activity?.title || "");
   const [description,   setDescription]   = useState(activity?.description || "");
   const [date,          setDate]          = useState(activity?.scheduled_at ? format(new Date(activity.scheduled_at), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"));
   const [time,          setTime]          = useState(activity?.scheduled_at ? format(new Date(activity.scheduled_at), "HH:mm") : format(new Date(), "HH:mm"));
   const [duration,      setDuration]      = useState(String(activity?.duration_minutes || 30));
-  const [responsableId, setResponsableId] = useState(() => {
-    if (!activity?.assigned_to) return colaboradorId;
-    const found = colaboradores.find(c => c.nombre === activity.assigned_to);
-    return found?.id || colaboradorId;
-  });
+  const [responsableId, setResponsableId] = useState(() => { const f = colaboradores.find(c => c.nombre === activity?.assigned_to); return f?.id || colaboradorId; });
   const [attendees,     setAttendees]     = useState<string[]>([]);
-  const [cliente,       setCliente]       = useState<{ id: string; nombre: string } | null>(
-    activity?.cliente_id ? { id: activity.cliente_id, nombre: activity.cliente_nombre || "" } : null
-  );
+  const [cliente,       setCliente]       = useState<{ id: string; nombre: string } | null>(activity?.cliente_id ? { id: activity.cliente_id, nombre: activity.cliente_nombre || "" } : null);
   const [loading,       setLoading]       = useState(false);
 
-  // sync when activity changes
   useEffect(() => {
     if (!activity) return;
-    setType(activity.activity_type || "reunión");
-    setTitle(activity.title || "");
-    setDescription(activity.description || "");
+    setType(activity.activity_type || "reunión"); setTitle(activity.title || ""); setDescription(activity.description || "");
     setDate(activity.scheduled_at ? format(new Date(activity.scheduled_at), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"));
     setTime(activity.scheduled_at ? format(new Date(activity.scheduled_at), "HH:mm") : format(new Date(), "HH:mm"));
     setDuration(String(activity.duration_minutes || 30));
@@ -196,119 +157,76 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
 
   const handleSave = async () => {
     if (!title.trim()) { toast.error("El título es requerido"); return; }
+    if (type === "llamada" && !cliente) { toast.error("Seleccioná un cliente para la llamada"); setLoading(false); return; }
     setLoading(true);
     try {
       const [h, m] = time.split(":").map(Number);
       const dt = new Date(`${date}T00:00:00`);
       dt.setHours(h, m, 0, 0);
-
       const responsable = colaboradores.find(c => c.id === responsableId);
-
-      if (type === "llamada" && !cliente) { toast.error("Seleccioná un cliente para la llamada"); setLoading(false); return; }
-
       const { error } = await (supabase as any).from("activities").update({
-        activity_type:    type,
-        title:            title.trim(),
-        description:      description.trim() || null,
-        scheduled_at:     dt.toISOString(),
-        duration_minutes: parseInt(duration) || 30,
-        assigned_to:      responsable?.nombre || null,
-        cliente_id:       cliente?.id || null,
-        cliente_nombre:   cliente?.nombre || null,
+        activity_type: type, title: title.trim(), description: description.trim() || null,
+        scheduled_at: dt.toISOString(), duration_minutes: parseInt(duration) || 30,
+        assigned_to: responsable?.nombre || null,
+        cliente_id: cliente?.id || null, cliente_nombre: cliente?.nombre || null,
       }).eq("id", activity.id);
-
       if (error) throw error;
       toast.success("Actividad actualizada");
-      onSaved();
-      onOpenChange(false);
-    } catch {
-      toast.error("Error al guardar");
-    } finally {
-      setLoading(false);
-    }
+      onSaved(); onOpenChange(false);
+    } catch { toast.error("Error al guardar"); } finally { setLoading(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Pencil className="w-4 h-4 text-primary" /> Editar actividad
-          </DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle className="flex items-center gap-2 text-base"><Pencil className="w-4 h-4 text-primary" /> Editar actividad</DialogTitle></DialogHeader>
         <div className="space-y-4 pt-2">
-          {/* Tipo */}
           <div className="grid grid-cols-3 gap-2">
             {(Object.keys(TYPE_CONFIG) as Array<keyof typeof TYPE_CONFIG>).map(t => {
               const { label, icon: Icon } = TYPE_CONFIG[t];
-              return (
-                <button key={t} onClick={() => setType(t)}
-                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-medium transition-all ${
-                    type === t ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:border-primary/30"
-                  }`}>
-                  <Icon className="w-4 h-4" /> {label}
-                </button>
-              );
+              return <button key={t} onClick={() => setType(t)} className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-medium transition-all ${type === t ? "border-primary bg-primary/5 text-primary" : "border-border text-muted-foreground hover:border-primary/30"}`}><Icon className="w-4 h-4" />{label}</button>;
             })}
           </div>
           <Input placeholder="Título *" value={title} onChange={e => setTitle(e.target.value)} />
           <div>
             <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
-              <UserRound className="w-3 h-3" />
-              Cliente {type === "llamada" ? <span className="text-orange-500 font-medium">*</span> : <span className="text-muted-foreground/60">(opcional)</span>}
+              <UserRound className="w-3 h-3" /> Cliente {type === "llamada" ? <span className="text-orange-500 font-medium">*</span> : <span className="text-muted-foreground/60">(opcional)</span>}
             </label>
             <ClienteSearch value={cliente} onChange={setCliente} required={type === "llamada"} />
           </div>
           <Textarea placeholder="Descripción" value={description} onChange={e => setDescription(e.target.value)} className="resize-none h-20 text-sm" />
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Fecha</label>
-              <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Hora</label>
-              <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
-            </div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">Fecha</label><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
+            <div><label className="text-xs text-muted-foreground mb-1 block">Hora</label><Input type="time" value={time} onChange={e => setTime(e.target.value)} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1"><Clock className="w-3 h-3" /> Duración (min)</label>
               <Select value={duration} onValueChange={setDuration}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["15","30","45","60","90","120"].map(d => <SelectItem key={d} value={d}>{d} min</SelectItem>)}
-                </SelectContent>
+                <SelectContent>{["15","30","45","60","90","120"].map(d => <SelectItem key={d} value={d}>{d} min</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Responsable</label>
               <Select value={responsableId} onValueChange={setResponsableId}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
-                <SelectContent>
-                  {colaboradores.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
-                </SelectContent>
+                <SelectContent>{colaboradores.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
           {type === "reunión" && (
             <div>
-              <label className="text-xs text-muted-foreground mb-2 block flex items-center gap-1.5">
-                <Users className="w-3 h-3" /> Asistentes
-              </label>
-              <ColaboradorSearch
-                colaboradores={colaboradores}
-                selected={attendees}
-                onAdd={id => setAttendees(prev => [...prev, id])}
-                onRemove={id => setAttendees(prev => prev.filter(a => a !== id))}
-                placeholder="Buscar por nombre..."
-                exclude={responsableId ? [responsableId] : []}
-              />
+              <label className="text-xs text-muted-foreground mb-2 block flex items-center gap-1.5"><Users className="w-3 h-3" /> Asistentes</label>
+              <ColaboradorSearch colaboradores={colaboradores} selected={attendees}
+                onAdd={id => setAttendees(p => [...p, id])} onRemove={id => setAttendees(p => p.filter(a => a !== id))}
+                placeholder="Buscar por nombre..." exclude={responsableId ? [responsableId] : []} />
             </div>
           )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button size="sm" onClick={handleSave} disabled={loading || !title.trim()}>
+          <Button size="sm" onClick={handleSave} disabled={loading || !title.trim() || (type === "llamada" && !cliente)}>
             {loading ? "Guardando..." : "Guardar cambios"}
           </Button>
         </div>
@@ -317,100 +235,74 @@ function EditActividadDialog({ activity, open, onOpenChange, onSaved }: {
   );
 }
 
-// ── Activity card ─────────────────────────────────────────────────────────────
-function ActivityCard({
-  activity: a,
-  onToggle,
-  onEdit,
-}: {
-  activity: any;
-  onToggle: (id: string, completed: boolean) => void;
-  onEdit: (a: any) => void;
+// ── Activity card ──────────────────────────────────────────────────────────────
+function ActivityCard({ activity: a, onToggle, onEdit }: {
+  activity: any; onToggle: (id: string, completed: boolean) => void; onEdit: (a: any) => void;
 }) {
-  const cfg = TYPE_CONFIG[a.activity_type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG.tarea;
-  const Icon = cfg.icon;
-  const hasMeet = !!a.meet_link;
+  const isGoogle = a.source === "google";
+  const cfg = isGoogle ? null : TYPE_CONFIG[a.activity_type as keyof typeof TYPE_CONFIG] || TYPE_CONFIG.tarea;
+  const Icon = cfg?.icon || CalendarDays;
 
   return (
-    <div className={`group relative bg-card border border-border border-l-4 ${cfg.border} rounded-xl px-4 py-3 shadow-sm transition-all hover:shadow-md ${a.completed ? "opacity-60" : ""}`}>
+    <div className={`group relative bg-card border border-border border-l-4 rounded-xl px-4 py-3 shadow-sm transition-all hover:shadow-md ${
+      isGoogle ? "border-l-sky-400" : cfg?.border
+    } ${a.completed ? "opacity-60" : ""}`}>
       <div className="flex items-start gap-3">
-        {/* Complete toggle */}
-        <button
-          onClick={() => onToggle(a.id, a.completed)}
-          className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-            a.completed
-              ? "bg-emerald-500 border-emerald-500 text-white"
-              : "border-border hover:border-emerald-400"
-          }`}
-        >
-          {a.completed && <Check className="w-3 h-3" />}
-        </button>
+        {!isGoogle && (
+          <button onClick={() => onToggle(a.id, a.completed)}
+            className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${a.completed ? "bg-emerald-500 border-emerald-500 text-white" : "border-border hover:border-emerald-400"}`}>
+            {a.completed && <Check className="w-3 h-3" />}
+          </button>
+        )}
+        {isGoogle && <CalendarCheck className="w-4 h-4 mt-0.5 shrink-0 text-sky-500" />}
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
-          {/* Top row: badge + time + actions */}
+          {/* Top row */}
           <div className="flex items-center gap-2 mb-1">
-            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${cfg.badge}`}>
-              <Icon className="w-2.5 h-2.5" /> {cfg.label}
-            </span>
-            {a.scheduled_at && (
+            {isGoogle ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">
+                <CalendarCheck className="w-2.5 h-2.5" /> Google Calendar
+              </span>
+            ) : (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${cfg?.badge}`}>
+                <Icon className="w-2.5 h-2.5" /> {cfg?.label}
+              </span>
+            )}
+            {(a.scheduled_at || a.start) && (
               <span className="text-[11px] text-muted-foreground flex items-center gap-0.5">
                 <Clock className="w-3 h-3" />
-                {format(new Date(a.scheduled_at), "HH:mm")}
+                {format(new Date(a.scheduled_at || a.start), "HH:mm")}
                 {a.duration_minutes && <span className="text-muted-foreground/60"> · {a.duration_minutes}min</span>}
               </span>
             )}
-            {/* Actions */}
-            <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={() => onEdit(a)}
-                className="p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                title="Editar"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {!isGoogle && (
+              <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => onEdit(a)} className="p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors" title="Editar">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Title */}
-          <p className={`text-sm font-semibold leading-tight ${a.completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
-            {a.title}
-          </p>
+          <p className={`text-sm font-semibold leading-tight ${a.completed ? "line-through text-muted-foreground" : "text-foreground"}`}>{a.title}</p>
+          {a.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{a.description}</p>}
+          {a.location && <p className="text-xs text-muted-foreground mt-0.5">📍 {a.location}</p>}
 
-          {/* Description */}
-          {a.description && (
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{a.description}</p>
-          )}
-
-          {/* Meta row */}
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             {a.cliente_nombre && (
               <span className="inline-flex items-center gap-1 text-[11px] font-medium text-foreground bg-muted px-2 py-0.5 rounded-full">
-                <UserRound className="w-3 h-3 text-muted-foreground" />
-                {a.cliente_nombre}
+                <UserRound className="w-3 h-3 text-muted-foreground" /> {a.cliente_nombre}
               </span>
             )}
-            {a.gestiones && (
-              <span className="text-[11px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">
-                {a.gestiones.title}
-              </span>
-            )}
-            {a.assigned_to && (
-              <span className="text-[11px] text-muted-foreground">· {a.assigned_to}</span>
-            )}
+            {a.gestiones && <span className="text-[11px] text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">{a.gestiones.title}</span>}
+            {a.assigned_to && <span className="text-[11px] text-muted-foreground">· {a.assigned_to}</span>}
           </div>
 
-          {/* Meet link */}
-          {hasMeet && (
+          {(a.meet_link || a.meetLink) && (
             <div className="mt-2.5">
-              <a
-                href={a.meet_link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors shadow-sm"
-              >
-                <Video className="w-3.5 h-3.5" />
-                Unirse a la reunión
+              <a href={a.meet_link || a.meetLink} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors shadow-sm">
+                <Video className="w-3.5 h-3.5" /> Unirse a la reunión
               </a>
             </div>
           )}
@@ -420,11 +312,86 @@ function ActivityCard({
   );
 }
 
-// ── Main view ─────────────────────────────────────────────────────────────────
+// ── Month view ─────────────────────────────────────────────────────────────────
+function MonthView({ currentDate, allEvents, onDayClick, onNavigate }: {
+  currentDate: Date;
+  allEvents: any[];
+  onDayClick: (d: Date) => void;
+  onNavigate: (dir: number) => void;
+}) {
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd   = endOfMonth(currentDate);
+  const gridStart  = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const gridEnd    = endOfWeek(monthEnd,     { weekStartsOn: 1 });
+
+  const days: Date[] = [];
+  let d = gridStart;
+  while (d <= gridEnd) { days.push(d); d = addDays(d, 1); }
+
+  const eventsForDay = (day: Date) =>
+    allEvents.filter(e => {
+      const dt = e.scheduled_at || e.start;
+      return dt && isSameDay(new Date(dt), day);
+    });
+
+  const DOW = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Month grid */}
+      <div className="grid grid-cols-7 border-b border-border">
+        {DOW.map(d => (
+          <div key={d} className="text-center text-[11px] font-semibold text-muted-foreground py-2 uppercase">{d}</div>
+        ))}
+      </div>
+      <div className="flex-1 grid grid-cols-7 auto-rows-fr overflow-hidden">
+        {days.map(day => {
+          const isToday      = isSameDay(day, new Date());
+          const inMonth      = isSameMonth(day, currentDate);
+          const dayEvents    = eventsForDay(day);
+          const visible      = dayEvents.slice(0, 3);
+          const overflow     = dayEvents.length - 3;
+
+          return (
+            <div
+              key={day.toISOString()}
+              onClick={() => onDayClick(day)}
+              className={`border-r border-b border-border p-1.5 cursor-pointer hover:bg-accent/30 transition-colors min-h-[80px] ${!inMonth ? "bg-muted/20" : ""}`}
+            >
+              <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-semibold mb-1 ${
+                isToday ? "bg-primary text-primary-foreground" : inMonth ? "text-foreground" : "text-muted-foreground/50"
+              }`}>
+                {format(day, "d")}
+              </div>
+              <div className="space-y-0.5">
+                {visible.map((e, i) => {
+                  const isGoogle = e.source === "google";
+                  const cfg = !isGoogle ? TYPE_CONFIG[e.activity_type as keyof typeof TYPE_CONFIG] : null;
+                  return (
+                    <div key={i} className={`truncate text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                      isGoogle ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300" : cfg?.badge || "bg-muted text-foreground"
+                    }`}>
+                      {e.title}
+                    </div>
+                  );
+                })}
+                {overflow > 0 && (
+                  <div className="text-[10px] text-muted-foreground px-1">+{overflow} más</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Main view ──────────────────────────────────────────────────────────────────
 export function AgendaView() {
-  const queryClient = useQueryClient();
+  const queryClient  = useQueryClient();
   const [currentDate,    setCurrentDate]    = useState(new Date());
-  const [view,           setView]           = useState<"day" | "week">("week");
+  const [view,           setView]           = useState<"day" | "week" | "month">("week");
   const [showNueva,      setShowNueva]      = useState(false);
   const [defaultNewDate, setDefaultNewDate] = useState<Date | undefined>();
   const [editActivity,   setEditActivity]   = useState<any | null>(null);
@@ -436,78 +403,95 @@ export function AgendaView() {
     queryFn: async () => {
       if (!colaboradorId) return null;
       const { data } = await (supabase as any)
-        .from("colaborador_google_tokens")
-        .select("google_email, updated_at")
-        .eq("colaborador_id", colaboradorId)
-        .single();
+        .from("colaborador_google_tokens").select("google_email, updated_at")
+        .eq("colaborador_id", colaboradorId).single();
       return data as { google_email: string; updated_at: string } | null;
     },
     enabled: !!colaboradorId,
   });
-
   const isGoogleConnected = !!googleToken?.google_email;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const googleStatus = params.get("google");
-    if (googleStatus === "connected") {
-      toast.success("Google Calendar conectado correctamente");
-      refetchToken();
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (googleStatus === "error") {
-      const msg = params.get("msg") || "Error desconocido";
-      toast.error(`Error al conectar Google Calendar: ${msg}`);
-      window.history.replaceState({}, "", window.location.pathname);
-    }
+    const s = params.get("google");
+    if (s === "connected") { toast.success("Google Calendar conectado correctamente"); refetchToken(); window.history.replaceState({}, "", window.location.pathname); }
+    else if (s === "error") { toast.error(`Error: ${params.get("msg") || "desconocido"}`); window.history.replaceState({}, "", window.location.pathname); }
   }, []);
 
   const handleConnectGoogle = () => {
-    if (!colaboradorId) { toast.error("No hay colaborador seleccionado"); return; }
-    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    authUrl.searchParams.set("client_id",     GOOGLE_CLIENT_ID);
-    authUrl.searchParams.set("redirect_uri",  GOOGLE_REDIRECT_URI);
-    authUrl.searchParams.set("response_type", "code");
-    authUrl.searchParams.set("scope",         GOOGLE_SCOPES);
-    authUrl.searchParams.set("access_type",   "offline");
-    authUrl.searchParams.set("prompt",        "consent");
-    authUrl.searchParams.set("state",         colaboradorId);
-    window.location.href = authUrl.toString();
+    if (!colaboradorId) { toast.error("No hay colaborador"); return; }
+    const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    url.searchParams.set("client_id", GOOGLE_CLIENT_ID); url.searchParams.set("redirect_uri", GOOGLE_REDIRECT_URI);
+    url.searchParams.set("response_type", "code"); url.searchParams.set("scope", GOOGLE_SCOPES);
+    url.searchParams.set("access_type", "offline"); url.searchParams.set("prompt", "consent");
+    url.searchParams.set("state", colaboradorId);
+    window.location.href = url.toString();
   };
-
   const handleDisconnectGoogle = async () => {
     await (supabase as any).from("colaborador_google_tokens").delete().eq("colaborador_id", colaboradorId);
-    refetchToken();
-    toast.success("Google Calendar desconectado");
+    refetchToken(); toast.success("Google Calendar desconectado");
   };
 
+  // Date range
   const weekStart  = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekEnd    = endOfWeek(currentDate,   { weekStartsOn: 1 });
-  const rangeStart = view === "day" ? startOfDay(currentDate) : weekStart;
-  const rangeEnd   = view === "day" ? endOfDay(currentDate)   : weekEnd;
+  const monthStart = startOfMonth(currentDate);
+  const monthEnd   = endOfMonth(currentDate);
 
+  const rangeStart = view === "day"   ? startOfDay(currentDate)
+                   : view === "week"  ? weekStart
+                   : startOfWeek(monthStart, { weekStartsOn: 1 });
+  const rangeEnd   = view === "day"   ? endOfDay(currentDate)
+                   : view === "week"  ? weekEnd
+                   : endOfWeek(monthEnd, { weekStartsOn: 1 });
+
+  // CRM activities
   const { data: activities = [] } = useQuery({
     queryKey: ["agenda-activities", rangeStart.toISOString(), rangeEnd.toISOString()],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("activities")
-        .select("*, gestiones(title, process_id)")
+      const { data } = await (supabase as any)
+        .from("activities").select("*, gestiones(title)")
         .gte("scheduled_at", rangeStart.toISOString())
         .lte("scheduled_at", rangeEnd.toISOString())
         .order("scheduled_at", { ascending: true });
-      if (error) throw error;
-      return data as any[];
+      return (data || []) as any[];
     },
   });
 
+  // Google Calendar events
+  const { data: gcalEvents = [] } = useQuery({
+    queryKey: ["gcal-events", colaboradorId, rangeStart.toISOString(), rangeEnd.toISOString()],
+    queryFn: async () => {
+      if (!isGoogleConnected) return [];
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/google-calendar-list`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${(supabase as any).supabaseKey}` },
+        body: JSON.stringify({ colaboradorId, startDate: rangeStart.toISOString(), endDate: rangeEnd.toISOString() }),
+      });
+      const json = await res.json();
+      return (json.events || []) as any[];
+    },
+    enabled: isGoogleConnected,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Merge: remove gcal events that are already tracked as CRM activities (by google_event_id)
+  const crmEventIds = new Set(activities.map((a: any) => a.google_event_id).filter(Boolean));
+  const filteredGcal = gcalEvents.filter((e: any) => !crmEventIds.has(e.id));
+  const allEvents = [...activities, ...filteredGcal].sort((a, b) => {
+    const da = new Date(a.scheduled_at || a.start || 0).getTime();
+    const db = new Date(b.scheduled_at || b.start || 0).getTime();
+    return da - db;
+  });
+
   const navigate = (dir: number) => {
-    if (view === "day") setCurrentDate(d => addDays(d, dir));
-    else setCurrentDate(d => (dir > 0 ? addWeeks(d, 1) : subWeeks(d, 1)));
+    if (view === "day")   setCurrentDate(d => addDays(d, dir));
+    else if (view === "week")  setCurrentDate(d => dir > 0 ? addWeeks(d, 1) : subWeeks(d, 1));
+    else setCurrentDate(d => dir > 0 ? addMonths(d, 1) : subMonths(d, 1));
   };
 
   const toggleComplete = async (id: string, completed: boolean) => {
-    await supabase.from("activities").update({
-      completed: !completed, completed_at: !completed ? new Date().toISOString() : null,
-    }).eq("id", id);
+    await supabase.from("activities").update({ completed: !completed, completed_at: !completed ? new Date().toISOString() : null }).eq("id", id);
     queryClient.invalidateQueries({ queryKey: ["agenda-activities"] });
   };
 
@@ -515,15 +499,17 @@ export function AgendaView() {
     if (view !== "week") return [];
     return Array.from({ length: 7 }, (_, i) => {
       const day = addDays(weekStart, i);
-      return { date: day, acts: activities.filter(a => a.scheduled_at && isSameDay(new Date(a.scheduled_at), day)) };
+      return { date: day, acts: allEvents.filter(a => { const dt = a.scheduled_at || a.start; return dt && isSameDay(new Date(dt), day); }) };
     });
-  }, [activities, weekStart, view]);
+  }, [allEvents, weekStart, view]);
 
   const headerLabel = view === "day"
     ? format(currentDate, "EEEE d 'de' MMMM yyyy", { locale: es })
-    : `${format(weekStart, "d MMM", { locale: es })} – ${format(weekEnd, "d MMM yyyy", { locale: es })}`;
+    : view === "week"
+    ? `${format(weekStart, "d MMM", { locale: es })} – ${format(weekEnd, "d MMM yyyy", { locale: es })}`
+    : format(currentDate, "MMMM yyyy", { locale: es });
 
-  const totalWeek = activities.length;
+  const totalVisible = view === "month" ? allEvents.length : (view === "week" ? allEvents.length : allEvents.filter(a => { const dt = a.scheduled_at || a.start; return dt && isSameDay(new Date(dt), currentDate); }).length);
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -532,27 +518,25 @@ export function AgendaView() {
         <div className="flex items-center gap-3">
           <CalendarDays className="w-5 h-5 text-primary" />
           <h2 className="text-base font-semibold text-foreground">Agenda</h2>
-          {totalWeek > 0 && (
-            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{totalWeek} actividad{totalWeek !== 1 ? "es" : ""}</span>
+          {totalVisible > 0 && (
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{totalVisible} evento{totalVisible !== 1 ? "s" : ""}</span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Tabs value={view} onValueChange={v => setView(v as "day" | "week")}>
-            <TabsList className="h-8">
-              <TabsTrigger value="day"  className="text-xs px-3 h-6">Día</TabsTrigger>
-              <TabsTrigger value="week" className="text-xs px-3 h-6">Semana</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          {/* View tabs */}
+          <div className="flex border border-border rounded-lg overflow-hidden text-xs">
+            {(["day","week","month"] as const).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-3 py-1.5 font-medium transition-colors border-r last:border-r-0 border-border ${view === v ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}>
+                {v === "day" ? "Día" : v === "week" ? "Semana" : "Mes"}
+              </button>
+            ))}
+          </div>
+          {/* Navigation */}
           <div className="flex items-center border border-border rounded-lg overflow-hidden">
-            <button className="px-2 py-1.5 hover:bg-accent transition-colors border-r border-border" onClick={() => navigate(-1)}>
-              <ChevronLeft className="w-3.5 h-3.5 text-muted-foreground" />
-            </button>
-            <button className="px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors" onClick={() => setCurrentDate(new Date())}>
-              Hoy
-            </button>
-            <button className="px-2 py-1.5 hover:bg-accent transition-colors border-l border-border" onClick={() => navigate(1)}>
-              <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-            </button>
+            <button className="px-2 py-1.5 hover:bg-accent transition-colors border-r border-border" onClick={() => navigate(-1)}><ChevronLeft className="w-3.5 h-3.5 text-muted-foreground" /></button>
+            <button className="px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors" onClick={() => setCurrentDate(new Date())}>Hoy</button>
+            <button className="px-2 py-1.5 hover:bg-accent transition-colors border-l border-border" onClick={() => navigate(1)}><ChevronRight className="w-3.5 h-3.5 text-muted-foreground" /></button>
           </div>
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => { setDefaultNewDate(currentDate); setShowNueva(true); }}>
             <Plus className="w-3.5 h-3.5" /> Nueva
@@ -561,30 +545,18 @@ export function AgendaView() {
       </div>
 
       {/* Google Calendar banner */}
-      <div className={`mx-4 mt-3 rounded-xl border px-4 py-2.5 flex items-center gap-3 shrink-0 ${
-        isGoogleConnected ? "bg-emerald-500/5 border-emerald-200 dark:border-emerald-800" : "bg-muted/40 border-border"
-      }`}>
+      <div className={`mx-4 mt-3 rounded-xl border px-4 py-2.5 flex items-center gap-3 shrink-0 ${isGoogleConnected ? "bg-emerald-500/5 border-emerald-200 dark:border-emerald-800" : "bg-muted/40 border-border"}`}>
         <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isGoogleConnected ? "bg-emerald-500/10" : "bg-muted"}`}>
           <CalendarCheck className={`w-3.5 h-3.5 ${isGoogleConnected ? "text-emerald-600" : "text-muted-foreground"}`} />
         </div>
         <div className="flex-1 min-w-0">
-          {isGoogleConnected ? (
-            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-              Google Calendar conectado · <span className="font-normal text-muted-foreground">{googleToken.google_email}</span>
-            </p>
-          ) : (
-            <p className="text-xs font-medium text-foreground">Conectá tu Google Calendar para sincronizar actividades</p>
-          )}
+          {isGoogleConnected
+            ? <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Google Calendar conectado · <span className="font-normal text-muted-foreground">{googleToken.google_email}</span></p>
+            : <p className="text-xs font-medium text-foreground">Conectá tu Google Calendar para ver todos tus eventos acá</p>}
         </div>
-        {isGoogleConnected ? (
-          <button onClick={handleDisconnectGoogle} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-red-500 transition-colors shrink-0">
-            <Unlink className="w-3 h-3" /> Desconectar
-          </button>
-        ) : (
-          <Button size="sm" className="h-7 text-xs shrink-0 gap-1.5" onClick={handleConnectGoogle}>
-            <CalendarCheck className="w-3.5 h-3.5" /> Conectar
-          </Button>
-        )}
+        {isGoogleConnected
+          ? <button onClick={handleDisconnectGoogle} className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-red-500 transition-colors shrink-0"><Unlink className="w-3 h-3" /> Desconectar</button>
+          : <Button size="sm" className="h-7 text-xs shrink-0 gap-1.5" onClick={handleConnectGoogle}><CalendarCheck className="w-3.5 h-3.5" /> Conectar</Button>}
       </div>
 
       {/* Date label */}
@@ -592,71 +564,63 @@ export function AgendaView() {
         <p className="text-sm font-semibold text-foreground capitalize">{headerLabel}</p>
       </div>
 
-      {/* Calendar grid */}
-      <div className="flex-1 overflow-y-auto px-4 pb-6">
-        {view === "week" ? (
-          <div className="space-y-2">
-            {dayGroups.map(({ date, acts }) => {
-              const isToday   = isSameDay(date, new Date());
-              const dayName   = format(date, "EEE", { locale: es }).toUpperCase();
-              const dayNumber = format(date, "d");
-              return (
-                <div key={date.toISOString()}>
-                  {/* Day header */}
-                  <div
-                    className="flex items-center gap-3 py-2 cursor-pointer group select-none"
-                    onClick={() => { setDefaultNewDate(date); setShowNueva(true); }}
-                  >
-                    <div className={`flex items-center gap-2 shrink-0 ${isToday ? "text-primary" : "text-muted-foreground"}`}>
-                      <span className="text-[11px] font-bold uppercase w-8">{dayName}</span>
-                      <span className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-bold ${
-                        isToday ? "bg-primary text-primary-foreground" : "text-foreground"
-                      }`}>
-                        {dayNumber}
-                      </span>
-                    </div>
-                    <div className="flex-1 h-px bg-border" />
-                    {acts.length > 0 ? (
-                      <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">{acts.length}</span>
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">+ nueva</span>
-                    )}
-                  </div>
-
-                  {/* Activities */}
-                  {acts.length > 0 && (
-                    <div className="space-y-2 ml-11 mb-1">
-                      {acts.map(a => (
-                        <ActivityCard key={a.id} activity={a} onToggle={toggleComplete} onEdit={setEditActivity} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+      {/* Content */}
+      <div className="flex-1 overflow-hidden">
+        {view === "month" ? (
+          <div className="h-full px-4 pb-4">
+            <MonthView
+              currentDate={currentDate}
+              allEvents={allEvents}
+              onDayClick={day => { setCurrentDate(day); setView("day"); }}
+              onNavigate={navigate}
+            />
           </div>
         ) : (
-          <div className="space-y-2 pt-1">
-            {activities.length > 0
-              ? activities.map(a => <ActivityCard key={a.id} activity={a} onToggle={toggleComplete} onEdit={setEditActivity} />)
-              : <p className="text-sm text-muted-foreground text-center py-12">No hay actividades para este día</p>}
+          <div className="h-full overflow-y-auto px-4 pb-6">
+            {view === "week" ? (
+              <div className="space-y-2">
+                {dayGroups.map(({ date, acts }) => {
+                  const isToday = isSameDay(date, new Date());
+                  return (
+                    <div key={date.toISOString()}>
+                      <div className="flex items-center gap-3 py-2 cursor-pointer group select-none" onClick={() => { setDefaultNewDate(date); setShowNueva(true); }}>
+                        <div className={`flex items-center gap-2 shrink-0 ${isToday ? "text-primary" : "text-muted-foreground"}`}>
+                          <span className="text-[11px] font-bold uppercase w-8">{format(date, "EEE", { locale: es }).toUpperCase()}</span>
+                          <span className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-bold ${isToday ? "bg-primary text-primary-foreground" : "text-foreground"}`}>
+                            {format(date, "d")}
+                          </span>
+                        </div>
+                        <div className="flex-1 h-px bg-border" />
+                        {acts.length > 0
+                          ? <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">{acts.length}</span>
+                          : <span className="text-[10px] text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">+ nueva</span>}
+                      </div>
+                      {acts.length > 0 && (
+                        <div className="space-y-2 ml-11 mb-1">
+                          {acts.map((a, i) => <ActivityCard key={a.id || i} activity={a} onToggle={toggleComplete} onEdit={setEditActivity} />)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {allEvents.length === 0 && <p className="text-sm text-muted-foreground text-center py-12">No hay actividades programadas esta semana</p>}
+              </div>
+            ) : (
+              <div className="space-y-2 pt-1">
+                {allEvents.filter(a => { const dt = a.scheduled_at || a.start; return dt && isSameDay(new Date(dt), currentDate); }).length > 0
+                  ? allEvents.filter(a => { const dt = a.scheduled_at || a.start; return dt && isSameDay(new Date(dt), currentDate); })
+                      .map((a, i) => <ActivityCard key={a.id || i} activity={a} onToggle={toggleComplete} onEdit={setEditActivity} />)
+                  : <p className="text-sm text-muted-foreground text-center py-12">No hay actividades para este día</p>}
+              </div>
+            )}
           </div>
-        )}
-        {view === "week" && activities.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-12">No hay actividades programadas esta semana</p>
         )}
       </div>
 
-      <NuevaActividadDialog
-        open={showNueva}
-        onOpenChange={setShowNueva}
-        defaultDate={defaultNewDate}
-      />
-
+      <NuevaActividadDialog open={showNueva} onOpenChange={setShowNueva} defaultDate={defaultNewDate} />
       {editActivity && (
         <EditActividadDialog
-          activity={editActivity}
-          open={!!editActivity}
+          activity={editActivity} open={!!editActivity}
           onOpenChange={o => { if (!o) setEditActivity(null); }}
           onSaved={() => queryClient.invalidateQueries({ queryKey: ["agenda-activities"] })}
         />
