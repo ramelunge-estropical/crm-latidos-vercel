@@ -51,6 +51,14 @@ function decodeBase64(input: string): Uint8Array {
   return arr;
 }
 
+function previewLabelFor(cat: "image" | "video" | "audio" | "file", fileName: string, caption?: string) {
+  if (caption?.trim()) return caption.trim();
+  if (cat === "image") return "📷 Imagen";
+  if (cat === "audio") return "🎤 Nota de voz";
+  if (cat === "video") return "🎥 Video";
+  return `📎 ${fileName}`;
+}
+
 async function persistOutboundMedia(params: {
   conversacion_id: string;
   contenido: string;
@@ -147,7 +155,7 @@ Deno.serve(async (req: Request) => {
 
     let gupshupRes: Response;
     let gupshupText = "";
-    const previewText = caption?.trim() || labelMap[cat] || `📎 ${file_name}`;
+    const previewText = previewLabelFor(cat, file_name, caption);
     try {
       gupshupRes = await fetch("https://api.gupshup.io/wa/api/v1/msg", {
         method: "POST",
@@ -191,7 +199,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // 4) Persistir en lat_mensajes
-    const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", video:"🎥 Video", file:"📎 "+file_name };
     await persistOutboundMedia({
       conversacion_id,
       contenido: previewText,
