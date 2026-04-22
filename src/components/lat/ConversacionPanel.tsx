@@ -478,9 +478,45 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 Modo demo — los mensajes no se guardan. Conectá WhatsApp para activar el chat real.
               </div>
             )}
+
+            {/* Preview de adjunto pendiente */}
+            {pendingFile && (
+              <div className="mb-2 flex items-center gap-2 p-2 rounded-lg border border-border bg-muted/30">
+                {pendingPreview ? (
+                  <img src={pendingPreview} alt="" className="w-10 h-10 rounded object-cover" />
+                ) : (
+                  <div className="w-10 h-10 rounded bg-primary/10 flex items-center justify-center text-primary">
+                    {pendingFile.type.startsWith('audio/') ? <Play className="w-4 h-4" /> :
+                     pendingFile.type.startsWith('video/') ? <Play className="w-4 h-4" /> :
+                     <FileText className="w-4 h-4" />}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{pendingFile.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{(pendingFile.size / 1024).toFixed(1)} KB · {pendingFile.type || 'archivo'}</p>
+                </div>
+                <button onClick={clearPending} className="p-1 hover:bg-accent/50 rounded text-muted-foreground" title="Quitar">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              hidden
+              accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+              onChange={(e) => { handleFileSelected(e.target.files?.[0] ?? null); e.target.value = ''; }}
+            />
+
             <div className="flex items-end gap-2">
               <div className="flex gap-1">
-                <button className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground" title="Adjuntar (próximamente)">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isMock || !isWhatsapp || sendingAdj}
+                  className="p-1.5 rounded-md hover:bg-accent/50 text-muted-foreground disabled:opacity-40"
+                  title={isWhatsapp ? "Adjuntar imagen, audio o documento" : "Solo disponible en WhatsApp"}
+                >
                   <Paperclip className="w-4 h-4" />
                 </button>
                 <button
@@ -505,17 +541,20 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={(isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                onPaste={handlePaste}
+                disabled={(isWhatsapp && isOutOfWindow && !showNota && !pendingFile) || sendingMsg || sendingAdj}
                 placeholder={
-                  isWhatsapp && isOutOfWindow && !showNota
+                  pendingFile
+                    ? 'Comentario opcional para el adjunto...'
+                    : isWhatsapp && isOutOfWindow && !showNota
                     ? 'Ventana expirada. Usá una plantilla aprobada →'
                     : showNota
                     ? 'Nota interna...'
-                    : 'Escribí un mensaje... (Enter para enviar)'
+                    : 'Escribí un mensaje, pegá una imagen o adjuntá un archivo...'
                 }
                 className="flex-1 bg-muted/50 text-sm rounded-lg px-3 py-2 border border-border placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
               />
-              {isWhatsapp && isOutOfWindow && !isMock && !showNota ? (
+              {isWhatsapp && isOutOfWindow && !isMock && !showNota && !pendingFile ? (
                 <button
                   onClick={() => setShowTemplates(true)}
                   className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1 text-xs"
@@ -526,10 +565,14 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               ) : (
                 <button
                   onClick={handleSend}
-                  disabled={!inputValue.trim() || (isWhatsapp && isOutOfWindow && !showNota) || sendingMsg}
+                  disabled={
+                    (!inputValue.trim() && !pendingFile) ||
+                    (isWhatsapp && isOutOfWindow && !showNota && !pendingFile) ||
+                    sendingMsg || sendingAdj
+                  }
                   className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
                 >
-                  {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {(sendingMsg || sendingAdj) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               )}
             </div>
