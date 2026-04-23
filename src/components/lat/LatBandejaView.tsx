@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, Plus, Focus, Inbox } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { ConversacionList } from './ConversacionList';
@@ -21,6 +21,25 @@ export function LatBandejaView() {
   const [busqueda, setBusqueda]             = useState('');
   const [focusFilter, setFocusFilter]       = useState<FocusFilter>('foco');
   const [showNuevaConv, setShowNuevaConv]   = useState(false);
+  const [stageFilter, setStageFilter]       = useState<string>('todos');
+  const [flagFilter, setFlagFilter]         = useState<string>('todos');
+
+  // Escuchar navegación desde Dashboard con filtro inicial
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail ?? {};
+      setFocusFilter('todos');
+      setStageFilter(detail.stage ?? 'todos');
+      setFlagFilter(detail.flag ?? 'todos');
+      setFiltroCanal(detail.canal ?? 'todos');
+      setFiltroEstado('todos');
+      setBusqueda('');
+      setSelectedConvId(null);
+      setMobileView('list');
+    };
+    window.addEventListener('lat-go-bandeja', handler as EventListener);
+    return () => window.removeEventListener('lat-go-bandeja', handler as EventListener);
+  }, []);
 
   // Datos reales desde Supabase (con fallback a mock si la tabla está vacía)
   const { data: todasConversaciones } = useLatConversaciones();
