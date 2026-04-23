@@ -9,6 +9,7 @@ import { SoftphoneWidget } from './SoftphoneWidget';
 import { NuevaConversacionDialog } from './NuevaConversacionDialog';
 import { getCliente } from '@/data/latMockData';
 import { useLatConversaciones } from '@/hooks/useLatData';
+import { getFunnelStage, getFlags } from '@/lib/latFunnel';
 
 type MobileView = 'list' | 'chat';
 type FocusFilter = 'foco' | 'todos';
@@ -52,6 +53,16 @@ export function LatBandejaView() {
     }
     if (filtroCanal  !== 'todos') result = result.filter(c => c.canal   === filtroCanal);
     if (filtroEstado !== 'todos') result = result.filter(c => c.estado  === filtroEstado);
+    // Filtros desde Dashboard
+    if (stageFilter !== 'todos') {
+      result = result.filter(c => getFunnelStage(c) === stageFilter);
+    }
+    if (flagFilter !== 'todos') {
+      result = result.filter(c => {
+        const f = getFlags(c);
+        return (f as any)[flagFilter] === true;
+      });
+    }
     if (busqueda) {
       const q = busqueda.toLowerCase();
       result = result.filter(c => {
@@ -73,7 +84,7 @@ export function LatBandejaView() {
         new Date(b.ultima_interaccion).getTime() - new Date(a.ultima_interaccion).getTime();
     });
     return result;
-  }, [todasConversaciones, filtroCanal, filtroEstado, busqueda, focusFilter]);
+  }, [todasConversaciones, filtroCanal, filtroEstado, busqueda, focusFilter, stageFilter, flagFilter]);
 
   const totalEnFoco   = todasConversaciones.filter(c => c.en_foco !== false && c.estado !== 'liberado').length;
   const totalLiberados = todasConversaciones.length - totalEnFoco;
