@@ -18,11 +18,13 @@ export type Database = {
         Row: {
           activity_type: Database["public"]["Enums"]["activity_type"]
           assigned_to: string | null
+          assigned_to_id: string | null
           cliente_id: string | null
           cliente_nombre: string | null
           completed: boolean
           completed_at: string | null
           created_at: string
+          created_by: string | null
           description: string | null
           duration_minutes: number | null
           gestion_id: string | null
@@ -36,11 +38,13 @@ export type Database = {
         Insert: {
           activity_type?: Database["public"]["Enums"]["activity_type"]
           assigned_to?: string | null
+          assigned_to_id?: string | null
           cliente_id?: string | null
           cliente_nombre?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           duration_minutes?: number | null
           gestion_id?: string | null
@@ -54,11 +58,13 @@ export type Database = {
         Update: {
           activity_type?: Database["public"]["Enums"]["activity_type"]
           assigned_to?: string | null
+          assigned_to_id?: string | null
           cliente_id?: string | null
           cliente_nombre?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           duration_minutes?: number | null
           gestion_id?: string | null
@@ -71,10 +77,24 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "activities_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "activities_cliente_id_fkey"
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activities_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
             referencedColumns: ["id"]
           },
           {

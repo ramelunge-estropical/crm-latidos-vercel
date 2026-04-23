@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useProcesses } from "@/hooks/useSharedQueries";
 import { ProcessSidebar, SidebarView } from "@/components/ProcessSidebar";
 import { BoardView } from "@/components/BoardView";
@@ -48,6 +48,16 @@ const Index = () => {
     setActiveView(view);
     if (view !== "process") setSelectedProcessId(null);
   };
+
+  // Listener: navegación desde Dashboard → Bandeja con filtro
+  useEffect(() => {
+    const handler = () => {
+      setActiveView("lat-bandeja");
+      setSelectedProcessId(null);
+    };
+    window.addEventListener("lat-go-bandeja", handler as EventListener);
+    return () => window.removeEventListener("lat-go-bandeja", handler as EventListener);
+  }, []);
 
   const currentLabel = activeView === "process" && selectedProcess
     ? selectedProcess.name
