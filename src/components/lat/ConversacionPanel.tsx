@@ -1250,6 +1250,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           clienteNombre={clienteNombre}
         />
       )}
+
+      {/* Visor global de adjuntos del chat */}
+      <AttachmentViewer />
     </div>
   );
 }
