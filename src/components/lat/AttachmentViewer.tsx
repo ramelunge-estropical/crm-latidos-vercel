@@ -11,6 +11,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, ExternalLink, FileText, X, ZoomIn, ZoomOut, RotateCw } from "lucide-react";
+import { PdfViewer } from "./PdfViewer";
 
 export interface AttachmentPayload {
   url: string;
@@ -134,19 +135,7 @@ export function AttachmentViewer() {
           )}
 
           {kind === "pdf" && (
-            <object
-              data={att.url}
-              type="application/pdf"
-              className="w-full h-full bg-background"
-              aria-label={displayName}
-            >
-              {/* Fallback cuando el navegador bloquea el PDF embebido (CSP, X-Frame-Options, descarga forzada) */}
-              <iframe
-                src={`https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(att.url)}`}
-                title={displayName}
-                className="w-full h-full bg-background"
-              />
-            </object>
+            <PdfViewer url={att.url} name={displayName} />
           )}
 
           {kind === "video" && (
