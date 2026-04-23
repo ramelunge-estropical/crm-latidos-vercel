@@ -134,11 +134,19 @@ export function AttachmentViewer() {
           )}
 
           {kind === "pdf" && (
-            <iframe
-              src={att.url}
-              title={displayName}
+            <object
+              data={att.url}
+              type="application/pdf"
               className="w-full h-full bg-background"
-            />
+              aria-label={displayName}
+            >
+              {/* Fallback cuando el navegador bloquea el PDF embebido (CSP, X-Frame-Options, descarga forzada) */}
+              <iframe
+                src={`https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(att.url)}`}
+                title={displayName}
+                className="w-full h-full bg-background"
+              />
+            </object>
           )}
 
           {kind === "video" && (
