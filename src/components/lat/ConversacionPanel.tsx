@@ -1322,14 +1322,19 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
       }`}>
         {/* Imagen */}
         {isImage && (
-          <a href={adjUrl!} target="_blank" rel="noopener noreferrer" className="block">
+          <button
+            type="button"
+            onClick={() => openAttachment({ url: adjUrl!, name: mensaje.adjunto_nombre, type: adjTipo })}
+            className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
+            title="Abrir imagen"
+          >
             <img
               src={adjUrl!}
               alt={mensaje.adjunto_nombre ?? 'Imagen'}
-              className="rounded-xl max-h-72 w-auto object-cover bg-black/5"
+              className="rounded-xl max-h-72 w-auto object-cover bg-black/5 cursor-zoom-in group-hover:opacity-95 transition-opacity"
               loading="lazy"
             />
-          </a>
+          </button>
         )}
 
         {/* Audio / nota de voz */}
@@ -1342,17 +1347,27 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
 
         {/* Video */}
         {isVideo && (
-          <video controls preload="metadata" src={adjUrl!} className="rounded-xl max-h-72 w-auto bg-black/10" />
+          <button
+            type="button"
+            onClick={() => openAttachment({ url: adjUrl!, name: mensaje.adjunto_nombre, type: adjTipo })}
+            className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
+            title="Abrir video"
+          >
+            <video
+              preload="metadata"
+              src={adjUrl!}
+              className="rounded-xl max-h-72 w-auto bg-black/10 pointer-events-none"
+            />
+          </button>
         )}
 
         {/* Documento / archivo genérico */}
         {isFile && (
-          <a
-            href={adjUrl!}
-            target="_blank"
-            rel="noopener noreferrer"
-            download={mensaje.adjunto_nombre ?? undefined}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isOutbound ? 'bg-primary-foreground/10 hover:bg-primary-foreground/20' : 'bg-background/40 hover:bg-background/60'} transition-colors min-w-[200px]`}
+          <button
+            type="button"
+            onClick={() => openAttachment({ url: adjUrl!, name: mensaje.adjunto_nombre, type: adjTipo })}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-left ${isOutbound ? 'bg-primary-foreground/10 hover:bg-primary-foreground/20' : 'bg-background/40 hover:bg-background/60'} transition-colors min-w-[200px]`}
+            title="Previsualizar archivo"
           >
             <FileText className={`w-5 h-5 shrink-0 ${isOutbound ? 'text-primary-foreground/80' : 'text-primary'}`} />
             <div className="flex-1 min-w-0">
@@ -1360,7 +1375,7 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
               <p className={`text-[10px] ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>{adjTipo || 'documento'}</p>
             </div>
             <Download className={`w-3.5 h-3.5 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`} />
-          </a>
+          </button>
         )}
 
         {/* Texto / caption */}
