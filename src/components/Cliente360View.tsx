@@ -14,8 +14,12 @@ import {
   MessageSquare, Heart, DollarSign, Wallet,
   CheckCircle2, Clock, Globe, Landmark,
   Sparkles, RefreshCw, Home, Tag, Building2, UserCircle,
-  ClipboardList, Pencil,
+  ClipboardList, Pencil, Plus, Trash2, X, Check,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 
 const priorityConfig: Record<string, { label: string; className: string }> = {
   urgent: { label: "Urgente", className: "bg-red-500/15 text-red-600"         },
@@ -83,8 +87,8 @@ type Banco       = { id: string; banco: string; tipo_cuenta: string | null; obse
 type Lealtad     = { id: string; programa: string; numero_membresia: string | null; estado: string | null; nivel: string | null; millas_acumuladas: number | null; observaciones: string | null };
 type Viaje       = { id: string; destino: string; fecha_salida: string | null; fecha_regreso: string | null; tipo_viaje: string | null; estado: string | null; monto: number | null };
 type IdeaViaje   = { id: string; destino: string; notas: string | null; prioridad: string | null };
-type Referido    = { id: string; referido_nombre: string | null; tipo: string; fecha: string | null; observaciones: string | null };
-type Familiar    = { id: string; nombre: string; relacion: string; fecha_nacimiento: string | null; documento_numero: string | null };
+type Referido = { id: string; referido_nombre: string | null; referido_id: string | null; tipo: string; fecha: string | null; observaciones: string | null };
+type Familiar = { id: string; nombre: string; relacion: string; fecha_nacimiento: string | null; documento_numero: string | null; familiar_cliente_id: string | null };
 type Pago        = { id: string; tipo: string; monto: number; moneda: string | null; concepto: string | null; fecha: string | null; estado: string | null };
 type Cobranza    = { id: string; concepto: string; monto: number; moneda: string; fecha_emision: string | null; fecha_vencimiento: string | null; estado: string; notas: string | null };
 
@@ -1098,57 +1102,16 @@ export function Cliente360View() {
 
                 {/* ── FAMILIA & REFERIDOS ── */}
                 <TabsContent value="familia" className="m-0 p-5 space-y-6">
-
-                  {/* Familia */}
-                  <div>
-                    <SectionTitle icon={Home}>Grupo familiar</SectionTitle>
-                    {familiares.length === 0 ? (
-                      <EmptySection icon={Home} label="No hay familiares registrados" />
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2">
-                        {familiares.map(f => (
-                          <div key={f.id} className="flex items-center gap-3 bg-muted/30 rounded-xl p-3">
-                            <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">
-                              {f.nombre.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold truncate">{f.nombre}</p>
-                              <p className="text-[10px] text-muted-foreground capitalize">{f.relacion}</p>
-                              {f.fecha_nacimiento && (
-                                <p className="text-[10px] text-muted-foreground">{fmtDate(f.fecha_nacimiento)}</p>
-                              )}
-                              {f.documento_numero && (
-                                <p className="text-[10px] text-muted-foreground">CI: {f.documento_numero}</p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <Separator />
-
-                  {/* Referidos */}
-                  <div>
-                    <SectionTitle icon={Users}>Red de referidos</SectionTitle>
-                    {referidos.length === 0 ? (
-                      <EmptySection icon={Users} label="Sin referidos registrados" />
-                    ) : (
-                      <div className="space-y-2">
-                        {referidos.map(r => (
-                          <div key={r.id} className="flex items-center gap-2.5 bg-muted/30 rounded-lg px-3 py-2">
-                            <Badge variant="outline" className={`text-[10px] flex-shrink-0 ${r.tipo === "saliente" ? "bg-blue-500/10 text-blue-600 border-blue-200" : "bg-violet-500/10 text-violet-600 border-violet-200"}`}>
-                              {r.tipo === "saliente" ? "Referido" : "Vino de"}
-                            </Badge>
-                            <p className="text-xs font-medium flex-1">{r.referido_nombre ?? "Cliente registrado"}</p>
-                            {r.observaciones && <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">{r.observaciones}</p>}
-                            {r.fecha && <p className="text-[10px] text-muted-foreground flex-shrink-0">{fmtDate(r.fecha, { month: "short", year: "numeric" })}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <FamiliaReferidosTab
+                    clienteId={selectedId!}
+                    familiares={familiares}
+                    referidos={referidos}
+                    fmtDate={fmtDate}
+                    onRefresh={() => {
+                      queryClient.invalidateQueries({ queryKey: ["cliente_familiar", selectedId] });
+                      queryClient.invalidateQueries({ queryKey: ["cliente_referidos", selectedId] });
+                    }}
+                  />
                 </TabsContent>
 
                 {/* ── VIAJES ── */}
@@ -1612,4 +1575,358 @@ export function Cliente360View() {
       )}
     </div>
   );
+}
+
+// ── Familia & Referidos editable tab ─────────────────────────────────────────
+type FamiliaReferidosTabProps = {
+  clienteId: string;
+  familiares: Familiar[];
+  referidos: Referido[];
+  fmtDate: (d: string, opts?: any) => string;
+  onRefresh: () => void;
+};
+
+type ClienteOption = { id: string; nombre_completo: string };
+
+function useClienteSearch(q: string) {
+  return useQuery({
+    queryKey: ["clientes-search-360", q],
+    queryFn: async () => {
+      if (q.trim().length < 2) return [];
+      const { data } = await (supabase as any)
+        .from("clientes").select("id, nombre_completo")
+        .ilike("nombre_completo", `%${q}%`).order("nombre_completo").limit(10);
+      return (data || []) as ClienteOption[];
+    },
+    enabled: q.trim().length >= 2,
+  });
+}
+
+function ClientePicker({ value, onChange, placeholder }: {
+  value: ClienteOption | null;
+  onChange: (c: ClienteOption | null) => void;
+  placeholder?: string;
+}) {
+  const [q, setQ] = useState(value?.nombre_completo || "");
+  const [open, setOpen] = useState(false);
+  const { data: results = [] } = useClienteSearch(q);
+  useMemo(() => { if (value) setQ(value.nombre_completo); else setQ(""); }, [value?.id]);
+  return (
+    <div className="relative">
+      <Input value={q} onChange={e => { setQ(e.target.value); onChange(null); setOpen(true); }}
+        onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={placeholder || "Buscar cliente..."} className="h-8 text-sm" />
+      {value && <button onClick={() => { onChange(null); setQ(""); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}
+      {open && results.length > 0 && (
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-lg shadow-md max-h-40 overflow-y-auto">
+          {results.map(c => (
+            <button key={c.id} onMouseDown={e => { e.preventDefault(); onChange(c); setQ(c.nombre_completo); setOpen(false); }}
+              className="w-full px-3 py-2 text-sm text-left hover:bg-accent transition-colors">{c.nombre_completo}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RELACIONES = ["conyuge", "hijo", "hija", "padre", "madre", "hermano", "hermana", "abuelo", "abuela", "otro"];
+
+function FamiliaReferidosTab({ clienteId, familiares, referidos, fmtDate, onRefresh }: FamiliaReferidosTabProps) {
+  const [showFamiliarDialog, setShowFamiliarDialog] = useState(false);
+  const [showReferidoDialog, setShowReferidoDialog] = useState(false);
+  const [editFamiliar, setEditFamiliar] = useState<Familiar | null>(null);
+  const [editReferido, setEditReferido] = useState<Referido | null>(null);
+
+  const deleteFamiliar = async (id: string) => {
+    await (supabase as any).from("cliente_familiar").delete().eq("id", id);
+    onRefresh(); toast.success("Familiar eliminado");
+  };
+  const deleteReferido = async (id: string) => {
+    await (supabase as any).from("cliente_referidos").delete().eq("id", id);
+    onRefresh(); toast.success("Referido eliminado");
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* ── Grupo familiar ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Home className="w-4 h-4 text-muted-foreground" /> Grupo familiar
+          </div>
+          <button onClick={() => { setEditFamiliar(null); setShowFamiliarDialog(true); }}
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Agregar
+          </button>
+        </div>
+        {familiares.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-4 text-center">No hay familiares registrados</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {familiares.map(f => (
+              <div key={f.id} className="group flex items-center gap-3 bg-muted/30 rounded-xl p-3 relative">
+                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">
+                  {f.nombre.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate">{f.nombre}</p>
+                  <p className="text-[10px] text-muted-foreground capitalize">{f.relacion}</p>
+                  {f.fecha_nacimiento && <p className="text-[10px] text-muted-foreground">{fmtDate(f.fecha_nacimiento)}</p>}
+                  {f.documento_numero && <p className="text-[10px] text-muted-foreground">CI: {f.documento_numero}</p>}
+                </div>
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => { setEditFamiliar(f); setShowFamiliarDialog(true); }}
+                    className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => deleteFamiliar(f.id)}
+                    className="p-1 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600 transition-colors">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
+      {/* ── Red de referidos ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Users className="w-4 h-4 text-muted-foreground" /> Red de referidos
+          </div>
+          <button onClick={() => { setEditReferido(null); setShowReferidoDialog(true); }}
+            className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors">
+            <Plus className="w-3.5 h-3.5" /> Agregar
+          </button>
+        </div>
+        {referidos.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-4 text-center">Sin referidos registrados</p>
+        ) : (
+          <div className="space-y-2">
+            {referidos.map(r => (
+              <div key={r.id} className="group flex items-center gap-2.5 bg-muted/30 rounded-lg px-3 py-2">
+                <Badge variant="outline" className={`text-[10px] flex-shrink-0 ${r.tipo === "saliente" ? "bg-blue-500/10 text-blue-600 border-blue-200" : "bg-violet-500/10 text-violet-600 border-violet-200"}`}>
+                  {r.tipo === "saliente" ? "Referido" : "Vino de"}
+                </Badge>
+                <p className="text-xs font-medium flex-1">{r.referido_nombre ?? "Cliente registrado"}</p>
+                {r.observaciones && <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">{r.observaciones}</p>}
+                {r.fecha && <p className="text-[10px] text-muted-foreground flex-shrink-0">{fmtDate(r.fecha, { month: "short", year: "numeric" })}</p>}
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+                  <button onClick={() => { setEditReferido(r); setShowReferidoDialog(true); }}
+                    className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button onClick={() => deleteReferido(r.id)}
+                    className="p-1 rounded hover:bg-red-100 text-muted-foreground hover:text-red-600 transition-colors">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Dialogs ── */}
+      <FamiliarDialog
+        open={showFamiliarDialog} onOpenChange={setShowFamiliarDialog}
+        clienteId={clienteId} familiar={editFamiliar} onSaved={onRefresh}
+      />
+      <ReferidoDialog
+        open={showReferidoDialog} onOpenChange={setShowReferidoDialog}
+        clienteId={clienteId} referido={editReferido} onSaved={onRefresh}
+      />
+    </div>
+  );
+}
+
+function FamiliarDialog({ open, onOpenChange, clienteId, familiar, onSaved }: {
+  open: boolean; onOpenChange: (o: boolean) => void;
+  clienteId: string; familiar: Familiar | null; onSaved: () => void;
+}) {
+  const [nombre,    setNombre]    = useState(familiar?.nombre || "");
+  const [relacion,  setRelacion]  = useState(familiar?.relacion || "");
+  const [fechaNac,  setFechaNac]  = useState(familiar?.fecha_nacimiento?.slice(0, 10) || "");
+  const [docNum,    setDocNum]    = useState(familiar?.documento_numero || "");
+  const [clienteVinculo, setClienteVinculo] = useState<ClienteOption | null>(null);
+  const [loading,   setLoading]   = useState(false);
+
+  useMemo(() => {
+    if (!open) return;
+    setNombre(familiar?.nombre || "");
+    setRelacion(familiar?.relacion || "");
+    setFechaNac(familiar?.fecha_nacimiento?.slice(0, 10) || "");
+    setDocNum(familiar?.documento_numero || "");
+    setClienteVinculo(null);
+  }, [open, familiar?.id]);
+
+  const handleSave = async () => {
+    if (!nombre.trim() || !relacion) { toast.error("Nombre y relación son requeridos"); return; }
+    setLoading(true);
+    try {
+      const payload: any = {
+        cliente_id:          clienteId,
+        nombre:              nombre.trim(),
+        relacion,
+        fecha_nacimiento:    fechaNac || null,
+        documento_numero:    docNum.trim() || null,
+        familiar_cliente_id: clienteVinculo?.id || familiar?.familiar_cliente_id || null,
+      };
+      if (familiar) {
+        await (supabase as any).from("cliente_familiar").update(payload).eq("id", familiar.id);
+        toast.success("Familiar actualizado");
+      } else {
+        await (supabase as any).from("cliente_familiar").insert(payload);
+        toast.success("Familiar agregado");
+      }
+      onSaved(); onOpenChange(false);
+    } catch { toast.error("Error al guardar"); } finally { setLoading(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base flex items-center gap-2">
+            <Home className="w-4 h-4 text-primary" /> {familiar ? "Editar familiar" : "Agregar familiar"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Nombre completo *</label>
+            <Input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre del familiar" className="h-8 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Relación *</label>
+            <Select value={relacion} onValueChange={setRelacion}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+              <SelectContent>
+                {RELACIONES.map(r => <SelectItem key={r} value={r} className="capitalize">{r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Fecha de nac.</label>
+              <Input type="date" value={fechaNac} onChange={e => setFechaNac(e.target.value)} className="h-8 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">CI / Documento</label>
+              <Input value={docNum} onChange={e => setDocNum(e.target.value)} placeholder="Nro. documento" className="h-8 text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Vincular a cliente existente</label>
+            <ClientePicker value={clienteVinculo} onChange={setClienteVinculo} placeholder="Buscar en clientes..." />
+            {familiar?.familiar_cliente_id && !clienteVinculo && (
+              <p className="text-[10px] text-emerald-600 mt-0.5">✓ Ya vinculado a un cliente</p>
+            )}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={loading || !nombre.trim() || !relacion}>
+            {loading ? "Guardando..." : familiar ? "Guardar cambios" : "Agregar"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReferidoDialog({ open, onOpenChange, clienteId, referido, onSaved }: {
+  open: boolean; onOpenChange: (o: boolean) => void;
+  clienteId: string; referido: Referido | null; onSaved: () => void;
+}) {
+  const [tipo,         setTipo]         = useState(referido?.tipo || "saliente");
+  const [observaciones, setObservaciones] = useState(referido?.observaciones || "");
+  const [fecha,        setFecha]        = useState(referido?.fecha?.slice(0, 10) || "");
+  const [clienteVinculo, setClienteVinculo] = useState<ClienteOption | null>(null);
+  const [nombreLibre,  setNombreLibre]  = useState(referido?.referido_nombre || "");
+  const [loading,      setLoading]      = useState(false);
+
+  useMemo(() => {
+    if (!open) return;
+    setTipo(referido?.tipo || "saliente");
+    setObservaciones(referido?.observaciones || "");
+    setFecha(referido?.fecha?.slice(0, 10) || "");
+    setClienteVinculo(null);
+    setNombreLibre(referido?.referido_nombre || "");
+  }, [open, referido?.id]);
+
+  const handleSave = async () => {
+    if (!clienteVinculo && !nombreLibre.trim()) { toast.error("Indicá el nombre o seleccioná un cliente"); return; }
+    setLoading(true);
+    try {
+      const payload: any = {
+        cliente_id:      clienteId,
+        tipo,
+        observaciones:   observaciones.trim() || null,
+        fecha:           fecha || null,
+        referido_id:     clienteVinculo?.id || referido?.referido_id || null,
+        referido_nombre: clienteVinculo ? clienteVinculo.nombre_completo : nombreLibre.trim(),
+      };
+      if (referido) {
+        await (supabase as any).from("cliente_referidos").update(payload).eq("id", referido.id);
+        toast.success("Referido actualizado");
+      } else {
+        await (supabase as any).from("cliente_referidos").insert(payload);
+        toast.success("Referido agregado");
+      }
+      onSaved(); onOpenChange(false);
+    } catch { toast.error("Error al guardar"); } finally { setLoading(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="text-base flex items-center gap-2">
+            <Users className="w-4 h-4 text-primary" /> {referido ? "Editar referido" : "Agregar referido"}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 pt-1">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
+            <Select value={tipo} onValueChange={setTipo}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="saliente">Referido por este cliente</SelectItem>
+                <SelectItem value="entrante">Este cliente vino referido de</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Buscar en clientes registrados</label>
+            <ClientePicker value={clienteVinculo} onChange={c => { setClienteVinculo(c); if (c) setNombreLibre(c.nombre_completo); }} placeholder="Buscar cliente..." />
+          </div>
+          {!clienteVinculo && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">O escribir nombre manualmente</label>
+              <Input value={nombreLibre} onChange={e => setNombreLibre(e.target.value)} placeholder="Nombre del referido" className="h-8 text-sm" />
+            </div>
+          )}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Observaciones</label>
+            <Input value={observaciones} onChange={e => setObservaciones(e.target.value)} placeholder="Ej: Colega empresario, viajó a Miami" className="h-8 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Fecha</label>
+            <Input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="h-8 text-sm" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button size="sm" onClick={handleSave} disabled={loading || (!clienteVinculo && !nombreLibre.trim())}>
+            {loading ? "Guardando..." : referido ? "Guardar cambios" : "Agregar"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 }
