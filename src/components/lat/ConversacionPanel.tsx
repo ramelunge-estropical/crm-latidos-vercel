@@ -14,6 +14,7 @@ import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 import { WppTemplatePicker, WppTemplate } from '@/components/lat/WppTemplatePicker';
 import { AiAsesorPopover } from '@/components/lat/AiAsesorPopover';
 import { DerivarChatDialog } from '@/components/lat/DerivarChatDialog';
+import { AttachmentViewer, openAttachment } from '@/components/lat/AttachmentViewer';
 import { GitBranch, Hand, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
