@@ -1929,4 +1929,3 @@ function ReferidoDialog({ open, onOpenChange, clienteId, referido, onSaved }: {
     </Dialog>
   );
 }
-}
