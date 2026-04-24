@@ -155,9 +155,10 @@ interface CreateClienteDialogProps {
   initialCanal?: string;
   clienteId?: string;
   clienteData?: Record<string, any>;
+  onCreated?: (clienteId: string, nombre: string, telefono?: string | null, email?: string | null) => void;
 }
 
-export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "", clienteId, clienteData }: CreateClienteDialogProps) {
+export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "", clienteId, clienteData, onCreated }: CreateClienteDialogProps) {
   const isEditMode = !!clienteId;
   const queryClient = useQueryClient();
 
@@ -311,15 +312,23 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
       };
 
       let error: any;
+      let inserted: any = null;
       if (isEditMode) {
         ({ error } = await (supabase as any).from("clientes").update(payload).eq("id", clienteId));
       } else {
-        ({ error } = await (supabase as any).from("clientes").insert(payload));
+        ({ data: inserted, error } = await (supabase as any)
+          .from("clientes")
+          .insert(payload)
+          .select("id, nombre_completo, telefono, email")
+          .single());
       }
       if (error) throw error;
 
       toast.success(isEditMode ? "Cliente actualizado correctamente" : "Cliente creado correctamente");
       queryClient.invalidateQueries({ queryKey: ["clientes"] });
+      if (inserted && onCreated) {
+        onCreated(inserted.id, inserted.nombre_completo, inserted.telefono, inserted.email);
+      }
       setForm({ ...EMPTY_FORM });
       setTranscript(null);
       onOpenChange(false);

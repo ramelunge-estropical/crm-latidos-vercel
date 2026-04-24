@@ -18,13 +18,19 @@ export type Database = {
         Row: {
           activity_type: Database["public"]["Enums"]["activity_type"]
           assigned_to: string | null
+          assigned_to_id: string | null
+          cliente_id: string | null
+          cliente_nombre: string | null
           completed: boolean
           completed_at: string | null
           created_at: string
+          created_by: string | null
           description: string | null
           duration_minutes: number | null
-          gestion_id: string
+          gestion_id: string | null
+          google_event_id: string | null
           id: string
+          meet_link: string | null
           scheduled_at: string | null
           title: string
           updated_at: string
@@ -32,13 +38,19 @@ export type Database = {
         Insert: {
           activity_type?: Database["public"]["Enums"]["activity_type"]
           assigned_to?: string | null
+          assigned_to_id?: string | null
+          cliente_id?: string | null
+          cliente_nombre?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           duration_minutes?: number | null
-          gestion_id: string
+          gestion_id?: string | null
+          google_event_id?: string | null
           id?: string
+          meet_link?: string | null
           scheduled_at?: string | null
           title: string
           updated_at?: string
@@ -46,18 +58,45 @@ export type Database = {
         Update: {
           activity_type?: Database["public"]["Enums"]["activity_type"]
           assigned_to?: string | null
+          assigned_to_id?: string | null
+          cliente_id?: string | null
+          cliente_nombre?: string | null
           completed?: boolean
           completed_at?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           duration_minutes?: number | null
-          gestion_id?: string
+          gestion_id?: string | null
+          google_event_id?: string | null
           id?: string
+          meet_link?: string | null
           scheduled_at?: string | null
           title?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "activities_assigned_to_id_fkey"
+            columns: ["assigned_to_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activities_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activities_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "activities_gestion_id_fkey"
             columns: ["gestion_id"]
@@ -91,6 +130,121 @@ export type Database = {
         }
         Relationships: []
       }
+      chat_derivaciones: {
+        Row: {
+          capacidad_destino: number | null
+          chats_abiertos_destino: number | null
+          conversacion_id: string
+          created_at: string
+          derivado_por_id: string | null
+          derivado_por_nombre: string | null
+          destino_area_id: string | null
+          destino_area_nombre: string | null
+          destino_tipo: string
+          destino_usuario_id: string | null
+          destino_usuario_nombre: string | null
+          efectivo_area_id: string | null
+          efectivo_area_nombre: string | null
+          efectivo_tipo: string
+          efectivo_usuario_id: string | null
+          efectivo_usuario_nombre: string | null
+          hubo_fallback: boolean
+          id: string
+          motivo_fallback: string | null
+          nota: string | null
+          presencia_destino: string | null
+        }
+        Insert: {
+          capacidad_destino?: number | null
+          chats_abiertos_destino?: number | null
+          conversacion_id: string
+          created_at?: string
+          derivado_por_id?: string | null
+          derivado_por_nombre?: string | null
+          destino_area_id?: string | null
+          destino_area_nombre?: string | null
+          destino_tipo: string
+          destino_usuario_id?: string | null
+          destino_usuario_nombre?: string | null
+          efectivo_area_id?: string | null
+          efectivo_area_nombre?: string | null
+          efectivo_tipo: string
+          efectivo_usuario_id?: string | null
+          efectivo_usuario_nombre?: string | null
+          hubo_fallback?: boolean
+          id?: string
+          motivo_fallback?: string | null
+          nota?: string | null
+          presencia_destino?: string | null
+        }
+        Update: {
+          capacidad_destino?: number | null
+          chats_abiertos_destino?: number | null
+          conversacion_id?: string
+          created_at?: string
+          derivado_por_id?: string | null
+          derivado_por_nombre?: string | null
+          destino_area_id?: string | null
+          destino_area_nombre?: string | null
+          destino_tipo?: string
+          destino_usuario_id?: string | null
+          destino_usuario_nombre?: string | null
+          efectivo_area_id?: string | null
+          efectivo_area_nombre?: string | null
+          efectivo_tipo?: string
+          efectivo_usuario_id?: string | null
+          efectivo_usuario_nombre?: string | null
+          hubo_fallback?: boolean
+          id?: string
+          motivo_fallback?: string | null
+          nota?: string | null
+          presencia_destino?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_derivaciones_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "lat_conversaciones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_derivado_por_id_fkey"
+            columns: ["derivado_por_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_destino_area_id_fkey"
+            columns: ["destino_area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_destino_usuario_id_fkey"
+            columns: ["destino_usuario_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_efectivo_area_id_fkey"
+            columns: ["efectivo_area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_derivaciones_efectivo_usuario_id_fkey"
+            columns: ["efectivo_usuario_id"]
+            isOneToOne: false
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cliente_bancos: {
         Row: {
           banco: string
@@ -119,6 +273,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "cliente_bancos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cliente_cobranzas: {
+        Row: {
+          cliente_id: string
+          concepto: string
+          created_at: string | null
+          estado: string
+          fecha_emision: string | null
+          fecha_vencimiento: string | null
+          id: string
+          moneda: string
+          monto: number
+          notas: string | null
+        }
+        Insert: {
+          cliente_id: string
+          concepto: string
+          created_at?: string | null
+          estado?: string
+          fecha_emision?: string | null
+          fecha_vencimiento?: string | null
+          id?: string
+          moneda?: string
+          monto?: number
+          notas?: string | null
+        }
+        Update: {
+          cliente_id?: string
+          concepto?: string
+          created_at?: string | null
+          estado?: string
+          fecha_emision?: string | null
+          fecha_vencimiento?: string | null
+          id?: string
+          moneda?: string
+          monto?: number
+          notas?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cliente_cobranzas_cliente_id_fkey"
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
@@ -445,11 +646,13 @@ export type Database = {
       clientes: {
         Row: {
           asesor_nombre: string | null
+          canal_contacto: string | null
           ciudad: string | null
           club_viajes: boolean
           contacto_cargo: string | null
           contacto_nombre: string | null
           created_at: string
+          dias_credito: number | null
           documento_numero: string | null
           documento_tipo: string | null
           email: string | null
@@ -457,8 +660,10 @@ export type Database = {
           espacio_a_bordo: boolean
           estado: string
           estado_civil: string | null
+          facebook: string | null
           fecha_nacimiento: string | null
           id: string
+          instagram: string | null
           nacionalidad: string | null
           nit: string | null
           nombre_completo: string
@@ -471,16 +676,19 @@ export type Database = {
           score_valor: number
           telefono: string | null
           telefono_secundario: string | null
+          tiktok: string | null
           tipo_cliente: string
           updated_at: string
         }
         Insert: {
           asesor_nombre?: string | null
+          canal_contacto?: string | null
           ciudad?: string | null
           club_viajes?: boolean
           contacto_cargo?: string | null
           contacto_nombre?: string | null
           created_at?: string
+          dias_credito?: number | null
           documento_numero?: string | null
           documento_tipo?: string | null
           email?: string | null
@@ -488,8 +696,10 @@ export type Database = {
           espacio_a_bordo?: boolean
           estado?: string
           estado_civil?: string | null
+          facebook?: string | null
           fecha_nacimiento?: string | null
           id?: string
+          instagram?: string | null
           nacionalidad?: string | null
           nit?: string | null
           nombre_completo: string
@@ -502,16 +712,19 @@ export type Database = {
           score_valor?: number
           telefono?: string | null
           telefono_secundario?: string | null
+          tiktok?: string | null
           tipo_cliente?: string
           updated_at?: string
         }
         Update: {
           asesor_nombre?: string | null
+          canal_contacto?: string | null
           ciudad?: string | null
           club_viajes?: boolean
           contacto_cargo?: string | null
           contacto_nombre?: string | null
           created_at?: string
+          dias_credito?: number | null
           documento_numero?: string | null
           documento_tipo?: string | null
           email?: string | null
@@ -519,8 +732,10 @@ export type Database = {
           espacio_a_bordo?: boolean
           estado?: string
           estado_civil?: string | null
+          facebook?: string | null
           fecha_nacimiento?: string | null
           id?: string
+          instagram?: string | null
           nacionalidad?: string | null
           nit?: string | null
           nombre_completo?: string
@@ -533,10 +748,90 @@ export type Database = {
           score_valor?: number
           telefono?: string | null
           telefono_secundario?: string | null
+          tiktok?: string | null
           tipo_cliente?: string
           updated_at?: string
         }
         Relationships: []
+      }
+      colaborador_google_tokens: {
+        Row: {
+          access_token: string | null
+          colaborador_id: string
+          created_at: string | null
+          google_email: string | null
+          id: string
+          refresh_token: string
+          token_expiry: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          access_token?: string | null
+          colaborador_id: string
+          created_at?: string | null
+          google_email?: string | null
+          id?: string
+          refresh_token: string
+          token_expiry?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          access_token?: string | null
+          colaborador_id?: string
+          created_at?: string | null
+          google_email?: string | null
+          id?: string
+          refresh_token?: string
+          token_expiry?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colaborador_google_tokens_colaborador_id_fkey"
+            columns: ["colaborador_id"]
+            isOneToOne: true
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      colaborador_presencia: {
+        Row: {
+          capacidad_maxima: number
+          chats_abiertos: number
+          colaborador_id: string
+          estado: string
+          motivo_pausa: string | null
+          ultima_actividad: string
+          updated_at: string
+        }
+        Insert: {
+          capacidad_maxima?: number
+          chats_abiertos?: number
+          colaborador_id: string
+          estado?: string
+          motivo_pausa?: string | null
+          ultima_actividad?: string
+          updated_at?: string
+        }
+        Update: {
+          capacidad_maxima?: number
+          chats_abiertos?: number
+          colaborador_id?: string
+          estado?: string
+          motivo_pausa?: string | null
+          ultima_actividad?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "colaborador_presencia_colaborador_id_fkey"
+            columns: ["colaborador_id"]
+            isOneToOne: true
+            referencedRelation: "colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       colaboradores: {
         Row: {
@@ -939,7 +1234,11 @@ export type Database = {
           canal: string
           cliente_id: string | null
           cliente_nombre: string | null
+          cola_area_id: string | null
+          cola_area_nombre: string | null
           created_at: string | null
+          en_cola: boolean
+          en_foco: boolean
           estado: string
           gestion_id: string | null
           id: string
@@ -960,7 +1259,11 @@ export type Database = {
           canal?: string
           cliente_id?: string | null
           cliente_nombre?: string | null
+          cola_area_id?: string | null
+          cola_area_nombre?: string | null
           created_at?: string | null
+          en_cola?: boolean
+          en_foco?: boolean
           estado?: string
           gestion_id?: string | null
           id?: string
@@ -981,7 +1284,11 @@ export type Database = {
           canal?: string
           cliente_id?: string | null
           cliente_nombre?: string | null
+          cola_area_id?: string | null
+          cola_area_nombre?: string | null
           created_at?: string | null
+          en_cola?: boolean
+          en_foco?: boolean
           estado?: string
           gestion_id?: string | null
           id?: string
@@ -1003,6 +1310,13 @@ export type Database = {
             columns: ["cliente_id"]
             isOneToOne: false
             referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lat_conversaciones_cola_area_id_fkey"
+            columns: ["cola_area_id"]
+            isOneToOne: false
+            referencedRelation: "areas_empresa"
             referencedColumns: ["id"]
           },
           {

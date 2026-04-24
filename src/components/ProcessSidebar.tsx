@@ -12,7 +12,7 @@ interface Process {
   area: string | null;
 }
 
-export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos" | "lat-bandeja" | "lat-dashboard" | "lat-funnel";
+export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos" | "lat-bandeja" | "lat-dashboard";
 
 interface ProcessSidebarProps {
   processes: Process[];
@@ -40,7 +40,6 @@ const specializedItems: { view: SidebarView; label: string; icon: typeof Calenda
 const latItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
   { view: "lat-bandeja",   label: "Bandeja",   icon: MessageSquare },
   { view: "lat-dashboard", label: "Dashboard", icon: TrendingUp },
-  { view: "lat-funnel",    label: "Funnel",    icon: GitBranch },
 ];
 
 const utilItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [

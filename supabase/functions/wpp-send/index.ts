@@ -22,17 +22,52 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+async function persistOutboundAttempt(params: {
+  conversacion_id: string;
+  contenido: string;
+  autor_nombre?: string | null;
+  estado: "enviado" | "fallido" | "pendiente";
+  wpp_message_id?: string | null;
+}) {
+  const { conversacion_id, contenido, autor_nombre, estado, wpp_message_id } = params;
+  const { error } = await supabase.from("lat_mensajes").insert({
+    conversacion_id,
+    tipo: "outbound",
+    contenido,
+    estado,
+    autor_nombre: autor_nombre ?? null,
+    wpp_message_id: wpp_message_id ?? null,
+  });
+  if (error) console.error("Error persistiendo mensaje outbound:", error);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS });
   }
 
   try {
-    const { conversacion_id, contenido, autor_nombre } = await req.json();
+    const body = await req.json();
+    const {
+      conversacion_id,
+      contenido,
+      autor_nombre,
+      // Soporte para plantilla aprobada Gupshup:
+      template_id,             // string (UUID Gupshup) — preferido
+      template_name,           // string (elementName) — fallback
+      template_language,       // string (ej: "es")
+      template_variables,      // string[] en orden {{1}} {{2}} ...
+      template_body_preview,   // string para guardar como contenido legible
+    } = body;
 
-    if (!conversacion_id || !contenido) {
+    const isTemplate = !!(template_id || template_name);
+    const messageContent = isTemplate
+      ? (template_body_preview ?? contenido ?? template_name ?? "[plantilla]")
+      : contenido;
+
+    if (!conversacion_id || (!isTemplate && !contenido)) {
       return new Response(
-        JSON.stringify({ error: "conversacion_id y contenido son requeridos" }),
+        JSON.stringify({ error: "conversacion_id y contenido (o template_name) son requeridos" }),
         { status: 400, headers: { ...CORS, "Content-Type": "application/json" } },
       );
     }
@@ -71,24 +106,53 @@ Deno.serve(async (req: Request) => {
     const source  = Deno.env.get("GUPSHUP_NUMBER")   ?? "";
     const appName = Deno.env.get("GUPSHUP_APP_NAME") ?? "";
 
-    console.log("wpp-send: enviando a", destination, "desde", source, "app", appName);
+    console.log("wpp-send: enviando a", destination, "desde", source, "app", appName, "template?", isTemplate);
+
     console.log("wpp-send: apiKey (primeros 8 chars):", apiKey.slice(0, 8));
 
-    // ── Llamada a Gupshup ────────────────────────────────────────────────────
-    const formBody = new URLSearchParams({
-      channel:     "whatsapp",
-      source:      source,
-      destination: destination,
-      message:     JSON.stringify({ type: "text", text: contenido }),
-      "src.name":  appName,
-    });
+    // ── Llamada a Gupshup (texto libre OR plantilla) ──────────────────────────
+    let formBody: URLSearchParams;
+    let gupshupUrl: string;
+
+    if (isTemplate) {
+      // Endpoint de plantilla: /wa/api/v1/template/msg
+      // Gupshup REQUIERE el UUID de la plantilla en `id`. El `elementName` NO funciona.
+      const tplParams = (Array.isArray(template_variables) ? template_variables : []).map(v => String(v ?? ""));
+      const tplPayload: Record<string, unknown> = {
+        id:     template_id ?? template_name,   // preferimos UUID; fallback a name
+        params: tplParams,
+      };
+      formBody = new URLSearchParams({
+        channel:     "whatsapp",
+        source:      source,
+        destination: destination,
+        "src.name":  appName,
+        template:    JSON.stringify(tplPayload),
+      });
+      // También incluimos `message` con el preview por compatibilidad con cuentas que
+      // requieren el cuerpo renderizado.
+      if (template_body_preview) {
+        formBody.append("message", JSON.stringify({ type: "text", text: template_body_preview }));
+      }
+      console.log("wpp-send template payload:", { id: tplPayload.id, params: tplParams });
+      gupshupUrl = "https://api.gupshup.io/wa/api/v1/template/msg";
+    } else {
+      formBody = new URLSearchParams({
+        channel:     "whatsapp",
+        source:      source,
+        destination: destination,
+        message:     JSON.stringify({ type: "text", text: contenido }),
+        "src.name":  appName,
+      });
+      gupshupUrl = "https://api.gupshup.io/wa/api/v1/msg";
+    }
 
     const controller = new AbortController();
-    const timeoutId  = setTimeout(() => controller.abort(), 8000); // 8s timeout
+    const timeoutId  = setTimeout(() => controller.abort(), 8000);
 
     let gupshupRes: Response;
     try {
-      gupshupRes = await fetch("https://api.gupshup.io/wa/api/v1/msg", {
+      gupshupRes = await fetch(gupshupUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -103,6 +167,12 @@ Deno.serve(async (req: Request) => {
         ? "Timeout: Gupshup no respondió en 8 segundos"
         : `Error de red al llamar Gupshup: ${fetchErr?.message}`;
       console.error(msg);
+      await persistOutboundAttempt({
+        conversacion_id,
+        contenido: messageContent,
+        autor_nombre,
+        estado: "fallido",
+      });
       return new Response(
         JSON.stringify({ error: msg }),
         { status: 502, headers: { ...CORS, "Content-Type": "application/json" } },
@@ -114,41 +184,56 @@ Deno.serve(async (req: Request) => {
     console.log("Gupshup status:", gupshupRes.status);
     console.log("Gupshup response:", gupshupText);
 
-    if (!gupshupRes.ok) {
+    let gupshupData: any = {};
+    try { gupshupData = JSON.parse(gupshupText); } catch { /* no JSON */ }
+
+    // Gupshup devuelve 200 con `status:"submitted"` cuando acepta el envío.
+    // Cualquier otra cosa = fallo real (no marcamos como enviado).
+    const gupshupOk =
+      gupshupRes.ok &&
+      (gupshupData?.status === "submitted" || !!gupshupData?.messageId);
+
+    if (!gupshupOk) {
+      const detailMsg =
+        gupshupData?.message ||
+        gupshupData?.error   ||
+        gupshupText           ||
+        `HTTP ${gupshupRes.status}`;
+      await persistOutboundAttempt({
+        conversacion_id,
+        contenido: messageContent,
+        autor_nombre,
+        estado: "fallido",
+        wpp_message_id: gupshupData?.messageId ?? gupshupData?.id ?? null,
+      });
       return new Response(
         JSON.stringify({
-          error: `Gupshup error ${gupshupRes.status}`,
-          detail: gupshupText,
+          error:  `Gupshup rechazó el envío: ${detailMsg}`,
+          detail: gupshupData ?? gupshupText,
+          status: gupshupRes.status,
         }),
         { status: 502, headers: { ...CORS, "Content-Type": "application/json" } },
       );
     }
 
-    // ── Guardar mensaje en BD ─────────────────────────────────────────────────
-    let gupshupData: any = {};
-    try { gupshupData = JSON.parse(gupshupText); } catch { /* no JSON */ }
-
-    const { error: insertErr } = await supabase.from("lat_mensajes").insert({
+    await persistOutboundAttempt({
       conversacion_id,
-      tipo:           "outbound",
-      contenido,
-      estado:         "enviado",
-      autor_nombre:   autor_nombre ?? null,
-      wpp_message_id: gupshupData?.messageId ?? null,
+      contenido: messageContent,
+      autor_nombre,
+      estado: "enviado",
+      wpp_message_id: gupshupData?.messageId ?? gupshupData?.id ?? null,
     });
 
-    if (insertErr) {
-      console.error("Error insertando mensaje:", insertErr);
-    }
-
-    // Actualizar última interacción de la conversación
+    // Actualizar última interacción y reabrir si estaba liberada/cerrada
     await supabase
       .from("lat_conversaciones")
       .update({
-        ultimo_mensaje:     contenido.slice(0, 100),
+        ultimo_mensaje:     (messageContent ?? "").slice(0, 100),
         ultima_interaccion: new Date().toISOString(),
+        en_foco:            true,
       })
       .eq("id", conversacion_id);
+
 
     return new Response(
       JSON.stringify({ ok: true, messageId: gupshupData?.messageId }),
