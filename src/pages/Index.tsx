@@ -93,6 +93,17 @@ const Index = () => {
     init();
   }, []);
 
+  // Listener: navegación desde Dashboard → Bandeja con filtro
+  // MUST be before conditional returns to satisfy Rules of Hooks
+  useEffect(() => {
+    const handler = () => {
+      setActiveView("lat-bandeja");
+      setSelectedProcessId(null);
+    };
+    window.addEventListener("lat-go-bandeja", handler as EventListener);
+    return () => window.removeEventListener("lat-go-bandeja", handler as EventListener);
+  }, []);
+
   if (!authReady) return null;
   if (!isLoggedIn) return <Login />;
 
@@ -107,16 +118,6 @@ const Index = () => {
     setActiveView(view);
     if (view !== "process") setSelectedProcessId(null);
   };
-
-  // Listener: navegación desde Dashboard → Bandeja con filtro
-  useEffect(() => {
-    const handler = () => {
-      setActiveView("lat-bandeja");
-      setSelectedProcessId(null);
-    };
-    window.addEventListener("lat-go-bandeja", handler as EventListener);
-    return () => window.removeEventListener("lat-go-bandeja", handler as EventListener);
-  }, []);
 
   const currentLabel = activeView === "process" && selectedProcess
     ? selectedProcess.name
