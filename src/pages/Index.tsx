@@ -13,6 +13,7 @@ import { ConfiguracionesView } from "@/components/ConfiguracionesView";
 import { SpecializedView } from "@/components/SpecializedView";
 import { LatBandejaView } from "@/components/lat/LatBandejaView";
 import { LatDashboardView } from "@/components/lat/LatDashboardView";
+import { GranolaView } from "@/components/GranolaView";
 import { CreateProcessDialog } from "@/components/CreateProcessDialog";
 import { LayoutGrid, Menu } from "lucide-react";
 import logoHeart from "@/assets/logo-heart.png";
@@ -30,6 +31,7 @@ const VIEW_LABELS: Record<SidebarView, string> = {
   casos:            "Casos",
   "lat-bandeja":    "LAT · Bandeja",
   "lat-dashboard":  "LAT · Dashboard",
+  "granola":        "Reuniones IA",
 };
 
 const Index = () => {
@@ -136,6 +138,7 @@ const Index = () => {
       case "casos":           return <SpecializedView type="caso" />;
       case "lat-bandeja":     return <LatBandejaView />;
       case "lat-dashboard":   return <LatDashboardView />;
+      case "granola":         return <GranolaView />;
       case "process":
       default:
         if (selectedProcess) {
