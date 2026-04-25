@@ -5,6 +5,7 @@ import {
   Check, CheckCheck, Clock, XCircle, MessageSquare, Phone, Mail, Info,
   ClipboardList, Plus, ChevronRight, User, Building2, Loader2, Search, X,
   Unlink, FileText, Sparkles, Image as ImageIcon, Download, Play,
+  Activity, Zap, TrendingUp, ArrowRight, Bot,
 } from 'lucide-react';
 import { getCliente } from '@/data/latMockData';
 import { useLatMensajes, useSendMensaje, useSendAdjunto, LatConversacion, LatMensaje } from '@/hooks/useLatData';
@@ -139,7 +140,111 @@ const statusLabel: Record<string, { label: string; className: string }> = {
   done:   { label: 'Finalizado',  className: 'bg-green-500/15 text-green-700'   },
 };
 
-type ActiveTab = 'chat' | 'gestiones' | 'cliente';
+type ActiveTab = 'chat' | 'gestiones' | 'cliente' | 'trazabilidad';
+
+// ─── EVENTO_LABELS ────────────────────────────────────────────────────────────
+
+const EVENTO_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+  ingreso:               { label: 'Ingreso',              color: 'text-blue-500',    icon: ArrowRight },
+  asignacion_automatica: { label: 'Asig. automática',     color: 'text-purple-500',  icon: Bot },
+  asignacion_manual:     { label: 'Asig. manual',         color: 'text-indigo-500',  icon: User },
+  derivacion:            { label: 'Derivación',           color: 'text-amber-500',   icon: ArrowRight },
+  cambio_estado:         { label: 'Cambio estado',        color: 'text-cyan-500',    icon: Activity },
+  cambio_cola:           { label: 'Cambio de cola',       color: 'text-violet-500',  icon: Activity },
+  mensaje_entrante:      { label: 'Msg entrante',         color: 'text-green-500',   icon: MessageSquare },
+  mensaje_saliente:      { label: 'Msg saliente',         color: 'text-teal-500',    icon: Send },
+  nota_interna:          { label: 'Nota interna',         color: 'text-yellow-500',  icon: StickyNote },
+  ia_sugerencia:         { label: 'IA · Sugerencia',      color: 'text-fuchsia-500', icon: Zap },
+  ia_aplicada:           { label: 'IA · Aplicada',        color: 'text-fuchsia-600', icon: Sparkles },
+  cierre:                { label: 'Cierre',               color: 'text-red-500',     icon: XCircle },
+  reapertura:            { label: 'Reapertura',           color: 'text-emerald-500', icon: Activity },
+  bot_activado:          { label: 'Bot activado',         color: 'text-sky-500',     icon: Bot },
+  bot_desactivado:       { label: 'Bot desactivado',      color: 'text-slate-500',   icon: Bot },
+};
+
+function TrazabilidadTab({ conversacionId }: { conversacionId: string }) {
+  const { data: eventos = [], isLoading } = useQuery<any[]>({
+    queryKey: ['lat_trazabilidad', conversacionId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('lat_trazabilidad')
+        .select('*, colaboradores(nombre, color), cola_anterior:cola_anterior_id(nombre, color), cola_nueva:cola_nueva_id(nombre, color)')
+        .eq('conversacion_id', conversacionId)
+        .order('created_at', { ascending: true });
+      return data || [];
+    },
+    refetchInterval: 15000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (eventos.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center p-6">
+        <Activity className="w-8 h-8 text-muted-foreground/30" />
+        <p className="text-sm text-muted-foreground">Sin eventos registrados</p>
+        <p className="text-xs text-muted-foreground/60">Los eventos aparecerán aquí a medida que ocurran.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3">
+      <div className="relative">
+        <div className="absolute left-3.5 top-0 bottom-0 w-px bg-border" />
+        <div className="space-y-3">
+          {eventos.map((ev: any) => {
+            const cfg = EVENTO_CONFIG[ev.tipo_evento] ?? { label: ev.tipo_evento, color: 'text-muted-foreground', icon: Activity };
+            const Icon = cfg.icon;
+            const hora = ev.created_at ? format(new Date(ev.created_at), 'dd/MM HH:mm', { locale: es }) : '';
+            return (
+              <div key={ev.id} className="flex gap-3 items-start">
+                <div className={`w-7 h-7 rounded-full border-2 border-background bg-card flex items-center justify-center shrink-0 z-10 ${cfg.color}`}>
+                  <Icon className="w-3 h-3" />
+                </div>
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
+                    {ev.estado_anterior && ev.estado_nuevo && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {ev.estado_anterior} → {ev.estado_nuevo}
+                      </span>
+                    )}
+                    {ev.cola_anterior && ev.cola_nueva && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {ev.cola_anterior.nombre} → {ev.cola_nueva.nombre}
+                      </span>
+                    )}
+                  </div>
+                  {ev.descripcion && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{ev.descripcion}</p>
+                  )}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-muted-foreground/60">{hora}</span>
+                    {ev.colaboradores && (
+                      <span
+                        className="text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium"
+                        style={{ backgroundColor: ev.colaboradores.color || '#6366f1' }}
+                      >
+                        {ev.colaboradores.nombre}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface ConversacionPanelProps {
   conversacion: LatConversacion;
@@ -704,6 +809,13 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-warning" />
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('trazabilidad')}
+            title="Trazabilidad"
+            className={`p-1.5 rounded-md transition-colors ${activeTab === 'trazabilidad' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
+          >
+            <Activity className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -728,6 +840,30 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       {/* ── Tab: CHAT ── */}
       {activeTab === 'chat' && (
         <>
+          {/* IA Compact Block */}
+          {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (
+            <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex items-center gap-2 flex-wrap">
+              <Zap className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
+              {conversacion.intencion_detectada && (
+                <span className="text-[10px] bg-fuchsia-500/10 text-fuchsia-600 px-2 py-0.5 rounded-full font-medium">
+                  {conversacion.intencion_detectada}
+                </span>
+              )}
+              {conversacion.urgencia_detectada && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  conversacion.urgencia_detectada === 'critica' ? 'bg-red-500/15 text-red-600' :
+                  conversacion.urgencia_detectada === 'alta'    ? 'bg-orange-500/15 text-orange-600' :
+                  conversacion.urgencia_detectada === 'media'   ? 'bg-yellow-500/15 text-yellow-600' :
+                  'bg-muted text-muted-foreground'
+                }`}>
+                  {conversacion.urgencia_detectada === 'critica' ? '🔴' : conversacion.urgencia_detectada === 'alta' ? '🟠' : conversacion.urgencia_detectada === 'media' ? '🟡' : '🟢'} {conversacion.urgencia_detectada}
+                </span>
+              )}
+              {conversacion.resumen_ia && (
+                <span className="text-[10px] text-muted-foreground truncate max-w-xs">{conversacion.resumen_ia}</span>
+              )}
+            </div>
+          )}
           <div
             className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-3 relative"
             onDragEnter={handleDragEnter}
@@ -1179,6 +1315,11 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Tab: TRAZABILIDAD ── */}
+      {activeTab === 'trazabilidad' && (
+        <TrazabilidadTab conversacionId={conversacion.id} />
       )}
 
       <GestionDialog

@@ -19,7 +19,7 @@ export interface LatConversacion {
   cliente_id: string | null;
   cliente_nombre: string | null;
   telefono: string | null;
-  canal: "whatsapp" | "email" | "phone";
+  canal: "whatsapp" | "email" | "phone" | "instagram" | "facebook" | "web" | "interno";
   estado: string;
   asunto: string | null;
   ultimo_mensaje: string | null;
@@ -35,11 +35,19 @@ export interface LatConversacion {
   en_foco: boolean;
   created_at: string;
   updated_at: string;
-  // Cola / equipo destino (cuando la conversación está en cola en lugar de asignada a un usuario)
+  // Cola / equipo destino
   en_cola?: boolean;
   cola_area_id?: string | null;
   cola_area_nombre?: string | null;
-  // Source flag (para saber si es real o mock)
+  cola_id?: string | null;
+  troncal_id?: string | null;
+  // IA fields
+  intencion_detectada?: string | null;
+  urgencia_detectada?: string | null;
+  sentimiento_detectado?: string | null;
+  resumen_ia?: string | null;
+  cola_sugerida_id?: string | null;
+  // Source flag
   _source?: "db" | "mock";
 }
 

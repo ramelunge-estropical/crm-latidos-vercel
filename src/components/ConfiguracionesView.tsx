@@ -5,7 +5,7 @@ import {
   Settings, Shield, Users,
   MapPin, MessageSquare, BarChart3, Puzzle, Sliders,
   ChevronLeft, ChevronRight, Lock, EyeOff,
-  GitBranch, LayoutGrid
+  GitBranch, LayoutGrid, Layers
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { GestionesConfig }     from "./config/GestionesConfig";
 import { PipelinesConfig }     from "./config/PipelinesConfig";
 import { AreasConfig }         from "./config/AreasConfig";
 import { ColaboradoresConfig } from "./config/ColaboradoresConfig";
+import { LatOmnicanalConfig }  from "./lat/LatOmnicanalConfig";
 
 type Section =
   | "gestiones"
@@ -20,14 +21,16 @@ type Section =
   | "areas"
   | "colaboradores"
   | "permisos"
+  | "lat-omnicanal"
   | null;
 
 const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = {
-  gestiones:     { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  pipelines:     { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  areas:         { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  colaboradores: { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  permisos:      { canView: ["admin"],            canEdit: ["admin"] },
+  gestiones:       { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  pipelines:       { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  areas:           { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  colaboradores:   { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  permisos:        { canView: ["admin"],            canEdit: ["admin"] },
+  "lat-omnicanal": { canView: ["admin", "gerente"], canEdit: ["admin"] },
 };
 
 const CARDS = [
@@ -67,11 +70,11 @@ const CARDS = [
     desc: "Control de acceso por rol",
   },
   {
-    id: null,
-    icon: MessageSquare,
+    id: "lat-omnicanal" as Section,
+    icon: Layers,
     color: "bg-emerald-500/10 text-emerald-600",
-    title: "Comunicaciones",
-    desc: "Canales, templates y notificaciones",
+    title: "LAT Omnicanal",
+    desc: "Troncales, canales, colas, reglas y horarios de atención",
   },
   {
     id: null,
@@ -97,11 +100,12 @@ const CARDS = [
 ];
 
 const SECTION_TITLES: Record<string, string> = {
-  gestiones:     "Gestiones",
-  pipelines:     "Pipelines",
-  areas:         "Áreas",
-  colaboradores: "Colaboradores",
-  permisos:      "Permisos y Accesos",
+  gestiones:       "Gestiones",
+  pipelines:       "Pipelines",
+  areas:           "Áreas",
+  colaboradores:   "Colaboradores",
+  permisos:        "Permisos y Accesos",
+  "lat-omnicanal": "LAT Omnicanal",
 };
 
 const ROL_LABELS: Record<string, string> = {
@@ -305,11 +309,12 @@ export function ConfiguracionesView() {
           </div>
         )}
 
-        {active === "gestiones"     && <GestionesConfig     readonly={!canEdit("gestiones")} />}
-        {active === "pipelines"     && <PipelinesConfig     readonly={!canEdit("pipelines")} />}
-        {active === "areas"         && <AreasConfig         readonly={!canEdit("areas")} />}
-        {active === "colaboradores" && <ColaboradoresConfig readonly={!canEdit("colaboradores")} />}
-        {active === "permisos"      && <PermisosInfo />}
+        {active === "gestiones"       && <GestionesConfig     readonly={!canEdit("gestiones")} />}
+        {active === "pipelines"       && <PipelinesConfig     readonly={!canEdit("pipelines")} />}
+        {active === "areas"           && <AreasConfig         readonly={!canEdit("areas")} />}
+        {active === "colaboradores"   && <ColaboradoresConfig readonly={!canEdit("colaboradores")} />}
+        {active === "permisos"        && <PermisosInfo />}
+        {active === "lat-omnicanal"   && <LatOmnicanalConfig  readonly={!canEdit("lat-omnicanal")} />}
       </div>
     </div>
   );

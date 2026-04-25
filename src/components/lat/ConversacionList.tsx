@@ -1,4 +1,4 @@
-import { MessageSquare, Phone, Mail, Search } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Search, Instagram, Facebook, Globe, Layers } from 'lucide-react';
 import { getCliente } from '@/data/latMockData';
 import { LatConversacion } from '@/hooks/useLatData';
 import { formatDistanceToNow } from 'date-fns';
@@ -6,9 +6,27 @@ import { es } from 'date-fns/locale';
 import { getFunnelStage, getFlags, FUNNEL_STAGES } from '@/lib/latFunnel';
 
 const canalIcons: Record<string, { icon: typeof MessageSquare; color: string }> = {
-  whatsapp: { icon: MessageSquare, color: 'text-whatsapp' },
-  phone:    { icon: Phone,         color: 'text-phone'    },
-  email:    { icon: Mail,          color: 'text-email'    },
+  whatsapp:  { icon: MessageSquare, color: 'text-whatsapp'         },
+  phone:     { icon: Phone,         color: 'text-phone'            },
+  email:     { icon: Mail,          color: 'text-email'            },
+  instagram: { icon: Instagram,     color: 'text-purple-500'       },
+  facebook:  { icon: Facebook,      color: 'text-blue-500'         },
+  web:       { icon: Globe,         color: 'text-cyan-500'         },
+  interno:   { icon: Layers,        color: 'text-slate-500'        },
+};
+
+const estadoBadge: Record<string, { label: string; className: string }> = {
+  en_cola:              { label: 'En cola',        className: 'bg-amber-500/10 text-amber-600'   },
+  asignada:             { label: 'Asignada',       className: 'bg-blue-500/10 text-blue-600'     },
+  en_atencion:          { label: 'En atención',    className: 'bg-green-500/10 text-green-600'   },
+  en_espera_cliente:    { label: 'Esp. cliente',   className: 'bg-cyan-500/10 text-cyan-600'     },
+  en_espera_interna:    { label: 'Esp. interna',   className: 'bg-indigo-500/10 text-indigo-600' },
+  derivada:             { label: 'Derivada',       className: 'bg-violet-500/10 text-violet-600' },
+  resuelta:             { label: 'Resuelta',       className: 'bg-emerald-500/10 text-emerald-600'},
+  cerrada:              { label: 'Cerrada',        className: 'bg-muted text-muted-foreground'   },
+  reabierta:            { label: 'Reabierta',      className: 'bg-warning/10 text-warning'       },
+  pendiente:            { label: 'Pendiente',      className: 'bg-orange-500/10 text-orange-600' },
+  abierta:              { label: 'Abierta',        className: 'bg-primary/10 text-primary'       },
 };
 
 const stageBadgeMap = Object.fromEntries(
@@ -62,16 +80,20 @@ export function ConversacionList({
         </div>
 
         {/* Canal filters */}
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
           {[
-            { key: 'todos',    label: 'Todos' },
-            { key: 'whatsapp', icon: MessageSquare, color: 'text-whatsapp' },
-            { key: 'phone',    icon: Phone,         color: 'text-phone'    },
-            { key: 'email',    icon: Mail,          color: 'text-email'    },
+            { key: 'todos',     label: 'Todos' },
+            { key: 'whatsapp',  icon: MessageSquare, color: 'text-whatsapp'   },
+            { key: 'phone',     icon: Phone,         color: 'text-phone'      },
+            { key: 'email',     icon: Mail,          color: 'text-email'      },
+            { key: 'instagram', icon: Instagram,     color: 'text-purple-500' },
+            { key: 'facebook',  icon: Facebook,      color: 'text-blue-500'   },
+            { key: 'web',       icon: Globe,         color: 'text-cyan-500'   },
           ].map(f => (
             <button
               key={f.key}
               onClick={() => onFiltroCanal(f.key)}
+              title={f.key !== 'todos' ? f.key : undefined}
               className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
                 filtroCanal === f.key
                   ? 'bg-primary text-primary-foreground'
@@ -149,6 +171,11 @@ export function ConversacionList({
                     <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${stageBadge.className}`}>
                       {stageBadge.label}
                     </span>
+                    {conv.estado && estadoBadge[conv.estado] && (
+                      <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${estadoBadge[conv.estado].className}`}>
+                        {estadoBadge[conv.estado].label}
+                      </span>
+                    )}
                     {flags.urgente && (
                       <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-urgent/10 text-urgent">urgente</span>
                     )}
