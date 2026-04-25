@@ -15,6 +15,7 @@ import {
   CheckCircle2, Clock, Globe, Landmark,
   Sparkles, RefreshCw, Home, Tag, Building2, UserCircle,
   ClipboardList, Pencil, Plus, Trash2, X, Check,
+  Video, PhoneCall, ExternalLink, Send, ChevronRight, Inbox,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -330,6 +331,36 @@ export function Cliente360View() {
         .eq("cliente_id", selectedId)
         .order("updated_at", { ascending: false })
         .limit(50);
+      return data ?? [];
+    }),
+  });
+
+  // ── Comunicaciones: conversaciones WA + actividades ──
+  const { data: convWA = [] } = useQuery<any[]>({
+    queryKey: ["cliente_conv_wa", selectedId],
+    enabled: !!selectedId,
+    queryFn: () => safeQuery(async () => {
+      const { data } = await (supabase as any)
+        .from("lat_conversaciones")
+        .select("id, asunto, canal, estado, ultimo_mensaje, ultima_interaccion, no_leidos, responsable_nombre, ventana_whatsapp")
+        .eq("cliente_id", selectedId)
+        .order("ultima_interaccion", { ascending: false })
+        .limit(10);
+      return data ?? [];
+    }),
+  });
+
+  const { data: actividadesComm = [] } = useQuery<any[]>({
+    queryKey: ["cliente_actividades_comm", selectedId],
+    enabled: !!selectedId,
+    queryFn: () => safeQuery(async () => {
+      const { data } = await (supabase as any)
+        .from("activities")
+        .select("id, tipo, titulo, fecha_hora, fecha_limite, status, notas, meet_link, assigned_to_id, colaboradores!activities_assigned_to_id_fkey(nombre)")
+        .eq("cliente_id", selectedId)
+        .in("tipo", ["llamada", "reunion"])
+        .order("fecha_hora", { ascending: false })
+        .limit(30);
       return data ?? [];
     }),
   });
@@ -719,7 +750,7 @@ export function Cliente360View() {
                     { value: "familia",         label: "Familia & Referidos"},
                     { value: "viajes",          label: "Viajes"             },
                     { value: "finanzas",        label: "Finanzas"           },
-                    { value: "comunicaciones",  label: gestionesCliente.length > 0 ? `Comunicaciones (${gestionesCliente.length})` : "Comunicaciones" },
+                    { value: "comunicaciones",  label: (() => { const n = convWA.length + actividadesComm.length + gestionesCliente.length; return n > 0 ? `Comunicaciones (${n})` : "Comunicaciones"; })() },
                     { value: "lealtad",         label: "Fidelización"       },
                   ].map(t => (
                     <TabsTrigger
@@ -1367,10 +1398,163 @@ export function Cliente360View() {
                 {/* ── COMUNICACIONES ── */}
                 <TabsContent value="comunicaciones" className="m-0 p-5 space-y-6">
 
-                  {/* Historial de gestiones */}
+                  {/* ── Acciones rápidas ── */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-foreground mr-1">Acciones rápidas:</span>
+                    {/* WhatsApp — abre LAT Bandeja */}
+                    {cliente?.telefono && (
+                      <button
+                        onClick={() => {
+                          const phone = (cliente?.telefono ?? "").replace(/\D/g, "");
+                          window.open(`https://wa.me/${phone}`, "_blank");
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (cliente?.telefono) window.open(`tel:${cliente?.telefono}`);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 text-blue-700 border border-blue-200 rounded-lg text-xs font-medium hover:bg-blue-500/20 transition-colors"
+                    >
+                      <PhoneCall className="w-3.5 h-3.5" /> Llamar
+                    </button>
+                    {cliente?.email && (
+                      <button
+                        onClick={() => window.open(`mailto:${selectedCliente.email}`)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-500/10 text-violet-700 border border-violet-200 rounded-lg text-xs font-medium hover:bg-violet-500/20 transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5" /> Email
+                      </button>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Conversaciones WhatsApp ── */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <SectionTitle icon={MessageSquare}>
+                        WhatsApp
+                        {convWA.length > 0 && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">({convWA.length})</span>}
+                      </SectionTitle>
+                    </div>
+                    {convWA.length === 0 ? (
+                      <EmptySection icon={Inbox} label="Sin conversaciones de WhatsApp registradas" />
+                    ) : (
+                      <div className="space-y-2">
+                        {convWA.map((c: any) => {
+                          const vencida = c.ventana_whatsapp && new Date(c.ventana_whatsapp) < new Date();
+                          const estadoColor: Record<string, string> = {
+                            abierto: "bg-emerald-500/10 text-emerald-700 border-emerald-200",
+                            nuevo: "bg-blue-500/10 text-blue-700 border-blue-200",
+                            en_curso: "bg-amber-500/10 text-amber-700 border-amber-200",
+                            cerrado: "bg-muted text-muted-foreground border-border",
+                            liberado: "bg-slate-500/10 text-slate-600 border-slate-200",
+                          };
+                          return (
+                            <div key={c.id} className="flex items-start gap-3 bg-muted/20 rounded-xl p-3 border border-border hover:bg-muted/40 transition-colors">
+                              <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                                <MessageSquare className="w-4 h-4 text-emerald-600" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-xs font-semibold truncate">{c.asunto || "Conversación WA"}</p>
+                                  <Badge variant="outline" className={`text-[10px] py-0 ${estadoColor[c.estado] ?? ""}`}>
+                                    {c.estado?.replace("_", " ")}
+                                  </Badge>
+                                  {c.no_leidos > 0 && (
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-primary text-primary-foreground rounded-full font-bold">
+                                      {c.no_leidos}
+                                    </span>
+                                  )}
+                                </div>
+                                {c.ultimo_mensaje && (
+                                  <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{c.ultimo_mensaje}</p>
+                                )}
+                                <div className="flex items-center gap-2 mt-1">
+                                  {c.responsable_nombre && (
+                                    <span className="text-[10px] text-muted-foreground">Resp: {c.responsable_nombre}</span>
+                                  )}
+                                  {c.ventana_whatsapp && (
+                                    <span className={`text-[10px] ${vencida ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+                                      Ventana: {vencida ? "Vencida" : fmtDate(c.ventana_whatsapp, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground flex-shrink-0">
+                                {c.ultima_interaccion ? fmtDate(c.ultima_interaccion, { day: "2-digit", month: "short" }) : "—"}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Llamadas y Reuniones ── */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <SectionTitle icon={PhoneCall}>
+                        Llamadas y reuniones
+                        {actividadesComm.length > 0 && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">({actividadesComm.length})</span>}
+                      </SectionTitle>
+                    </div>
+                    {actividadesComm.length === 0 ? (
+                      <EmptySection icon={PhoneCall} label="Sin llamadas ni reuniones registradas con este cliente" />
+                    ) : (
+                      <div className="space-y-2">
+                        {actividadesComm.map((a: any) => {
+                          const isReunion = a.tipo === "reunion";
+                          const statusLabel: Record<string, string> = { to_do: "Pendiente", doing: "En curso", done: "Completada" };
+                          return (
+                            <div key={a.id} className="flex items-start gap-3 bg-muted/20 rounded-xl p-3 border border-border">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isReunion ? "bg-blue-500/10" : "bg-orange-500/10"}`}>
+                                {isReunion
+                                  ? <Video className="w-4 h-4 text-blue-600" />
+                                  : <PhoneCall className="w-4 h-4 text-orange-600" />
+                                }
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold truncate">{a.titulo}</p>
+                                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                  <Badge variant="outline" className="text-[10px] py-0 capitalize">{a.tipo}</Badge>
+                                  {a.status && (
+                                    <span className="text-[10px] text-muted-foreground">{statusLabel[a.status] ?? a.status}</span>
+                                  )}
+                                  {a.colaboradores?.nombre && (
+                                    <span className="text-[10px] text-muted-foreground">· {a.colaboradores.nombre}</span>
+                                  )}
+                                </div>
+                                {a.notas && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{a.notas}</p>}
+                                {a.meet_link && (
+                                  <a href={a.meet_link} target="_blank" rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:underline mt-0.5">
+                                    <Video className="w-2.5 h-2.5" /> Unirse a Meet
+                                  </a>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-muted-foreground flex-shrink-0">
+                                {a.fecha_hora ? fmtDate(a.fecha_hora, { day: "2-digit", month: "short" }) : a.fecha_limite ? fmtDate(a.fecha_limite, { day: "2-digit", month: "short" }) : "—"}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* ── Historial de gestiones ── */}
                   <div>
                     <SectionTitle icon={ClipboardList}>
-                      Historial de gestiones
+                      Gestiones asociadas
                       {gestionesCliente.length > 0 && (
                         <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">
                           ({gestionesCliente.length})
@@ -1420,15 +1604,6 @@ export function Cliente360View() {
                         })}
                       </div>
                     )}
-                  </div>
-
-                  {/* Canales de comunicación - placeholder */}
-                  <div>
-                    <SectionTitle icon={MessageSquare}>Canales de comunicación</SectionTitle>
-                    <EmptySection
-                      icon={MessageSquare}
-                      label="Próximamente: historial de WhatsApp, email, llamadas y campañas enviadas al cliente."
-                    />
                   </div>
                 </TabsContent>
 
