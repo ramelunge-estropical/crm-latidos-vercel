@@ -819,6 +819,26 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </div>
       </div>
 
+      {/* ── Banner: bot activo ── */}
+      {!isMock && (conversacion as any).bot_estado === 'activo' && (
+        <div className="px-4 py-2 bg-fuchsia-500/10 border-b border-fuchsia-500/20 flex items-center gap-2">
+          <Bot className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
+          <span className="text-[11px] text-fuchsia-600 flex-1 font-medium">
+            Lati IA está atendiendo esta conversación
+          </span>
+          <button
+            onClick={async () => {
+              await (supabase as any).from('lat_conversaciones').update({ bot_estado: 'handed_off' }).eq('id', conversacion.id);
+              invalidateAll();
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-fuchsia-500/20 text-fuchsia-700 hover:bg-fuchsia-500/30 transition-colors"
+          >
+            <Hand className="w-3 h-3" />
+            Tomar del bot
+          </button>
+        </div>
+      )}
+
       {/* ── Banner: conversación en cola del equipo ── */}
       {!isMock && conversacion.en_cola && (
         <div className="px-4 py-2 bg-warning/10 border-b border-warning/20 flex items-center gap-2">

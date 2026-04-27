@@ -23,6 +23,20 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const BUCKET = "lat-adjuntos";
 
+// ── Bot agent trigger (fire-and-forget) ───────────────────────────────────────
+
+function triggerBotAgent(convId: string, telefono: string, contenido: string) {
+  const url = `${SUPABASE_URL}/functions/v1/lat-bot-agent`;
+  fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
+      "Content-Type":  "application/json",
+    },
+    body: JSON.stringify({ conversacion_id: convId, telefono, contenido }),
+  }).catch(err => console.error("bot-agent trigger failed:", err));
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function normalizePhone(phone: string): string {
@@ -347,6 +361,9 @@ Deno.serve(async (req: Request) => {
         adjunto_tipo:    adjTipo,
       });
 
+      // Trigger bot agent (only for text messages — bot can't process media)
+      if (innerTyp === "text") triggerBotAgent(convId, telefono, contenido);
+
       return new Response("OK", { status: 200 });
     }
 
@@ -409,6 +426,8 @@ Deno.serve(async (req: Request) => {
               adjunto_nombre:  adjNom,
               adjunto_tipo:    adjTipo,
             });
+
+            if (msg.type === "text") triggerBotAgent(convId, telefono, contenido);
           }
         }
       }
@@ -439,6 +458,7 @@ Deno.serve(async (req: Request) => {
         adjunto_nombre:  adjNom,
         adjunto_tipo:    adjTipo,
       });
+      if (body.text) triggerBotAgent(convId, telefono, body.text);
       return new Response("OK", { status: 200 });
     }
 
