@@ -5,15 +5,16 @@ import {
   Phone, Globe, Layers, ClipboardList, Clock, Plus, Pencil, Trash2,
   Check, X, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
   AlertCircle, Zap, DollarSign, Star, HelpCircle, Bus, Plane,
-  FileText, Users, Briefcase, BarChart3
+  FileText, Users, Briefcase, BarChart3, Bot
 } from "lucide-react";
+import { LatBotConfig } from "./LatBotConfig";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "colas" | "canales" | "troncales" | "reglas" | "horarios";
+type Tab = "colas" | "canales" | "troncales" | "reglas" | "horarios" | "bot";
 
 interface Troncal {
   id: string; nombre: string; proveedor: string; tipo: string;
@@ -994,6 +995,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "troncales", label: "Troncales", icon: Phone },
   { id: "reglas",    label: "Reglas",    icon: Zap },
   { id: "horarios",  label: "Horarios",  icon: Clock },
+  { id: "bot",       label: "Lati IA",   icon: Bot },
 ];
 
 interface Props { readonly?: boolean; }
@@ -1035,6 +1037,11 @@ export function LatOmnicanalConfig({ readonly = false }: Props) {
         {tab === "troncales" && <TroncalesTab readonly={readonly} />}
         {tab === "reglas"    && <ReglasTab    readonly={readonly} />}
         {tab === "horarios"  && <HorariosTab  readonly={readonly} />}
+        {tab === "bot"       && (
+          <div className="p-6">
+            <LatBotConfig readonly={readonly} />
+          </div>
+        )}
       </div>
     </div>
   );

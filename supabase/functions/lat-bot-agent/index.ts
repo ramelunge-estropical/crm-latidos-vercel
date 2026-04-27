@@ -103,10 +103,21 @@ const TOOLS = [
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(ctx: BotContexto, clienteInfo: string, colasInfo: string, turno: number, primerNombre?: string): string {
-  const saludo = primerNombre ? `¡Hola, ${primerNombre}!` : "¡Hola!";
+function buildSystemPrompt(
+  ctx: BotContexto,
+  clienteInfo: string,
+  colasInfo: string,
+  turno: number,
+  primerNombre?: string,
+  cfg?: { prompt_identidad?: string; prompt_reglas?: string; prompt_categorias?: string; max_turnos?: number },
+): string {
+  const saludo    = primerNombre ? `¡Hola, ${primerNombre}!` : "¡Hola!";
+  const identidad = cfg?.prompt_identidad ?? "Sos Lati, asistente virtual de Estropical Bolivia, agencia de viajes líder en Bolivia.";
+  const reglas    = cfg?.prompt_reglas    ?? "- Hablá en español latinoamericano, cálido y profesional\n- Nunca inventes precios ni disponibilidad\n- La agencia opera 24/7";
+  const cats      = cfg?.prompt_categorias ?? "- vacacional\n- visa\n- grupos\n- corporativo\n- soporte\n- emergencia\n- cobranzas\n- otro";
+  const maxT      = cfg?.max_turnos ?? MAX_TURNS;
 
-  return `Sos Lati, asistente virtual de Estropical Bolivia, agencia de viajes líder en Bolivia.
+  return `${identidad}
 Tu trabajo es atender mensajes de WhatsApp siguiendo este flujo ESTRICTO:
 
 ## FASE 1 — IDENTIFICACIÓN
@@ -150,20 +161,20 @@ Cuando el cliente te diga qué necesita, hacé LAS DOS COSAS EN EL MISMO MENSAJE
 NO hagas una sin la otra. NO esperes respuesta intermedia.
 Si hay EMERGENCIA, derivá inmediatamente sin más preguntas.
 
+## CATEGORÍAS DE NECESIDAD
+${cats}
+
 ## COLAS DISPONIBLES
 ${colasInfo}
 
 ## INFORMACIÓN DEL CLIENTE
 ${clienteInfo}
 
-## REGLAS IMPORTANTES
-- Siempre llamá al cliente por su nombre cuando lo conozcas — refuerza la conexión humana
-- Siempre hablá en español latinoamericano, cálido y profesional
-- Nunca inventes precios, fechas ni disponibilidad específica
-- Si no sabés algo: "Nuestros asesores te darán información precisa"
-- Turno actual: ${turno}/${MAX_TURNS} — si llegás al límite, derivá de todos modos
-- La agencia opera 24/7
-- Sos concisa: respuestas cortas y claras, sin párrafos largos`;
+## REGLAS
+${reglas}
+- Firmá siempre como "- Lati 🌍" al final de cada mensaje
+- Si el cliente fue atendido antes por un asesor, mencionalo: "Anteriormente te atendió [nombre]."
+- Turno actual: ${turno}/${maxT} — si llegás al límite, derivá de todos modos`;
 }
 
 // ─── Helpers DB ───────────────────────────────────────────────────────────────
@@ -210,6 +221,15 @@ async function getClienteByCiOrNombre(ci: string, nombre: string) {
   return data as any;
 }
 
+async function getBotConfig() {
+  const { data } = await supabase
+    .from("lat_bot_config")
+    .select("modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias")
+    .eq("activo", true)
+    .single();
+  return data as any;
+}
+
 async function getColas() {
   const { data } = await supabase
     .from("lat_colas")
@@ -240,7 +260,7 @@ async function saveMensajeSistema(convId: string, contenido: string) {
     tipo:            "outbound",
     contenido,
     estado:          "enviado",
-    autor_nombre:    "Lati IA",
+    autor_nombre:    "Lati",
   });
 }
 
@@ -274,7 +294,7 @@ async function sendWhatsApp(telefono: string, texto: string, convId: string) {
       tipo:            "outbound",
       contenido:       texto,
       estado:          res.ok ? "enviado" : "fallido",
-      autor_nombre:    "Lati IA",
+      autor_nombre:    "Lati",
       wpp_message_id:  msgId,
     });
   } catch (err) {
@@ -285,7 +305,7 @@ async function sendWhatsApp(telefono: string, texto: string, convId: string) {
 
 // ─── OpenAI call ──────────────────────────────────────────────────────────────
 
-async function callOpenAI(systemPrompt: string, mensajes: any[], nuevoMensaje: string) {
+async function callOpenAI(systemPrompt: string, mensajes: any[], nuevoMensaje: string, temperatura = 0.4) {
   const history = mensajes.map((m: any) => ({
     role: m.tipo === "inbound" ? "user" : "assistant",
     content: m.contenido,
@@ -301,7 +321,7 @@ async function callOpenAI(systemPrompt: string, mensajes: any[], nuevoMensaje: s
     messages: [{ role: "system", content: systemPrompt }, ...history],
     tools: TOOLS,
     tool_choice: "auto",
-    temperature: 0.4,
+    temperature: temperatura,
     max_tokens: 400,
   };
 
@@ -332,8 +352,9 @@ Deno.serve(async (req: Request) => {
     const { conversacion_id, telefono, contenido } = await req.json();
     if (!conversacion_id) return new Response("missing conversacion_id", { status: 400 });
 
-    // 1. Load conversation
-    const conv = await getConversacion(conversacion_id);
+    // 1. Load bot config + conversation in parallel
+    const [botCfg, conv] = await Promise.all([getBotConfig(), getConversacion(conversacion_id)]);
+    const effectiveMaxTurns = botCfg?.max_turnos ?? MAX_TURNS;
     if (!conv) return new Response("conv not found", { status: 404 });
 
     // 2a. Auto-reactivate / reset session on new inbound message
@@ -373,7 +394,7 @@ Deno.serve(async (req: Request) => {
     const turno = conv.bot_turnos ?? 0;
 
     // 2b. Force handoff if max turns exceeded
-    if (turno >= MAX_TURNS) {
+    if (turno >= (botCfg?.max_turnos ?? MAX_TURNS)) {
       const cola = await getColaByNombre("Frontdesk Vacacional");
       await updateConversacion(conversacion_id, {
         bot_estado: "handed_off",
@@ -417,16 +438,35 @@ Deno.serve(async (req: Request) => {
         ? `Nombre: ${ctx.nombre}\nCI: ${ctx.ci ?? "pendiente"}\nNo está registrado en la BD.`
         : "Cliente no identificado aún. Pedí CI y nombre completo.";
 
-    // 4. Load colas
-    const colas     = await getColas();
-    const colasInfo = colas.map(c => `- ${c.nombre} (${c.area ?? ""}): ${c.descripcion ?? ""}`).join("\n");
+    // 4. Load colas + last human agent name
+    const [colas, lastHumanMsg] = await Promise.all([
+      getColas(),
+      supabase
+        .from("lat_mensajes")
+        .select("autor_nombre")
+        .eq("conversacion_id", conversacion_id)
+        .eq("tipo", "outbound")
+        .neq("autor_nombre", "Lati")
+        .not("autor_nombre", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(r => r.data?.autor_nombre ?? null),
+    ]);
+    const colasInfo       = colas.map(c => `- ${c.nombre} (${c.area ?? ""}): ${c.descripcion ?? ""}`).join("\n");
+    const ultimoAsesor    = conv.responsable_nombre ?? lastHumanMsg ?? null;
+
+    // Append last agent info to clienteInfo if available
+    const clienteInfoFull = ultimoAsesor
+      ? `${clienteInfo}\nÚltimo asesor que lo atendió: ${ultimoAsesor}`
+      : clienteInfo;
 
     // 5. Load history
     const mensajes  = await getMensajesRecientes(conversacion_id);
 
     // 6. Build prompt & call OpenAI
-    const systemPrompt = buildSystemPrompt(ctx, clienteInfo, colasInfo, turno + 1, primerNombre);
-    const aiMessage    = await callOpenAI(systemPrompt, mensajes, contenido);
+    const systemPrompt = buildSystemPrompt(ctx, clienteInfoFull, colasInfo, turno + 1, primerNombre, botCfg);
+    const aiMessage    = await callOpenAI(systemPrompt, mensajes, contenido, botCfg?.temperatura ?? 0.4);
 
     if (!aiMessage) throw new Error("No response from OpenAI");
 
