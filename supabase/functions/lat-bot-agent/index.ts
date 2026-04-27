@@ -319,9 +319,15 @@ Deno.serve(async (req: Request) => {
     const conv = await getConversacion(conversacion_id);
     if (!conv) return new Response("conv not found", { status: 404 });
 
-    // 2a. Auto-reactivate on new inbound message (WhatsApp 24h window logic)
-    //     When client messages again after handoff/pause → fresh bot session
-    if (conv.bot_estado === "handed_off" || conv.bot_estado === "pausado") {
+    // 2a. Auto-reactivate / reset session on new inbound message
+    //     Triggers when: handed_off, pausado, OR activo with stale context (>3h idle)
+    const RESET_AFTER_MS = 3 * 60 * 60 * 1000;
+    const lastInteractionAge = Date.now() - new Date(conv.ultima_interaccion).getTime();
+    const isStaleSession = conv.bot_estado === "activo"
+      && (conv.bot_turnos ?? 0) > 0
+      && lastInteractionAge > RESET_AFTER_MS;
+
+    if (conv.bot_estado === "handed_off" || conv.bot_estado === "pausado" || isStaleSession) {
       const freshCtx: BotContexto = conv.cliente_id
         ? { fase: "necesidad", cliente_id: conv.cliente_id, nombre: conv.cliente_nombre }
         : { fase: "identificacion" };
@@ -340,7 +346,7 @@ Deno.serve(async (req: Request) => {
       conv.bot_estado   = "activo";
       conv.bot_turnos   = 0;
       conv.bot_contexto = freshCtx;
-      console.log(`[bot] Sesión reiniciada por nuevo mensaje inbound (era ${conv.bot_estado})`);
+      console.log(`[bot] Sesión reiniciada (motivo: ${isStaleSession ? "stale" : conv.bot_estado})`);
     }
 
     const ctx: BotContexto = (conv.bot_contexto && typeof conv.bot_contexto === "object")
