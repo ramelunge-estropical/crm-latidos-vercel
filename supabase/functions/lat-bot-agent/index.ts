@@ -109,13 +109,15 @@ function buildSystemPrompt(
   colasInfo: string,
   turno: number,
   primerNombre?: string,
-  cfg?: { prompt_identidad?: string; prompt_reglas?: string; prompt_categorias?: string; max_turnos?: number },
+  cfg?: { prompt_identidad?: string; prompt_reglas?: string; prompt_categorias?: string; max_turnos?: number; min_preguntas_calificacion?: number; prompt_calificacion?: string },
 ): string {
   const saludo    = primerNombre ? `¡Hola, ${primerNombre}!` : "¡Hola!";
-  const identidad = cfg?.prompt_identidad ?? "Sos Lati, asistente virtual de Estropical Bolivia, agencia de viajes líder en Bolivia.";
-  const reglas    = cfg?.prompt_reglas    ?? "- Hablá en español latinoamericano, cálido y profesional\n- Nunca inventes precios ni disponibilidad\n- La agencia opera 24/7";
-  const cats      = cfg?.prompt_categorias ?? "- vacacional\n- visa\n- grupos\n- corporativo\n- soporte\n- emergencia\n- cobranzas\n- otro";
-  const maxT      = cfg?.max_turnos ?? MAX_TURNS;
+  const identidad  = cfg?.prompt_identidad ?? "Sos Lati, asistente virtual de Estropical Bolivia, agencia de viajes líder en Bolivia.";
+  const reglas     = cfg?.prompt_reglas    ?? "- Hablá en español latinoamericano, cálido y profesional\n- Nunca inventes precios ni disponibilidad\n- La agencia opera 24/7";
+  const cats       = cfg?.prompt_categorias ?? "- vacacional\n- visa\n- grupos\n- corporativo\n- soporte\n- emergencia\n- cobranzas\n- otro";
+  const maxT       = cfg?.max_turnos ?? MAX_TURNS;
+  const minCalif   = cfg?.min_preguntas_calificacion ?? 1;
+  const califPrompt = cfg?.prompt_calificacion ?? "- Hacé al menos 1 pregunta de calificación antes de derivar (destino, fechas, cantidad de viajeros, etc.)";
 
   return `${identidad}
 Tu trabajo es atender mensajes de WhatsApp siguiendo este flujo ESTRICTO:
@@ -154,12 +156,18 @@ Podés responder preguntas generales simples (destinos populares, requisitos gen
 Para cotizaciones, reservas específicas o gestiones: llamá a detectar_intencion() y luego a asignar_cola().
 ` : ""}
 
+## FASE 2.5 — CALIFICACIÓN (OBLIGATORIA antes de derivar)
+Antes de llamar a asignar_cola(), debés hacer al menos ${minCalif} pregunta(s) de calificación para entender bien la necesidad.
+Preguntas sugeridas por categoría:
+${califPrompt}
+
+EXCEPCIÓN: Si es EMERGENCIA, derivá inmediatamente sin preguntas.
+
 ## FASE 3 — DERIVACIÓN
-Cuando el cliente te diga qué necesita, hacé LAS DOS COSAS EN EL MISMO MENSAJE:
+Solo cuando ya tengas la información de calificación, hacé LAS DOS COSAS EN EL MISMO MENSAJE:
 1. Llamá a detectar_intencion()
 2. Inmediatamente llamá a asignar_cola()
 NO hagas una sin la otra. NO esperes respuesta intermedia.
-Si hay EMERGENCIA, derivá inmediatamente sin más preguntas.
 
 ## CATEGORÍAS DE NECESIDAD
 ${cats}
@@ -224,10 +232,46 @@ async function getClienteByCiOrNombre(ci: string, nombre: string) {
 async function getBotConfig() {
   const { data } = await supabase
     .from("lat_bot_config")
-    .select("modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias")
+    .select("modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias, min_preguntas_calificacion, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
     .eq("activo", true)
     .single();
   return data as any;
+}
+
+async function crearGestion(conv: any, ctx: any, cfg: any) {
+  if (!cfg?.crear_gestion_auto || !cfg?.gestion_process_id) return null;
+
+  const PRIORIDAD_MAP: Record<string, string> = {
+    critica: "urgent", alta: "high", media: "medium", baja: "low",
+  };
+  const TYPE_MAP: Record<string, string> = {
+    vacacional: "consulta", visa: "consulta", grupos: "consulta",
+    corporativo: "consulta", soporte: "soporte", emergencia: "soporte",
+    cobranzas: "cobro", otro: "consulta",
+  };
+
+  const categoria  = ctx.intencion ?? "otro";
+  const titulo     = `${categoria.charAt(0).toUpperCase() + categoria.slice(1)} — ${ctx.nombre ?? conv.cliente_nombre ?? "Nuevo contacto"} (WhatsApp)`;
+  const prioridad  = PRIORIDAD_MAP[ctx.urgencia ?? "media"] ?? "medium";
+  const tipo       = TYPE_MAP[categoria] ?? "consulta";
+
+  const { data, error } = await supabase.from("gestiones").insert({
+    title:                  titulo,
+    description:            conv.resumen_ia ?? `Contacto vía WhatsApp. Categoría: ${categoria}.`,
+    process_id:             cfg.gestion_process_id,
+    stage_id:               cfg.gestion_stage_id ?? null,
+    cliente_id:             conv.cliente_id ?? null,
+    cliente_nombre:         conv.cliente_nombre ?? ctx.nombre ?? null,
+    priority:               prioridad,
+    type:                   tipo,
+    subtype:                categoria,
+    canal_origen:           "whatsapp",
+    conversacion_id_origen: conv.id,
+  }).select("id, codigo").single();
+
+  if (error) { console.error("[bot] Error creando gestión:", error.message); return null; }
+  console.log(`[bot] Gestión creada: ${data?.codigo} id:${data?.id}`);
+  return data;
 }
 
 async function getColas() {
@@ -579,13 +623,20 @@ Deno.serve(async (req: Request) => {
     // 9. Execute handoff
     if (shouldHandoff) {
       const cola = await getColaByNombre(handoffColaName);
+      const finalCtx = { ...newCtx, fase: "finalizado" };
+
       await updateConversacion(conversacion_id, {
         bot_estado:   "handed_off",
-        bot_contexto: { ...newCtx, fase: "finalizado" },
+        bot_contexto: finalCtx,
         bot_turnos:   turno + 1,
         cola_id:      cola?.id ?? null,
         estado:       "en_cola",
       });
+
+      // Auto-create gestión with full context
+      const convActualizado = { ...conv, ...finalCtx, resumen_ia: conv.resumen_ia, cliente_id: newCtx.cliente_id ?? conv.cliente_id, cliente_nombre: newCtx.nombre ?? conv.cliente_nombre };
+      await crearGestion(convActualizado, finalCtx, botCfg);
+
       const msg = handoffMsg || "Ya te comunico con un asesor especializado. ¡Gracias por contactarnos! 🌍";
       await sendWhatsApp(telefDest, msg, conversacion_id);
     } else {
