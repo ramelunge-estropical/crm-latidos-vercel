@@ -30,6 +30,10 @@ const supabase   = createClient(SUPABASE_URL, SERVICE_KEY);
 const MAX_TURNS  = 6;
 const MODEL      = "gpt-4o-mini";
 
+function normalizePhone(phone: string): string {
+  return (phone ?? "").replace(/[^0-9]/g, "");
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface BotContexto {
@@ -99,21 +103,33 @@ const TOOLS = [
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(ctx: BotContexto, clienteInfo: string, colasInfo: string, turno: number): string {
+function buildSystemPrompt(ctx: BotContexto, clienteInfo: string, colasInfo: string, turno: number, primerNombre?: string): string {
+  const saludo = primerNombre ? `¡Hola, ${primerNombre}!` : "¡Hola!";
+
   return `Sos Lati, asistente virtual de Estropical Bolivia, agencia de viajes líder en Bolivia.
 Tu trabajo es atender mensajes de WhatsApp siguiendo este flujo ESTRICTO:
 
-## FASE 1 — IDENTIFICACIÓN (obligatoria si no está completada)
+## FASE 1 — IDENTIFICACIÓN
 ${ctx.fase === "identificacion" ? `
-Pedí al cliente su CI (cédula de identidad) y nombre completo.
-Podés hacerlo en el mismo mensaje: "Para atenderte mejor, ¿me podés compartir tu nombre completo y número de CI?"
-Una vez que tengas AMBOS datos, llamá inmediatamente a la función identificar_cliente().
+El cliente AÚN NO está identificado. Tu PRIMER mensaje debe:
+1. Saludar cálidamente (${saludo} si ya tenés su nombre, sino "¡Hola! Bienvenido/a a Estropical 🌍")
+2. Pedirle NOMBRE COMPLETO y CI en el mismo mensaje. Ejemplo:
+   "Para atenderte mejor, ¿me podés compartir tu nombre completo y número de CI (cédula de identidad)?"
+
+IMPORTANTE sobre la identificación:
+- Si el cliente te da solo el nombre pero no el CI → agradecé y pedí el CI: "¡Gracias [nombre]! Solo me falta tu número de CI para completar tu registro."
+- Si el cliente te da solo el CI pero no el nombre → pedí el nombre: "¡Gracias! ¿Y tu nombre completo?"
+- Solo llamá a identificar_cliente() cuando tengas AMBOS: nombre completo Y CI.
+- No avances a la siguiente fase sin ambos datos.
 ` : `✅ Cliente identificado: ${ctx.nombre ?? ""} (CI: ${ctx.ci ?? ""})`}
+
+${ctx.fase === "necesidad" && turno === 1 ? `
+PRIMER MENSAJE de esta sesión: Saludá al cliente por su nombre: "${saludo} ¿En qué te puedo ayudar hoy? 😊"
+` : ""}
 
 ## FASE 2 — DETECCIÓN DE NECESIDAD
 ${ctx.fase !== "finalizado" ? `
-Con el cliente identificado, preguntá en qué podés ayudar.
-Escuchá la necesidad e identificá la categoría:
+Con el cliente identificado, escuchá su necesidad e identificá la categoría:
 - vacacional: paquetes turísticos, destinos, hoteles, vuelos
 - visa: trámites de visa, documentación, migración
 - grupos: viajes grupales, bodas, eventos, incentivos
@@ -141,6 +157,7 @@ ${colasInfo}
 ${clienteInfo}
 
 ## REGLAS IMPORTANTES
+- Siempre llamá al cliente por su nombre cuando lo conozcas — refuerza la conexión humana
 - Siempre hablá en español latinoamericano, cálido y profesional
 - Nunca inventes precios, fechas ni disponibilidad específica
 - Si no sabés algo: "Nuestros asesores te darán información precisa"
@@ -372,12 +389,30 @@ Deno.serve(async (req: Request) => {
     }
 
     // 3. Load client context
-    const clienteDB   = conv.cliente_id
+    const clienteDB = conv.cliente_id
       ? null  // ya vinculado, no re-buscar por teléfono
       : await getCliente(conv.telefono ?? telefono);
 
+    // If found by phone and context is still "identificacion", auto-advance to "necesidad"
+    if (clienteDB && ctx.fase === "identificacion") {
+      ctx.fase      = "necesidad";
+      ctx.nombre    = clienteDB.nombre_completo ?? clienteDB.razon_social;
+      ctx.ci        = clienteDB.documento_numero ?? null;
+      ctx.cliente_id = clienteDB.id;
+      await updateConversacion(conversacion_id, {
+        cliente_id:     clienteDB.id,
+        cliente_nombre: clienteDB.nombre_completo ?? clienteDB.razon_social,
+        bot_contexto:   ctx,
+      });
+      console.log(`[bot] Cliente identificado por teléfono: ${ctx.nombre}`);
+    }
+
+    // Derive primer nombre for greeting
+    const nombreCompleto = clienteDB?.nombre_completo ?? clienteDB?.razon_social ?? ctx.nombre ?? conv.cliente_nombre ?? null;
+    const primerNombre   = nombreCompleto ? nombreCompleto.split(" ")[0] : undefined;
+
     const clienteInfo = clienteDB
-      ? `Nombre: ${clienteDB.nombre_completo ?? clienteDB.razon_social}\nCI: ${clienteDB.documento_numero ?? "no registrado"}\nTeléfono: ${clienteDB.telefono}\nEmail: ${clienteDB.email ?? "-"}`
+      ? `Nombre: ${clienteDB.nombre_completo ?? clienteDB.razon_social}\nCI: ${clienteDB.documento_numero ?? "no registrado"}\nTeléfono: ${clienteDB.telefono}\nEmail: ${clienteDB.email ?? "-"}\n✅ Registrado en BD.`
       : ctx.nombre
         ? `Nombre: ${ctx.nombre}\nCI: ${ctx.ci ?? "pendiente"}\nNo está registrado en la BD.`
         : "Cliente no identificado aún. Pedí CI y nombre completo.";
@@ -390,7 +425,7 @@ Deno.serve(async (req: Request) => {
     const mensajes  = await getMensajesRecientes(conversacion_id);
 
     // 6. Build prompt & call OpenAI
-    const systemPrompt = buildSystemPrompt(ctx, clienteInfo, colasInfo, turno + 1);
+    const systemPrompt = buildSystemPrompt(ctx, clienteInfo, colasInfo, turno + 1, primerNombre);
     const aiMessage    = await callOpenAI(systemPrompt, mensajes, contenido);
 
     if (!aiMessage) throw new Error("No response from OpenAI");
@@ -417,21 +452,40 @@ Deno.serve(async (req: Request) => {
 
         // Try to find/link client in DB
         const clienteMatch = await getClienteByCiOrNombre(args.ci, args.nombre_completo);
+        const firstName = args.nombre_completo.split(" ")[0];
+
         if (clienteMatch) {
           newCtx.cliente_id = clienteMatch.id;
           await updateConversacion(conversacion_id, {
             cliente_id:     clienteMatch.id,
             cliente_nombre: clienteMatch.nombre_completo,
           });
-        }
-        console.log(`[bot] Cliente identificado: ${args.nombre_completo} CI:${args.ci} en_bd:${args.cliente_encontrado}`);
+          respuestaTexto = `¡Hola, ${firstName}! Ya te tengo registrado en nuestro sistema. ¿En qué te puedo ayudar hoy? 😊`;
+        } else {
+          // Client not in DB → auto-create as new lead so the asesor has it ready
+          const { data: newCliente } = await supabase
+            .from("clientes")
+            .insert({
+              nombre_completo:  args.nombre_completo,
+              documento_numero: args.ci ?? null,
+              telefono:         normalizePhone(conv.telefono ?? telefono),
+              canal_contacto:   "whatsapp",
+              tipo:             "natural",
+            })
+            .select("id")
+            .single();
 
-        // Bug fix #1: override AI text — use our own acknowledgment instead of
-        // the stale identification-request text OpenAI may return alongside the tool call
-        const firstName = args.nombre_completo.split(" ")[0];
-        respuestaTexto = clienteMatch
-          ? `¡Gracias, ${firstName}! Ya te tengo registrado en nuestro sistema. ¿En qué te puedo ayudar hoy? 😊`
-          : `¡Gracias, ${firstName}! ¿En qué te puedo ayudar hoy? 😊`;
+          if (newCliente?.id) {
+            newCtx.cliente_id = newCliente.id;
+            await updateConversacion(conversacion_id, {
+              cliente_id:     newCliente.id,
+              cliente_nombre: args.nombre_completo,
+            });
+            console.log(`[bot] Nuevo cliente creado: ${args.nombre_completo} id:${newCliente.id}`);
+          }
+          respuestaTexto = `¡Gracias, ${firstName}! ¿En qué te puedo ayudar hoy? 😊`;
+        }
+        console.log(`[bot] Cliente identificado: ${args.nombre_completo} CI:${args.ci} en_bd:${!!clienteMatch}`);
       }
 
       if (fn === "detectar_intencion") {
