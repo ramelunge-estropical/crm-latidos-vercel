@@ -128,7 +128,10 @@ Para cotizaciones, reservas específicas o gestiones: llamá a detectar_intencio
 ` : ""}
 
 ## FASE 3 — DERIVACIÓN
-Cuando tengas la intención clara, llamá primero a detectar_intencion() y luego a asignar_cola().
+Cuando el cliente te diga qué necesita, hacé LAS DOS COSAS EN EL MISMO MENSAJE:
+1. Llamá a detectar_intencion()
+2. Inmediatamente llamá a asignar_cola()
+NO hagas una sin la otra. NO esperes respuesta intermedia.
 Si hay EMERGENCIA, derivá inmediatamente sin más preguntas.
 
 ## COLAS DISPONIBLES
@@ -315,8 +318,29 @@ Deno.serve(async (req: Request) => {
     // 1. Load conversation
     const conv = await getConversacion(conversacion_id);
     if (!conv) return new Response("conv not found", { status: 404 });
+
+    // 2a. Auto-reactivate on new inbound message (WhatsApp 24h window logic)
+    //     When client messages again after handoff/pause → fresh bot session
     if (conv.bot_estado === "handed_off" || conv.bot_estado === "pausado") {
-      return new Response("bot inactive", { status: 200 });
+      const freshCtx: BotContexto = conv.cliente_id
+        ? { fase: "necesidad", cliente_id: conv.cliente_id, nombre: conv.cliente_nombre }
+        : { fase: "identificacion" };
+
+      await updateConversacion(conversacion_id, {
+        bot_estado:          "activo",
+        bot_turnos:          0,
+        bot_contexto:        freshCtx,
+        cola_id:             null,
+        intencion_detectada: null,
+        urgencia_detectada:  null,
+        resumen_ia:          null,
+        estado:              "abierta",
+      });
+
+      conv.bot_estado   = "activo";
+      conv.bot_turnos   = 0;
+      conv.bot_contexto = freshCtx;
+      console.log(`[bot] Sesión reiniciada por nuevo mensaje inbound (era ${conv.bot_estado})`);
     }
 
     const ctx: BotContexto = (conv.bot_contexto && typeof conv.bot_contexto === "object")
@@ -325,7 +349,7 @@ Deno.serve(async (req: Request) => {
 
     const turno = conv.bot_turnos ?? 0;
 
-    // 2. Force handoff if max turns exceeded
+    // 2b. Force handoff if max turns exceeded
     if (turno >= MAX_TURNS) {
       const cola = await getColaByNombre("Frontdesk Vacacional");
       await updateConversacion(conversacion_id, {
@@ -372,11 +396,15 @@ Deno.serve(async (req: Request) => {
     let handoffColaName = "";
     let handoffMsg = "";
 
+    let toolCalledIdentificar = false;
+    let toolCalledIntencion   = false;
+
     for (const toolCall of (aiMessage.tool_calls ?? [])) {
       const fn   = toolCall.function.name;
       const args = JSON.parse(toolCall.function.arguments ?? "{}");
 
       if (fn === "identificar_cliente") {
+        toolCalledIdentificar = true;
         newCtx.fase   = "necesidad";
         newCtx.nombre = args.nombre_completo;
         newCtx.ci     = args.ci;
@@ -391,9 +419,17 @@ Deno.serve(async (req: Request) => {
           });
         }
         console.log(`[bot] Cliente identificado: ${args.nombre_completo} CI:${args.ci} en_bd:${args.cliente_encontrado}`);
+
+        // Bug fix #1: override AI text — use our own acknowledgment instead of
+        // the stale identification-request text OpenAI may return alongside the tool call
+        const firstName = args.nombre_completo.split(" ")[0];
+        respuestaTexto = clienteMatch
+          ? `¡Gracias, ${firstName}! Ya te tengo registrado en nuestro sistema. ¿En qué te puedo ayudar hoy? 😊`
+          : `¡Gracias, ${firstName}! ¿En qué te puedo ayudar hoy? 😊`;
       }
 
       if (fn === "detectar_intencion") {
+        toolCalledIntencion = true;
         newCtx.intencion = args.categoria;
         newCtx.urgencia  = args.urgencia;
         await updateConversacion(conversacion_id, {
@@ -409,6 +445,28 @@ Deno.serve(async (req: Request) => {
         handoffColaName  = args.cola_nombre;
         handoffMsg       = args.mensaje_despedida;
         console.log(`[bot] Asignando a cola: ${args.cola_nombre}`);
+      }
+    }
+
+    // Bug fix #2: if intencion was detected but asignar_cola was NOT called in the same turn,
+    // make a second OpenAI call forcing it to assign the queue immediately
+    if (toolCalledIntencion && !shouldHandoff) {
+      console.log("[bot] detectar_intencion sin asignar_cola — forzando segunda llamada a OpenAI");
+      const forcedSystemPrompt = buildSystemPrompt(newCtx, clienteInfo, colasInfo, turno + 1);
+      const forcedAiMessage = await callOpenAI(
+        forcedSystemPrompt + "\n\nIMPORTANTE: Ya tenés la intención del cliente. DEBES llamar a asignar_cola() AHORA.",
+        mensajes,
+        contenido,
+      );
+      for (const toolCall of (forcedAiMessage?.tool_calls ?? [])) {
+        const fn   = toolCall.function.name;
+        const args = JSON.parse(toolCall.function.arguments ?? "{}");
+        if (fn === "asignar_cola") {
+          shouldHandoff   = true;
+          handoffColaName = args.cola_nombre;
+          handoffMsg      = args.mensaje_despedida;
+          console.log(`[bot] (forzado) Asignando a cola: ${args.cola_nombre}`);
+        }
       }
     }
 
