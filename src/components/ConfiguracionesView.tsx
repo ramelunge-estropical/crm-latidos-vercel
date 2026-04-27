@@ -189,7 +189,7 @@ export function ConfiguracionesView() {
 
   const colaboradorId = localStorage.getItem("mis_gestiones_colaborador") || "";
 
-  const { data: currentUser } = useQuery({
+  const { data: currentUser, isLoading: loadingUser } = useQuery({
     queryKey: ["current-user-rol", colaboradorId],
     queryFn: async () => {
       if (!colaboradorId) return null;
@@ -203,10 +203,25 @@ export function ConfiguracionesView() {
     enabled: !!colaboradorId,
   });
 
-  const userRol = currentUser?.rol || "colaborador";
+  // Wait for query to resolve before gating — avoids false "sin acceso" during load
+  const userRol = loadingUser ? null : (currentUser?.rol || "colaborador");
 
-  const canView = (sectionId: string) => SECTION_PERMS[sectionId]?.canView.includes(userRol) ?? false;
-  const canEdit = (sectionId: string) => SECTION_PERMS[sectionId]?.canEdit.includes(userRol) ?? false;
+  const canView = (sectionId: string) => SECTION_PERMS[sectionId]?.canView.includes(userRol ?? "") ?? false;
+  const canEdit = (sectionId: string) => SECTION_PERMS[sectionId]?.canEdit.includes(userRol ?? "") ?? false;
+
+  if (loadingUser || userRol === null) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-border bg-card">
+          <Settings className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-semibold text-foreground">Configuraciones</h2>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
   if (userRol === "colaborador" || userRol === "viewer") {
     return (
