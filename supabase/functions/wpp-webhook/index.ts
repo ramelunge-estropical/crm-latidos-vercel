@@ -222,7 +222,7 @@ async function findOrCreateConversacion(telefono: string, clienteNombre: string 
     .insert({
       telefono:         phone,
       canal:            "whatsapp",
-      estado:           "nuevo",
+      estado:           "abierta",
       prioridad:        "media",
       cliente_id:       cliente?.id ?? null,
       cliente_nombre:   cliente?.nombre_completo ?? clienteNombre ?? `+${phone}`,
