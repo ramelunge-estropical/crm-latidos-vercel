@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "colas" | "canales" | "troncales" | "reglas" | "horarios" | "bot";
+type Tab = "colas" | "canales" | "troncales" | "reglas" | "horarios" | "bot" | "email-bot";
 
 interface Troncal {
   id: string; nombre: string; proveedor: string; tipo: string;
@@ -996,6 +996,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "reglas",    label: "Reglas",    icon: Zap },
   { id: "horarios",  label: "Horarios",  icon: Clock },
   { id: "bot",       label: "Lati IA",   icon: Bot },
+  { id: "email-bot", label: "Email IA",  icon: FileText },
 ];
 
 interface Props { readonly?: boolean; }
@@ -1039,7 +1040,12 @@ export function LatOmnicanalConfig({ readonly = false }: Props) {
         {tab === "horarios"  && <HorariosTab  readonly={readonly} />}
         {tab === "bot"       && (
           <div className="p-6">
-            <LatBotConfig readonly={readonly} />
+            <LatBotConfig readonly={readonly} canal="whatsapp" />
+          </div>
+        )}
+        {tab === "email-bot" && (
+          <div className="p-6">
+            <LatBotConfig readonly={readonly} canal="email" />
           </div>
         )}
       </div>

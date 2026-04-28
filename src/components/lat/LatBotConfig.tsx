@@ -38,16 +38,17 @@ const TEMP_LABELS: Record<string, string> = {
   "1.0": "Muy creativo (puede improvisar)",
 };
 
-export function LatBotConfig({ readonly }: { readonly?: boolean }) {
+export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: boolean; canal?: "whatsapp" | "email" }) {
   const qc = useQueryClient();
 
   const { data: cfg, isLoading } = useQuery<BotConfig | null>({
-    queryKey: ["lat_bot_config"],
+    queryKey: ["lat_bot_config", canal],
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from("lat_bot_config")
         .select("*")
         .eq("activo", true)
+        .eq("canal", canal)
         .single();
       return data ?? null;
     },
@@ -81,7 +82,8 @@ export function LatBotConfig({ readonly }: { readonly?: boolean }) {
           updated_at: new Date().toISOString(),
           updated_by: colaboradorId ?? null,
         })
-        .eq("id", cfg.id);
+        .eq("id", cfg.id)
+        .eq("canal", canal);
       if (error) throw error;
       qc.invalidateQueries({ queryKey: ["lat_bot_config"] });
       setForm({});
@@ -116,11 +118,13 @@ export function LatBotConfig({ readonly }: { readonly?: boolean }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-fuchsia-500/10 flex items-center justify-center">
-            <Bot className="w-5 h-5 text-fuchsia-600" />
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${canal === "email" ? "bg-blue-500/10" : "bg-fuchsia-500/10"}`}>
+            <Bot className={`w-5 h-5 ${canal === "email" ? "text-blue-600" : "text-fuchsia-600"}`} />
           </div>
           <div>
-            <h3 className="text-sm font-semibold">Lati — Agente IA de WhatsApp</h3>
+            <h3 className="text-sm font-semibold">
+              {canal === "email" ? "Agente Email — total@estropical.com" : "Lati — Agente IA de WhatsApp"}
+            </h3>
             {cfg.updated_by && (
               <p className="text-[11px] text-muted-foreground">
                 Última edición: {new Date(cfg.updated_at).toLocaleDateString("es-BO")}

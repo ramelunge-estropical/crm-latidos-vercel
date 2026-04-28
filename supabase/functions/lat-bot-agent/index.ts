@@ -234,6 +234,7 @@ async function getBotConfig() {
     .from("lat_bot_config")
     .select("modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias, min_preguntas_calificacion, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
     .eq("activo", true)
+    .eq("canal", "whatsapp")
     .single();
   return data as any;
 }
