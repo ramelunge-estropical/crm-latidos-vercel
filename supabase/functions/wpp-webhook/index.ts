@@ -23,11 +23,11 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const BUCKET = "lat-adjuntos";
 
-// ── Bot agent trigger (fire-and-forget) ───────────────────────────────────────
+// ── Bot agent trigger ─────────────────────────────────────────────────────────
 
 function triggerBotAgent(convId: string, telefono: string, contenido: string) {
   const url = `${SUPABASE_URL}/functions/v1/lat-bot-agent`;
-  fetch(url, {
+  const promise = fetch(url, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
@@ -35,6 +35,9 @@ function triggerBotAgent(convId: string, telefono: string, contenido: string) {
     },
     body: JSON.stringify({ conversacion_id: convId, telefono, contenido }),
   }).catch(err => console.error("bot-agent trigger failed:", err));
+  // Keep the edge function alive until the bot trigger request completes.
+  // Without this, Deno may terminate the process before the fetch resolves.
+  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

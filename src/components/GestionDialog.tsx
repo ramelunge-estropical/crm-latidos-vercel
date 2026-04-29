@@ -246,9 +246,15 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion,
         if (error) throw error;
         toast.success("Gestión actualizada");
       } else {
-        const { error } = await (supabase as any).from("gestiones").insert(payload);
+        const { data: nueva, error } = await (supabase as any).from("gestiones").insert(payload).select("id, title, type, area_id, process_id").single();
         if (error) throw error;
         toast.success("Gestión creada");
+        // Emitir evento de integración (fire-and-forget)
+        fetch("https://qadfjbgfdejmhblgvaef.supabase.co/functions/v1/recibir-evento", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": "a8b36b60-ce29-4877-b9af-34a15a496e8a" },
+          body: JSON.stringify({ origen: "latidos", tipo: "gestion_creada", payload: { ...payload, id: nueva?.id } }),
+        }).catch(() => {});
       }
 
       invalidateAll();

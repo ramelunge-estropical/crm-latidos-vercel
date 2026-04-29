@@ -5,7 +5,8 @@ import {
   Phone, Globe, Layers, ClipboardList, Clock, Plus, Pencil, Trash2,
   Check, X, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
   AlertCircle, Zap, DollarSign, Star, HelpCircle, Bus, Plane,
-  FileText, Users, Briefcase, BarChart3, Bot
+  FileText, Users, Briefcase, BarChart3, Bot, Activity, MessageSquare,
+  Mail, Wifi, WifiOff, ChevronRight,
 } from "lucide-react";
 import { LatBotConfig } from "./LatBotConfig";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "colas" | "canales" | "troncales" | "reglas" | "horarios" | "bot" | "email-bot";
+type Tab = "overview" | "canales" | "colas" | "reglas" | "horarios" | "agentes-ia";
 
 interface Troncal {
   id: string; nombre: string; proveedor: string; tipo: string;
@@ -62,6 +63,24 @@ const DIAS_LABELS: Record<string, string> = {
   jueves: "Jue", viernes: "Vie", sabado: "Sáb", domingo: "Dom",
 };
 
+const TIPO_COLORS: Record<string, string> = {
+  whatsapp: "bg-green-500/10 text-green-600 border-green-200",
+  instagram: "bg-purple-500/10 text-purple-600 border-purple-200",
+  facebook: "bg-blue-500/10 text-blue-600 border-blue-200",
+  email: "bg-amber-500/10 text-amber-600 border-amber-200",
+  web: "bg-cyan-500/10 text-cyan-600 border-cyan-200",
+  interno: "bg-slate-500/10 text-slate-600 border-slate-200",
+};
+
+const TIPO_ICONS: Record<string, React.ElementType> = {
+  whatsapp: MessageSquare,
+  instagram: Globe,
+  facebook: Globe,
+  email: Mail,
+  web: Globe,
+  interno: Layers,
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function db() { return supabase as any; }
@@ -76,6 +95,454 @@ function ColaBadge({ color, nombre, icono }: { color: string; nombre: string; ic
       <Icon className="w-3 h-3" />
       {nombre}
     </span>
+  );
+}
+
+// ─── VISTA GENERAL TAB ────────────────────────────────────────────────────────
+
+function VistaGeneralTab() {
+  const { data: canales = [] } = useQuery<Canal[]>({
+    queryKey: ["lat_canales"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_canales").select("*").order("nombre");
+      return data || [];
+    },
+  });
+  const { data: colas = [] } = useQuery<Cola[]>({
+    queryKey: ["lat_colas"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_colas").select("*").order("orden");
+      return data || [];
+    },
+  });
+  const { data: reglas = [] } = useQuery<Regla[]>({
+    queryKey: ["lat_reglas"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_reglas_asignacion").select("*").order("prioridad");
+      return data || [];
+    },
+  });
+  const { data: horarios = [] } = useQuery<Horario[]>({
+    queryKey: ["lat_horarios"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_horarios").select("*").order("nombre");
+      return data || [];
+    },
+  });
+
+  const canalesActivos = canales.filter(c => c.activo).length;
+  const colasActivas = colas.filter(c => c.activa).length;
+  const reglasActivas = reglas.filter(r => r.activa).length;
+  const horariosActivos = horarios.filter(h => h.activo).length;
+
+  const stats = [
+    { label: "Canales activos", value: canalesActivos, total: canales.length, icon: Globe, color: "text-green-600", bg: "bg-green-500/10" },
+    { label: "Colas activas", value: colasActivas, total: colas.length, icon: Layers, color: "text-indigo-600", bg: "bg-indigo-500/10" },
+    { label: "Reglas activas", value: reglasActivas, total: reglas.length, icon: Zap, color: "text-amber-600", bg: "bg-amber-500/10" },
+    { label: "Horarios", value: horariosActivos, total: horarios.length, icon: Clock, color: "text-blue-600", bg: "bg-blue-500/10" },
+  ];
+
+  return (
+    <div className="p-6 space-y-6 max-w-4xl">
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {stats.map(s => {
+          const Icon = s.icon;
+          return (
+            <div key={s.label} className="p-4 rounded-xl border border-border bg-card space-y-2">
+              <div className={`w-8 h-8 rounded-lg ${s.bg} flex items-center justify-center`}>
+                <Icon className={`w-4 h-4 ${s.color}`} />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{s.value}</p>
+                <p className="text-[10px] text-muted-foreground">{s.label}</p>
+                {s.total > s.value && (
+                  <p className="text-[10px] text-muted-foreground">{s.total - s.value} inactivo{s.total - s.value > 1 ? "s" : ""}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Canal status */}
+      <div>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Estado de canales</h4>
+        <div className="space-y-2">
+          {canales.length === 0 && (
+            <p className="text-xs text-muted-foreground p-4 rounded-xl border border-dashed border-border text-center">
+              No hay canales configurados
+            </p>
+          )}
+          {canales.map(canal => {
+            const TipoIcon = TIPO_ICONS[canal.tipo] || Globe;
+            return (
+              <div key={canal.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card">
+                <div className={`px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1.5 ${TIPO_COLORS[canal.tipo] || "bg-muted text-muted-foreground border-border"}`}>
+                  <TipoIcon className="w-3 h-3" />
+                  {canal.tipo}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{canal.nombre}</p>
+                  {canal.numero_origen && (
+                    <p className="text-[10px] text-muted-foreground">{canal.numero_origen}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {canal.activo
+                    ? <><Wifi className="w-3.5 h-3.5 text-emerald-500" /><span className="text-[10px] text-emerald-600 font-medium">Activo</span></>
+                    : <><WifiOff className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-[10px] text-muted-foreground">Inactivo</span></>
+                  }
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Colas resumen */}
+      {colas.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Colas de atención</h4>
+          <div className="flex flex-wrap gap-2">
+            {colas.map(cola => (
+              <div key={cola.id} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-card">
+                <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />
+                <span className="text-[10px] text-muted-foreground">{cola.estrategia_asignacion.replace("_", " ")}</span>
+                {!cola.activa && <Badge variant="secondary" className="text-[10px]">Inactiva</Badge>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CANALES TAB (con Troncales integrado) ────────────────────────────────────
+
+function CanalesTab({ readonly }: { readonly: boolean }) {
+  const qc = useQueryClient();
+  const [editingCanal, setEditingCanal] = useState<Partial<Canal> | null>(null);
+  const [isNewCanal, setIsNewCanal] = useState(false);
+  const [editingTroncal, setEditingTroncal] = useState<Partial<Troncal> | null>(null);
+  const [isNewTroncal, setIsNewTroncal] = useState(false);
+  const [showTroncales, setShowTroncales] = useState(false);
+
+  const { data: canales = [], isLoading } = useQuery<Canal[]>({
+    queryKey: ["lat_canales"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_canales").select("*, lat_troncales(nombre, proveedor, numero)").order("nombre");
+      return data || [];
+    },
+  });
+
+  const { data: troncales = [] } = useQuery<Troncal[]>({
+    queryKey: ["lat_troncales"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_troncales").select("*").order("nombre");
+      return data || [];
+    },
+  });
+
+  const saveCanal = async () => {
+    if (!editingCanal || !editingCanal.nombre?.trim()) return;
+    const payload = {
+      nombre: editingCanal.nombre,
+      tipo: editingCanal.tipo || "whatsapp",
+      troncal_id: editingCanal.troncal_id || null,
+      numero_origen: editingCanal.numero_origen || null,
+      descripcion: editingCanal.descripcion || null,
+      activo: editingCanal.activo ?? true,
+    };
+    if (isNewCanal) {
+      await db().from("lat_canales").insert(payload);
+      toast.success("Canal creado");
+    } else {
+      await db().from("lat_canales").update(payload).eq("id", editingCanal.id);
+      toast.success("Canal actualizado");
+    }
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+    setEditingCanal(null);
+  };
+
+  const removeCanal = async (id: string) => {
+    await db().from("lat_canales").delete().eq("id", id);
+    toast.success("Canal eliminado");
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+  };
+
+  const saveTroncal = async () => {
+    if (!editingTroncal || !editingTroncal.nombre?.trim()) return;
+    const payload = {
+      nombre: editingTroncal.nombre,
+      proveedor: editingTroncal.proveedor || "gupshup",
+      tipo: editingTroncal.tipo || "whatsapp",
+      numero: editingTroncal.numero || null,
+      descripcion: editingTroncal.descripcion || null,
+      activo: editingTroncal.activo ?? true,
+    };
+    if (isNewTroncal) {
+      await db().from("lat_troncales").insert(payload);
+      toast.success("Proveedor creado");
+    } else {
+      await db().from("lat_troncales").update(payload).eq("id", editingTroncal.id);
+      toast.success("Proveedor actualizado");
+    }
+    qc.invalidateQueries({ queryKey: ["lat_troncales"] });
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+    setEditingTroncal(null);
+  };
+
+  const removeTroncal = async (id: string) => {
+    await db().from("lat_troncales").delete().eq("id", id);
+    toast.success("Proveedor eliminado");
+    qc.invalidateQueries({ queryKey: ["lat_troncales"] });
+  };
+
+  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
+
+  if (editingCanal) {
+    return (
+      <div className="p-6 max-w-lg space-y-5">
+        <h3 className="font-semibold text-sm">{isNewCanal ? "Nuevo canal" : "Editar canal"}</h3>
+
+        {/* Identificación */}
+        <div className="space-y-3">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Identificación</p>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              value={editingCanal.nombre || ""} onChange={e => setEditingCanal(p => ({ ...p, nombre: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={editingCanal.tipo || "whatsapp"} onChange={e => setEditingCanal(p => ({ ...p, tipo: e.target.value }))}>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="instagram">Instagram</option>
+                <option value="facebook">Facebook</option>
+                <option value="email">Email</option>
+                <option value="web">Web Chat</option>
+                <option value="interno">Interno</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
+              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                placeholder="+591..." value={editingCanal.numero_origen || ""} onChange={e => setEditingCanal(p => ({ ...p, numero_origen: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
+            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
+              value={editingCanal.descripcion || ""} onChange={e => setEditingCanal(p => ({ ...p, descripcion: e.target.value }))} />
+          </div>
+        </div>
+
+        {/* Conexión / Proveedor */}
+        <div className="space-y-3">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Conexión / Proveedor</p>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Proveedor de conexión</label>
+            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editingCanal.troncal_id || ""} onChange={e => setEditingCanal(p => ({ ...p, troncal_id: e.target.value || null }))}>
+              <option value="">Sin proveedor asignado</option>
+              {troncales.map(t => (
+                <option key={t.id} value={t.id}>{t.nombre} — {t.proveedor}{t.numero ? ` · ${t.numero}` : ""}</option>
+              ))}
+            </select>
+          </div>
+          {troncales.length === 0 && (
+            <p className="text-[10px] text-muted-foreground">
+              No hay proveedores configurados. Agregalos en la sección "Proveedores" más abajo.
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <Button size="sm" onClick={saveCanal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditingCanal(null)}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (editingTroncal) {
+    return (
+      <div className="p-6 max-w-lg space-y-4">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setEditingTroncal(null)} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+          <h3 className="font-semibold text-sm">{isNewTroncal ? "Nuevo proveedor" : "Editar proveedor"}</h3>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              value={editingTroncal.nombre || ""} onChange={e => setEditingTroncal(p => ({ ...p, nombre: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Proveedor</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={editingTroncal.proveedor || "gupshup"} onChange={e => setEditingTroncal(p => ({ ...p, proveedor: e.target.value }))}>
+                <option value="gupshup">Gupshup</option>
+                <option value="twilio">Twilio</option>
+                <option value="meta">Meta Business</option>
+                <option value="google">Google Workspace</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={editingTroncal.tipo || "whatsapp"} onChange={e => setEditingTroncal(p => ({ ...p, tipo: e.target.value }))}>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="sms">SMS</option>
+                <option value="email">Email</option>
+                <option value="voz">Voz</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
+            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editingTroncal.numero || ""} onChange={e => setEditingTroncal(p => ({ ...p, numero: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
+            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
+              value={editingTroncal.descripcion || ""} onChange={e => setEditingTroncal(p => ({ ...p, descripcion: e.target.value }))} />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={saveTroncal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditingTroncal(null)}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Canales */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold">Canales de comunicación</p>
+            <p className="text-[10px] text-muted-foreground">{canales.length} canales · {canales.filter(c => c.activo).length} activos</p>
+          </div>
+          {!readonly && (
+            <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNewCanal(true); setEditingCanal({ activo: true, tipo: "whatsapp" }); }}>
+              <Plus className="w-3.5 h-3.5" />Nuevo canal
+            </Button>
+          )}
+        </div>
+        <div className="space-y-2">
+          {canales.map((canal: any) => {
+            const TipoIcon = TIPO_ICONS[canal.tipo] || Globe;
+            return (
+              <div key={canal.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
+                <div className={`px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1.5 ${TIPO_COLORS[canal.tipo] || "bg-muted text-muted-foreground border-border"}`}>
+                  <TipoIcon className="w-3 h-3" />
+                  {canal.tipo}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{canal.nombre}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {canal.lat_troncales
+                      ? `${canal.lat_troncales.proveedor}${canal.lat_troncales.numero ? ` · ${canal.lat_troncales.numero}` : ""}`
+                      : "Sin proveedor"
+                    }
+                    {canal.numero_origen ? ` · ${canal.numero_origen}` : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {canal.activo
+                    ? <Wifi className="w-3.5 h-3.5 text-emerald-500" />
+                    : <WifiOff className="w-3.5 h-3.5 text-muted-foreground" />
+                  }
+                </div>
+                {!readonly && (
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                    <button onClick={() => { setIsNewCanal(false); setEditingCanal(canal); }} className="p-1.5 rounded hover:bg-accent">
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                    <button onClick={() => removeCanal(canal.id)} className="p-1.5 rounded hover:bg-destructive/10">
+                      <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Separator */}
+      <div className="border-t border-border" />
+
+      {/* Proveedores / Troncales */}
+      <div className="space-y-3">
+        <button
+          className="flex items-center justify-between w-full group"
+          onClick={() => setShowTroncales(v => !v)}
+        >
+          <div>
+            <p className="text-sm font-semibold flex items-center gap-2">
+              <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+              Proveedores de conexión
+            </p>
+            <p className="text-[10px] text-muted-foreground text-left">{troncales.length} proveedores · credenciales y webhooks</p>
+          </div>
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showTroncales ? "rotate-180" : ""}`} />
+        </button>
+
+        {showTroncales && (
+          <div className="space-y-3">
+            {!readonly && (
+              <div className="flex justify-end">
+                <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => { setIsNewTroncal(true); setEditingTroncal({ activo: true, tipo: "whatsapp", proveedor: "gupshup" }); }}>
+                  <Plus className="w-3.5 h-3.5" />Nuevo proveedor
+                </Button>
+              </div>
+            )}
+            <div className="space-y-2">
+              {troncales.map(t => (
+                <div key={t.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <Phone className="w-3.5 h-3.5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{t.nombre}</p>
+                    <p className="text-[10px] text-muted-foreground">{t.proveedor} · {t.tipo}{t.numero ? ` · ${t.numero}` : ""}</p>
+                  </div>
+                  <Badge variant={t.activo ? "default" : "secondary"} className="text-[10px] shrink-0">
+                    {t.activo ? "Activo" : "Inactivo"}
+                  </Badge>
+                  {!readonly && (
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                      <button onClick={() => { setIsNewTroncal(false); setEditingTroncal(t); }} className="p-1.5 rounded hover:bg-accent">
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
+                      <button onClick={() => removeTroncal(t.id)} className="p-1.5 rounded hover:bg-destructive/10">
+                        <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {troncales.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">No hay proveedores configurados</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -281,295 +748,6 @@ function ColasTab({ readonly }: { readonly: boolean }) {
   );
 }
 
-// ─── CANALES TAB ──────────────────────────────────────────────────────────────
-
-function CanalesTab({ readonly }: { readonly: boolean }) {
-  const qc = useQueryClient();
-  const [editing, setEditing] = useState<Partial<Canal> | null>(null);
-  const [isNew, setIsNew] = useState(false);
-
-  const { data: canales = [], isLoading } = useQuery<Canal[]>({
-    queryKey: ["lat_canales"],
-    queryFn: async () => {
-      const { data } = await db().from("lat_canales").select("*, lat_troncales(nombre)").order("nombre");
-      return data || [];
-    },
-  });
-
-  const { data: troncales = [] } = useQuery<Troncal[]>({
-    queryKey: ["lat_troncales"],
-    queryFn: async () => {
-      const { data } = await db().from("lat_troncales").select("id, nombre, tipo").order("nombre");
-      return data || [];
-    },
-  });
-
-  const save = async () => {
-    if (!editing || !editing.nombre?.trim()) return;
-    const payload = {
-      nombre: editing.nombre,
-      tipo: editing.tipo || "whatsapp",
-      troncal_id: editing.troncal_id || null,
-      numero_origen: editing.numero_origen || null,
-      descripcion: editing.descripcion || null,
-      activo: editing.activo ?? true,
-    };
-    if (isNew) {
-      await db().from("lat_canales").insert(payload);
-      toast.success("Canal creado");
-    } else {
-      await db().from("lat_canales").update(payload).eq("id", editing.id);
-      toast.success("Canal actualizado");
-    }
-    qc.invalidateQueries({ queryKey: ["lat_canales"] });
-    setEditing(null);
-  };
-
-  const remove = async (id: string) => {
-    await db().from("lat_canales").delete().eq("id", id);
-    toast.success("Canal eliminado");
-    qc.invalidateQueries({ queryKey: ["lat_canales"] });
-  };
-
-  const TIPO_COLORS: Record<string, string> = {
-    whatsapp: "bg-green-500/10 text-green-600",
-    instagram: "bg-purple-500/10 text-purple-600",
-    facebook: "bg-blue-500/10 text-blue-600",
-    email: "bg-amber-500/10 text-amber-600",
-    web: "bg-cyan-500/10 text-cyan-600",
-    interno: "bg-slate-500/10 text-slate-600",
-  };
-
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
-
-  if (editing) {
-    return (
-      <div className="p-6 max-w-lg space-y-4">
-        <h3 className="font-semibold text-sm">{isNew ? "Nuevo canal" : "Editar canal"}</h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.tipo || "whatsapp"} onChange={e => setEditing(p => ({ ...p, tipo: e.target.value }))}>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="instagram">Instagram</option>
-                <option value="facebook">Facebook</option>
-                <option value="email">Email</option>
-                <option value="web">Web Chat</option>
-                <option value="interno">Interno</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Troncal</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.troncal_id || ""} onChange={e => setEditing(p => ({ ...p, troncal_id: e.target.value || null }))}>
-                <option value="">Sin troncal</option>
-                {troncales.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Número origen</label>
-            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.numero_origen || ""} onChange={e => setEditing(p => ({ ...p, numero_origen: e.target.value }))} />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
-            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
-              value={editing.descripcion || ""} onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))} />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{canales.length} canales</p>
-        {!readonly && (
-          <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNew(true); setEditing({ activo: true, tipo: "whatsapp" }); }}>
-            <Plus className="w-3.5 h-3.5" />Nuevo canal
-          </Button>
-        )}
-      </div>
-      <div className="space-y-2">
-        {canales.map((canal: any) => (
-          <div key={canal.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
-            <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${TIPO_COLORS[canal.tipo] || "bg-muted text-muted-foreground"}`}>
-              {canal.tipo}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{canal.nombre}</p>
-              {canal.lat_troncales && (
-                <p className="text-[10px] text-muted-foreground truncate">Troncal: {canal.lat_troncales.nombre}</p>
-              )}
-            </div>
-            {canal.numero_origen && (
-              <span className="text-xs text-muted-foreground shrink-0">{canal.numero_origen}</span>
-            )}
-            {!readonly && (
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                <button onClick={() => { setIsNew(false); setEditing(canal); }} className="p-1.5 rounded hover:bg-accent">
-                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
-                <button onClick={() => remove(canal.id)} className="p-1.5 rounded hover:bg-destructive/10">
-                  <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── TRONCALES TAB ────────────────────────────────────────────────────────────
-
-function TroncalesTab({ readonly }: { readonly: boolean }) {
-  const qc = useQueryClient();
-  const [editing, setEditing] = useState<Partial<Troncal> | null>(null);
-  const [isNew, setIsNew] = useState(false);
-
-  const { data: troncales = [], isLoading } = useQuery<Troncal[]>({
-    queryKey: ["lat_troncales"],
-    queryFn: async () => {
-      const { data } = await db().from("lat_troncales").select("*").order("nombre");
-      return data || [];
-    },
-  });
-
-  const save = async () => {
-    if (!editing || !editing.nombre?.trim()) return;
-    const payload = {
-      nombre: editing.nombre,
-      proveedor: editing.proveedor || "gupshup",
-      tipo: editing.tipo || "whatsapp",
-      numero: editing.numero || null,
-      descripcion: editing.descripcion || null,
-      activo: editing.activo ?? true,
-    };
-    if (isNew) {
-      await db().from("lat_troncales").insert(payload);
-      toast.success("Troncal creado");
-    } else {
-      await db().from("lat_troncales").update(payload).eq("id", editing.id);
-      toast.success("Troncal actualizado");
-    }
-    qc.invalidateQueries({ queryKey: ["lat_troncales"] });
-    setEditing(null);
-  };
-
-  const remove = async (id: string) => {
-    await db().from("lat_troncales").delete().eq("id", id);
-    toast.success("Troncal eliminado");
-    qc.invalidateQueries({ queryKey: ["lat_troncales"] });
-  };
-
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
-
-  if (editing) {
-    return (
-      <div className="p-6 max-w-lg space-y-4">
-        <h3 className="font-semibold text-sm">{isNew ? "Nuevo troncal" : "Editar troncal"}</h3>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Proveedor</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.proveedor || "gupshup"} onChange={e => setEditing(p => ({ ...p, proveedor: e.target.value }))}>
-                <option value="gupshup">Gupshup</option>
-                <option value="twilio">Twilio</option>
-                <option value="meta">Meta Business</option>
-                <option value="otro">Otro</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.tipo || "whatsapp"} onChange={e => setEditing(p => ({ ...p, tipo: e.target.value }))}>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="sms">SMS</option>
-                <option value="email">Email</option>
-                <option value="voz">Voz</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Número</label>
-            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.numero || ""} onChange={e => setEditing(p => ({ ...p, numero: e.target.value }))} />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
-            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
-              value={editing.descripcion || ""} onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))} />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{troncales.length} troncales</p>
-        {!readonly && (
-          <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNew(true); setEditing({ activo: true, tipo: "whatsapp", proveedor: "gupshup" }); }}>
-            <Plus className="w-3.5 h-3.5" />Nuevo troncal
-          </Button>
-        )}
-      </div>
-      <div className="space-y-2">
-        {troncales.map(t => (
-          <div key={t.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
-            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-              <Phone className="w-4 h-4 text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{t.nombre}</p>
-              <p className="text-[10px] text-muted-foreground">{t.proveedor} · {t.tipo}{t.numero ? ` · ${t.numero}` : ""}</p>
-            </div>
-            <Badge variant={t.activo ? "default" : "secondary"} className="text-[10px] shrink-0">
-              {t.activo ? "Activo" : "Inactivo"}
-            </Badge>
-            {!readonly && (
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                <button onClick={() => { setIsNew(false); setEditing(t); }} className="p-1.5 rounded hover:bg-accent">
-                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
-                <button onClick={() => remove(t.id)} className="p-1.5 rounded hover:bg-destructive/10">
-                  <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── REGLAS TAB ───────────────────────────────────────────────────────────────
 
 const CAMPOS = [
@@ -685,7 +863,6 @@ function ReglasTab({ readonly }: { readonly: boolean }) {
             </div>
           </div>
 
-          {/* Condiciones */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium">Condiciones <span className="text-muted-foreground font-normal">(todas deben cumplirse)</span></label>
@@ -717,7 +894,6 @@ function ReglasTab({ readonly }: { readonly: boolean }) {
             ))}
           </div>
 
-          {/* Acción */}
           <div>
             <label className="text-xs font-medium mb-2 block">Acción — asignar a cola</label>
             <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
@@ -987,22 +1163,62 @@ function HorariosTab({ readonly }: { readonly: boolean }) {
   );
 }
 
+// ─── AGENTES IA TAB ───────────────────────────────────────────────────────────
+
+function AgentesIATab({ readonly }: { readonly: boolean }) {
+  const [agente, setAgente] = useState<"whatsapp" | "email">("whatsapp");
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Sub-tab selector */}
+      <div className="flex items-center gap-2 px-6 pt-5 pb-0">
+        <button
+          onClick={() => setAgente("whatsapp")}
+          className={[
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors",
+            agente === "whatsapp"
+              ? "bg-fuchsia-500/10 text-fuchsia-700 border border-fuchsia-200"
+              : "text-muted-foreground hover:bg-accent border border-transparent",
+          ].join(" ")}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          Lati — WhatsApp
+        </button>
+        <button
+          onClick={() => setAgente("email")}
+          className={[
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-colors",
+            agente === "email"
+              ? "bg-blue-500/10 text-blue-700 border border-blue-200"
+              : "text-muted-foreground hover:bg-accent border border-transparent",
+          ].join(" ")}
+        >
+          <Mail className="w-3.5 h-3.5" />
+          Email IA — total@estropical.com
+        </button>
+      </div>
+      <div className="flex-1 overflow-auto p-6">
+        <LatBotConfig readonly={readonly} canal={agente} />
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "colas",     label: "Colas",     icon: Layers },
-  { id: "canales",   label: "Canales",   icon: Globe },
-  { id: "troncales", label: "Troncales", icon: Phone },
-  { id: "reglas",    label: "Reglas",    icon: Zap },
-  { id: "horarios",  label: "Horarios",  icon: Clock },
-  { id: "bot",       label: "Lati IA",   icon: Bot },
-  { id: "email-bot", label: "Email IA",  icon: FileText },
+  { id: "overview",   label: "Vista General", icon: Activity },
+  { id: "canales",    label: "Canales",        icon: Globe },
+  { id: "colas",      label: "Colas",          icon: Layers },
+  { id: "reglas",     label: "Reglas",         icon: Zap },
+  { id: "horarios",   label: "Horarios",       icon: Clock },
+  { id: "agentes-ia", label: "Agentes IA",     icon: Bot },
 ];
 
 interface Props { readonly?: boolean; }
 
 export function LatOmnicanalConfig({ readonly = false }: Props) {
-  const [tab, setTab] = useState<Tab>("colas");
+  const [tab, setTab] = useState<Tab>("overview");
 
   return (
     <div className="flex flex-col h-full">
@@ -1033,21 +1249,12 @@ export function LatOmnicanalConfig({ readonly = false }: Props) {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {tab === "colas"     && <ColasTab     readonly={readonly} />}
-        {tab === "canales"   && <CanalesTab   readonly={readonly} />}
-        {tab === "troncales" && <TroncalesTab readonly={readonly} />}
-        {tab === "reglas"    && <ReglasTab    readonly={readonly} />}
-        {tab === "horarios"  && <HorariosTab  readonly={readonly} />}
-        {tab === "bot"       && (
-          <div className="p-6">
-            <LatBotConfig readonly={readonly} canal="whatsapp" />
-          </div>
-        )}
-        {tab === "email-bot" && (
-          <div className="p-6">
-            <LatBotConfig readonly={readonly} canal="email" />
-          </div>
-        )}
+        {tab === "overview"   && <VistaGeneralTab />}
+        {tab === "canales"    && <CanalesTab    readonly={readonly} />}
+        {tab === "colas"      && <ColasTab      readonly={readonly} />}
+        {tab === "reglas"     && <ReglasTab     readonly={readonly} />}
+        {tab === "horarios"   && <HorariosTab   readonly={readonly} />}
+        {tab === "agentes-ia" && <AgentesIATab  readonly={readonly} />}
       </div>
     </div>
   );

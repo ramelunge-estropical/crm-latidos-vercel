@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Bot, Save, RotateCcw, Info, GitMerge, ClipboardList } from "lucide-react";
+import { Bot, Save, RotateCcw, Info, GitMerge, ClipboardList, Power, PowerOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -47,18 +47,19 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
       const { data } = await (supabase as any)
         .from("lat_bot_config")
         .select("*")
-        .eq("activo", true)
         .eq("canal", canal)
-        .single();
+        .maybeSingle();
       return data ?? null;
     },
   });
 
   const [form, setForm] = useState<Partial<BotConfig>>({});
   const [saving, setSaving] = useState(false);
+  const [togglingPower, setTogglingPower] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const current = { ...cfg, ...form } as BotConfig;
+  const isEnabled = current.activo ?? false;
 
   function set(field: keyof BotConfig, value: any) {
     setForm(f => ({ ...f, [field]: value }));
@@ -68,6 +69,28 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
   function reset() {
     setForm({});
     setDirty(false);
+  }
+
+  async function togglePower() {
+    if (!cfg?.id || readonly) return;
+    setTogglingPower(true);
+    try {
+      const newActivo = !cfg.activo;
+      const { error } = await (supabase as any)
+        .from("lat_bot_config")
+        .update({ activo: newActivo, updated_at: new Date().toISOString() })
+        .eq("id", cfg.id);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["lat_bot_config"] });
+      toast.success(newActivo
+        ? `Agente ${canal === "email" ? "Email" : "WhatsApp"} activado`
+        : `Agente ${canal === "email" ? "Email" : "WhatsApp"} pausado`
+      );
+    } catch (e: any) {
+      toast.error(e.message ?? "Error al cambiar estado");
+    } finally {
+      setTogglingPower(false);
+    }
   }
 
   async function save() {
@@ -82,13 +105,12 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
           updated_at: new Date().toISOString(),
           updated_by: colaboradorId ?? null,
         })
-        .eq("id", cfg.id)
-        .eq("canal", canal);
+        .eq("id", cfg.id);
       if (error) throw error;
       qc.invalidateQueries({ queryKey: ["lat_bot_config"] });
       setForm({});
       setDirty(false);
-      toast.success("Configuración de Lati guardada");
+      toast.success("Configuración guardada");
     } catch (e: any) {
       toast.error(e.message ?? "Error al guardar");
     } finally {
@@ -107,7 +129,7 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
   if (!cfg) {
     return (
       <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
-        No se encontró configuración activa del bot.
+        No se encontró configuración del agente para este canal.
       </div>
     );
   }
@@ -125,34 +147,63 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
             <h3 className="text-sm font-semibold">
               {canal === "email" ? "Agente Email — total@estropical.com" : "Lati — Agente IA de WhatsApp"}
             </h3>
-            {cfg.updated_by && (
+            {cfg.updated_at && (
               <p className="text-[11px] text-muted-foreground">
                 Última edición: {new Date(cfg.updated_at).toLocaleDateString("es-BO")}
               </p>
             )}
           </div>
-          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">
-            Activo
-          </Badge>
+          {isEnabled
+            ? <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">Activo</Badge>
+            : <Badge variant="outline" className="text-[10px] bg-orange-50 text-orange-700 border-orange-200">Pausado</Badge>
+          }
         </div>
-        {!readonly && dirty && (
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5" onClick={reset}>
-              <RotateCcw className="w-3.5 h-3.5" />Descartar
+
+        <div className="flex items-center gap-2">
+          {/* Power toggle */}
+          {!readonly && (
+            <Button
+              variant={isEnabled ? "outline" : "default"}
+              size="sm"
+              className={`h-8 text-xs gap-1.5 ${isEnabled ? "border-orange-300 text-orange-700 hover:bg-orange-50" : "bg-emerald-600 hover:bg-emerald-700 text-white"}`}
+              onClick={togglePower}
+              disabled={togglingPower}
+            >
+              {isEnabled
+                ? <><PowerOff className="w-3.5 h-3.5" />{togglingPower ? "Pausando…" : "Pausar agente"}</>
+                : <><Power className="w-3.5 h-3.5" />{togglingPower ? "Activando…" : "Activar agente"}</>
+              }
             </Button>
-            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={save} disabled={saving}>
-              <Save className="w-3.5 h-3.5" />{saving ? "Guardando…" : "Guardar cambios"}
-            </Button>
-          </div>
-        )}
+          )}
+
+          {!readonly && dirty && (
+            <>
+              <Button variant="ghost" size="sm" className="h-8 text-xs gap-1.5" onClick={reset}>
+                <RotateCcw className="w-3.5 h-3.5" />Descartar
+              </Button>
+              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={save} disabled={saving}>
+                <Save className="w-3.5 h-3.5" />{saving ? "Guardando…" : "Guardar cambios"}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Banner cuando está pausado */}
+      {!isEnabled && (
+        <div className="p-3 rounded-xl border border-orange-200 bg-orange-50 text-[12px] text-orange-800 flex items-center gap-2">
+          <PowerOff className="w-4 h-4 shrink-0" />
+          <span>
+            Este agente está <strong>pausado</strong>. Los mensajes entrantes no recibirán respuesta automática. Presioná <strong>Activar agente</strong> para reanudar.
+          </span>
+        </div>
+      )}
 
       {/* Modelo y parámetros */}
       <section className="p-4 rounded-xl border border-border bg-card space-y-4">
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Modelo y parámetros</h4>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Modelo */}
           <div className="sm:col-span-2 space-y-1.5">
             <label className="text-xs font-medium">Modelo de IA</label>
             <select
@@ -165,7 +216,6 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
             </select>
           </div>
 
-          {/* Max turnos */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Turnos máximos</label>
             <input
@@ -178,7 +228,6 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
           </div>
         </div>
 
-        {/* Temperatura */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium">Temperatura (creatividad)</label>

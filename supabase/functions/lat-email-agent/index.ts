@@ -380,9 +380,9 @@ async function findOrCreateConvEmail(email: string, nombre: string | null, subje
 async function getBotConfig() {
   const { data } = await supabase
     .from("lat_bot_config")
-    .select("prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
-    .eq("activo", true)
-    .single();
+    .select("activo, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
+    .eq("canal", "email")
+    .maybeSingle();
   return data as any;
 }
 
@@ -490,7 +490,14 @@ Deno.serve(async (req: Request) => {
   console.log("[email-agent] Starting email poll");
 
   try {
-    const cfg    = await getBotConfig();
+    const cfg = await getBotConfig();
+
+    // Skip if bot is disabled
+    if (!cfg || cfg.activo === false) {
+      console.log("[email-agent] Email bot desactivado — no se procesan emails");
+      return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
+    }
+
     const emails = await fetchUnreadEmails();
 
     let processed = 0;

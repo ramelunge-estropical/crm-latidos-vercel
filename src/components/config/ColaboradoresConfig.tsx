@@ -78,6 +78,11 @@ export function ColaboradoresConfig({ readonly = false }: { readonly?: boolean }
     toast.success("Rol actualizado");
   };
 
+  const handleToggleOtrosSistemas = async (id: string, current: boolean) => {
+    await (supabase as any).from("colaboradores").update({ ver_otros_sistemas: !current }).eq("id", id);
+    invalidate();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -141,6 +146,7 @@ export function ColaboradoresConfig({ readonly = false }: { readonly?: boolean }
               <th className="text-left px-3 py-2 font-medium text-muted-foreground">Cargo / Área</th>
               <th className="text-left px-3 py-2 font-medium text-muted-foreground">Rol</th>
               <th className="text-center px-3 py-2 font-medium text-muted-foreground">Activo</th>
+              <th className="text-center px-3 py-2 font-medium text-muted-foreground">Otros Sistemas</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -186,6 +192,9 @@ export function ColaboradoresConfig({ readonly = false }: { readonly?: boolean }
                   </td>
                   <td className="px-3 py-2.5 text-center">
                     <Switch checked={c.activo} onCheckedChange={() => !readonly && handleToggleActivo(c.id, c.activo)} disabled={readonly} />
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <Switch checked={!!c.ver_otros_sistemas} onCheckedChange={() => !readonly && handleToggleOtrosSistemas(c.id, !!c.ver_otros_sistemas)} disabled={readonly} />
                   </td>
                   <td className="px-3 py-2.5">
                     {!readonly && (

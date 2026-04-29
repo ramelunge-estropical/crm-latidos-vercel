@@ -16,6 +16,9 @@ import { WppTemplatePicker, WppTemplate } from '@/components/lat/WppTemplatePick
 import { AiAsesorPopover } from '@/components/lat/AiAsesorPopover';
 import { DerivarChatDialog } from '@/components/lat/DerivarChatDialog';
 import { AttachmentViewer, openAttachment } from '@/components/lat/AttachmentViewer';
+import { EmailThreadView } from '@/components/lat/EmailThreadView';
+import { EmailComposer, type ComposerInitial } from '@/components/lat/EmailComposer';
+import { useEmailDraft } from '@/hooks/useEmailDraft';
 import { GitBranch, Hand, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
@@ -291,6 +294,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const isOutOfWindow = conversacion.estado === 'fuera_ventana' ||
     (conversacion.ventana_whatsapp && new Date(conversacion.ventana_whatsapp).getTime() < Date.now());
   const isWhatsapp = conversacion.canal === 'whatsapp';
+  const isEmail = conversacion.canal === 'email';
 
   // ── Mensajes ──────────────────────────────────────────────────────────────
   const { data: mensajes, isLoading: loadingMsgs } = useLatMensajes(conversacion.id, isMock);
@@ -857,8 +861,18 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </div>
       )}
 
-      {/* ── Tab: CHAT ── */}
-      {activeTab === 'chat' && (
+      {/* ── Tab: CHAT (email) ── */}
+      {activeTab === 'chat' && isEmail && (
+        <EmailPanel
+          conversacionId={conversacion.id}
+          mensajes={mensajes ?? []}
+          loading={loadingMsgs}
+          autorNombre={conversacion.responsable_nombre ?? undefined}
+        />
+      )}
+
+      {/* ── Tab: CHAT (no-email) ── */}
+      {activeTab === 'chat' && !isEmail && (
         <>
           {/* IA Compact Block */}
           {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (
@@ -1566,4 +1580,163 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
 
 void Building2;
 void ImageIcon;
+
+
+// ─── EmailPanel: visor + composer para conversaciones de correo ────────────────
+interface EmailPanelProps {
+  conversacionId: string;
+  mensajes: LatMensaje[];
+  loading: boolean;
+  autorNombre?: string;
+}
+
+function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPanelProps) {
+  const { draft, saveDebounced, remove } = useEmailDraft(conversacionId);
+  const queryClient = useQueryClient();
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerInitial, setComposerInitial] = useState<ComposerInitial | null>(null);
+
+  // Si hay borrador previo, abrir composer con él
+  useEffect(() => {
+    if (draft && !composerOpen) {
+      setComposerInitial({
+        reply_type: (draft.reply_type as any) ?? 'reply',
+        to: draft.email_to ?? [],
+        cc: draft.email_cc ?? [],
+        bcc: draft.email_bcc ?? [],
+        subject: draft.subject ?? '',
+        body_html: draft.body_html ?? '',
+        in_reply_to_message_id: draft.in_reply_to_message_id,
+      });
+      setComposerOpen(true);
+    }
+  }, [draft?.id]); // eslint-disable-line
+
+  const lastMsg = mensajes[mensajes.length - 1];
+
+  const buildReply = (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward'): ComposerInitial => {
+    const ownAccounts = new Set<string>(
+      ['info@estropical.com.bo', 'reservas@estropical.com.bo', 'contacto@estropical.com.bo']
+        .map((s) => s.toLowerCase())
+    );
+
+    const toEmail = (v: any): string => {
+      if (!v) return '';
+      if (typeof v === 'string') {
+        const m = v.match(/<([^>]+)>/);
+        return (m ? m[1] : v).trim().toLowerCase();
+      }
+      if (typeof v === 'object' && v.email) return String(v.email).trim().toLowerCase();
+      return '';
+    };
+    const listToEmails = (raw: any): string[] => {
+      if (!raw) return [];
+      const arr = Array.isArray(raw) ? raw : String(raw).split(/[,;]/);
+      return arr.map(toEmail).filter(Boolean);
+    };
+
+    const fromEmail = toEmail((msg as any).email_from_email ?? (msg as any).email_from_name ?? '');
+    const to = type === 'forward' ? [] : (fromEmail ? [fromEmail] : []);
+    let cc: string[] = [];
+    if (type === 'reply_all') {
+      const orig = listToEmails((msg as any).email_to);
+      const origCc = listToEmails((msg as any).email_cc);
+      const seen = new Set<string>([...to, ...ownAccounts]);
+      cc = [...orig, ...origCc].filter((e) => {
+        if (!e || seen.has(e)) return false;
+        seen.add(e);
+        return true;
+      });
+    }
+    const subj = (msg as any).email_subject ?? '';
+    const prefix = type === 'forward' ? 'Fwd: ' : 'Re: ';
+    const cleanSubj = subj.replace(/^(Re:|Fwd:)\s*/i, '');
+    const subject = prefix + cleanSubj;
+
+    const origBody = (msg as any).email_body_html ?? msg.contenido ?? '';
+    const quoted = type === 'forward'
+      ? `<br><br><div style="border-left:3px solid #ccc;padding-left:8px;color:#666"><b>--- Mensaje reenviado ---</b><br>De: ${(msg as any).email_from_name ?? fromEmail}<br>Asunto: ${subj}<br><br>${origBody}</div>`
+      : '';
+
+    return {
+      reply_type: type,
+      to, cc, bcc: [],
+      subject,
+      body_html: quoted,
+      in_reply_to_message_id: msg.id,
+      in_reply_to_email_id: (msg as any).email_message_id ?? null,
+      references: (msg as any).email_message_id ?? null,
+      thread_id: (msg as any).email_thread_id ?? null,
+    };
+  };
+
+  const openCompose = (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward') => {
+    setComposerInitial(buildReply(msg, type));
+    setComposerOpen(true);
+  };
+
+  const handleSent = async () => {
+    await remove();
+    setComposerOpen(false);
+    setComposerInitial(null);
+    queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacionId] });
+    queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+  };
+
+  const handleDiscard = async () => {
+    await remove();
+    setComposerOpen(false);
+    setComposerInitial(null);
+  };
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {loading ? (
+        <div className="flex-1 flex justify-center items-center">
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <EmailThreadView
+          mensajes={mensajes}
+          onReply={(m) => openCompose(m, 'reply')}
+          onReplyAll={(m) => openCompose(m, 'reply_all')}
+          onForward={(m) => openCompose(m, 'forward')}
+        />
+      )}
+
+      {!composerOpen && lastMsg && (
+        <div className="border-t bg-muted/30 px-4 py-2 flex items-center gap-2">
+          <button
+            onClick={() => openCompose(lastMsg, 'reply')}
+            className="flex-1 text-left text-sm text-muted-foreground bg-background border rounded-md px-3 py-2 hover:bg-muted/50 transition"
+          >
+            Escribe tu respuesta por correo...
+          </button>
+          {draft && (
+            <span className="text-[10px] text-warning font-medium px-2 py-1 bg-warning/10 rounded">
+              Borrador
+            </span>
+          )}
+        </div>
+      )}
+
+      {composerOpen && composerInitial && (
+        <EmailComposer
+          conversacionId={conversacionId}
+          initial={composerInitial}
+          autorNombre={autorNombre}
+          onSent={handleSent}
+          onDiscard={handleDiscard}
+          onChange={(s) => saveDebounced({
+            reply_type: s.reply_type,
+            email_to: s.to, email_cc: s.cc, email_bcc: s.bcc,
+            subject: s.subject, body_html: s.body_html,
+            in_reply_to_message_id: s.in_reply_to_message_id ?? null,
+            created_by: autorNombre,
+          })}
+        />
+      )}
+    </div>
+  );
+}
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch, LogOut } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch, LogOut, ExternalLink, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
@@ -62,12 +62,28 @@ export function ProcessSidebar({
       if (!colaboradorId) return null;
       const { data } = await (supabase as any)
         .from("colaboradores")
-        .select("nombre, cargo, color, email")
+        .select("nombre, cargo, color, email, ver_otros_sistemas")
         .eq("id", colaboradorId)
         .single();
-      return data as { nombre: string; cargo: string; color: string; email: string } | null;
+      return data as { nombre: string; cargo: string; color: string; email: string; ver_otros_sistemas: boolean } | null;
     },
     enabled: !!colaboradorId,
+  });
+
+  const { data: otrosSistemas = [] } = useQuery({
+    queryKey: ["otros-sistemas"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .schema("integraciones")
+        .from("sistemas")
+        .select("id, nombre, descripcion, app_url")
+        .eq("activo", true)
+        .not("app_url", "is", null)
+        .neq("nombre", "latidos")
+        .order("nombre");
+      return (data ?? []) as { id: string; nombre: string; descripcion: string | null; app_url: string }[];
+    },
+    enabled: !!currentUser?.ver_otros_sistemas,
   });
 
   const handleLogout = () => {
@@ -218,49 +234,54 @@ export function ProcessSidebar({
 
           <Separator className="my-2 mx-2 bg-sidebar-border" />
 
-          {/* Process List */}
-          <div className="p-2 pb-4">
+          {/* Procesos — solo header + crear */}
+          <div className="px-2 pb-2">
             {!collapsed && (
-              <div className="flex items-center justify-between px-2 py-1.5 mb-1">
-                <span className="text-xs font-medium uppercase tracking-wider text-sidebar-foreground/50">Procesos</span>
-                <button onClick={onCreateProcess} className="p-1 rounded hover:bg-sidebar-accent transition-colors">
+              <div className="flex items-center justify-between px-2 py-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40">Procesos</span>
+                <button onClick={onCreateProcess} className="p-1 rounded hover:bg-sidebar-accent transition-colors" title="Nuevo proceso">
                   <Plus className="w-3.5 h-3.5 text-sidebar-foreground/60" />
                 </button>
               </div>
             )}
-
-            {processes.map((process) => (
-              <button
-                key={process.id}
-                onClick={() => handleSelectProcess(process.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors mb-0.5 ${
-                  activeView === "process" && selectedProcessId === process.id
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  activeView === "process" && selectedProcessId === process.id ? "bg-sidebar-primary" : "bg-sidebar-foreground/30"
-                }`} />
-                {!collapsed && (
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate">{process.name}</p>
-                    {process.area && <p className="text-xs text-sidebar-foreground/50 truncate">{process.area}</p>}
-                  </div>
-                )}
+            {collapsed && (
+              <button onClick={onCreateProcess} className="w-full flex items-center justify-center py-2 rounded-md hover:bg-sidebar-accent/50 transition-colors" title="Nuevo proceso">
+                <Plus className="w-4 h-4 text-sidebar-foreground/60" />
               </button>
-            ))}
-
-            {processes.length === 0 && !collapsed && (
-              <div className="px-3 py-8 text-center">
-                <p className="text-xs text-sidebar-foreground/40">No hay procesos</p>
-                <Button variant="ghost" size="sm" onClick={onCreateProcess}
-                  className="mt-2 text-xs text-sidebar-primary hover:text-sidebar-primary hover:bg-sidebar-accent">
-                  <Plus className="w-3.5 h-3.5 mr-1" /> Crear proceso
-                </Button>
-              </div>
             )}
           </div>
+
+          {/* Otros Sistemas */}
+          {currentUser?.ver_otros_sistemas && otrosSistemas.length > 0 && (
+            <>
+              <Separator className="my-2 mx-2 bg-sidebar-border" />
+              <div className="px-2 pb-4">
+                {!collapsed && (
+                  <span className="px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-sidebar-foreground/40 block mb-0.5">
+                    Otros Sistemas
+                  </span>
+                )}
+                {otrosSistemas.map((sistema) => (
+                  <a
+                    key={sistema.id}
+                    href={sistema.app_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors mb-0.5 text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                    title={sistema.descripcion ?? sistema.nombre}
+                  >
+                    <Globe className="w-4 h-4 flex-shrink-0" />
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1 truncate capitalize">{sistema.nombre}</span>
+                        <ExternalLink className="w-3 h-3 text-sidebar-foreground/30 flex-shrink-0" />
+                      </>
+                    )}
+                  </a>
+                ))}
+              </div>
+            </>
+          )}
 
         </div>
 

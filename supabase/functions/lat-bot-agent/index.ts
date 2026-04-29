@@ -232,10 +232,9 @@ async function getClienteByCiOrNombre(ci: string, nombre: string) {
 async function getBotConfig() {
   const { data } = await supabase
     .from("lat_bot_config")
-    .select("modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias, min_preguntas_calificacion, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
-    .eq("activo", true)
+    .select("activo, modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias, min_preguntas_calificacion, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
     .eq("canal", "whatsapp")
-    .single();
+    .maybeSingle();
   return data as any;
 }
 
@@ -399,8 +398,15 @@ Deno.serve(async (req: Request) => {
 
     // 1. Load bot config + conversation in parallel
     const [botCfg, conv] = await Promise.all([getBotConfig(), getConversacion(conversacion_id)]);
-    const effectiveMaxTurns = botCfg?.max_turnos ?? MAX_TURNS;
     if (!conv) return new Response("conv not found", { status: 404 });
+
+    // Skip if bot is disabled
+    if (!botCfg || botCfg.activo === false) {
+      console.log("[bot] WhatsApp bot desactivado — ignorando mensaje");
+      return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
+    }
+
+    const effectiveMaxTurns = botCfg?.max_turnos ?? MAX_TURNS;
 
     // 2a. Auto-reactivate / reset session on new inbound message
     //     Triggers when: handed_off, pausado, OR activo with stale context (>3h idle)
