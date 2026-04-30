@@ -341,7 +341,7 @@ Deno.serve(async (req: Request) => {
         const fileName = media.fileName;
         if (mediaUrl) {
           const stored = await downloadAndStoreMedia(mediaUrl, mimeType, fileName);
-          adjUrl  = stored?.url ?? mediaUrl;
+          adjUrl  = stored?.url ?? null;
           adjNom  = fileName ?? `${innerTyp}.${extFromMime(mimeType, fileName)}`;
           adjTipo = mimeType ?? guessMimeFromType(innerTyp, fileName);
         }

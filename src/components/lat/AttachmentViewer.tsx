@@ -42,9 +42,11 @@ function detectKind(att: AttachmentPayload): "image" | "pdf" | "video" | "audio"
 }
 
 export function AttachmentViewer() {
-  const [att, setAtt] = useState<AttachmentPayload | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [rotate, setRotate] = useState(0);
+  const [att, setAtt]           = useState<AttachmentPayload | null>(null);
+  const [zoom, setZoom]         = useState(1);
+  const [rotate, setRotate]     = useState(0);
+  const [imgError, setImgError] = useState(false);
+  const [audioError, setAudioError] = useState(false);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -53,6 +55,8 @@ export function AttachmentViewer() {
       setAtt(detail);
       setZoom(1);
       setRotate(0);
+      setImgError(false);
+      setAudioError(false);
     };
     window.addEventListener(OPEN_EVENT, handler);
     return () => window.removeEventListener(OPEN_EVENT, handler);
@@ -125,13 +129,21 @@ export function AttachmentViewer() {
         {/* Body */}
         <div className="flex-1 min-h-0 bg-muted/20 overflow-auto flex items-center justify-center">
           {kind === "image" && (
-            <img
-              src={att.url}
-              alt={displayName}
-              className="max-w-full max-h-full object-contain transition-transform select-none"
-              style={{ transform: `scale(${zoom}) rotate(${rotate}deg)` }}
-              draggable={false}
-            />
+            imgError ? (
+              <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                <FileText className="w-12 h-12" />
+                <p className="text-sm">Imagen no disponible</p>
+              </div>
+            ) : (
+              <img
+                src={att.url}
+                alt={displayName}
+                className="max-w-full max-h-full object-contain transition-transform select-none"
+                style={{ transform: `scale(${zoom}) rotate(${rotate}deg)` }}
+                draggable={false}
+                onError={() => setImgError(true)}
+              />
+            )
           )}
 
           {kind === "pdf" && (
@@ -151,7 +163,17 @@ export function AttachmentViewer() {
             <div className="flex flex-col items-center gap-4 p-8">
               <FileText className="w-16 h-16 text-muted-foreground" />
               <p className="text-sm font-medium">{displayName}</p>
-              <audio src={att.url} controls autoPlay className="w-[420px] max-w-full" />
+              {audioError ? (
+                <p className="text-sm text-muted-foreground">Audio no disponible</p>
+              ) : (
+                <audio
+                  src={att.url}
+                  controls
+                  autoPlay
+                  className="w-[420px] max-w-full"
+                  onError={() => setAudioError(true)}
+                />
+              )}
             </div>
           )}
 

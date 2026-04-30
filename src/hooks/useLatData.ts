@@ -135,7 +135,13 @@ export function useLatConversaciones() {
           queryClient.invalidateQueries({ queryKey: ["lat-conversaciones"] });
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ["lat_conversaciones"] });
+          }, 3000);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -204,7 +210,13 @@ export function useLatMensajes(conversacionId: string | null, isMock: boolean) {
         { event: "UPDATE", schema: "public", table: "lat_mensajes", filter: `conversacion_id=eq.${conversacionId}` },
         () => queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] })
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] });
+          }, 3000);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

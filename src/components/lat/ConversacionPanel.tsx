@@ -285,7 +285,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const isMock = conversacion._source === 'mock';
 
   const mockCliente = isMock ? getCliente(conversacion.id) : null;
-  const clienteNombre = conversacion.cliente_nombre ?? mockCliente?.nombre ?? 'Cliente';
+  const clienteNombre = conversacion.cliente_nombre ?? conversacion.telefono ?? mockCliente?.nombre ?? 'Sin nombre';
   const clienteId     = conversacion.cliente_id ?? null;
 
   const canal = canalMeta[conversacion.canal] ?? canalMeta.whatsapp;
@@ -1435,6 +1435,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 // ── MessageBubble ─────────────────────────────────────────────────────────────
 
 function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
+  const [imgError, setImgError]     = useState(false);
+  const [audioError, setAudioError] = useState(false);
   const isOutbound = mensaje.tipo === 'outbound';
   const isNota     = mensaje.tipo === 'nota_interna';
   const isSistema  = mensaje.tipo === 'sistema';
@@ -1500,26 +1502,46 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
       }`}>
         {/* Imagen */}
         {isImage && (
-          <button
-            type="button"
-            onClick={() => openAttachment({ url: adjUrl!, name: mensaje.adjunto_nombre, type: adjTipo })}
-            className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
-            title="Abrir imagen"
-          >
-            <img
-              src={adjUrl!}
-              alt={mensaje.adjunto_nombre ?? 'Imagen'}
-              className="rounded-xl max-h-72 w-auto object-cover bg-black/5 cursor-zoom-in group-hover:opacity-95 transition-opacity"
-              loading="lazy"
-            />
-          </button>
+          imgError ? (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+              <ImageIcon className="w-4 h-4 shrink-0" />
+              Imagen no disponible
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => openAttachment({ url: adjUrl!, name: mensaje.adjunto_nombre, type: adjTipo })}
+              className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
+              title="Abrir imagen"
+            >
+              <img
+                src={adjUrl!}
+                alt={mensaje.adjunto_nombre ?? 'Imagen'}
+                className="rounded-xl max-h-72 w-auto object-cover bg-black/5 cursor-zoom-in group-hover:opacity-95 transition-opacity"
+                loading="lazy"
+                onError={() => setImgError(true)}
+              />
+            </button>
+          )
         )}
 
         {/* Audio / nota de voz */}
         {isAudio && (
           <div className={`px-2 py-1.5 ${isOutbound ? 'bg-primary-foreground/10' : 'bg-background/40'} rounded-xl flex items-center gap-2 min-w-[220px]`}>
             <Play className={`w-4 h-4 ${isOutbound ? 'text-primary-foreground/80' : 'text-primary'}`} />
-            <audio controls preload="metadata" src={adjUrl!} className="flex-1 h-7 max-w-[260px]" />
+            {audioError ? (
+              <span className={`flex-1 text-[11px] ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+                Audio no disponible
+              </span>
+            ) : (
+              <audio
+                controls
+                preload="metadata"
+                src={adjUrl!}
+                className="flex-1 h-7 max-w-[260px]"
+                onError={() => setAudioError(true)}
+              />
+            )}
           </div>
         )}
 
