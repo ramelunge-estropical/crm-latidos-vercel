@@ -17,6 +17,7 @@ import { GranolaView } from "@/components/GranolaView";
 import { CreateProcessDialog } from "@/components/CreateProcessDialog";
 import { LayoutGrid, Menu } from "lucide-react";
 import logoHeart from "@/assets/logo-heart.png";
+import { AiAssistantSidebar } from "@/components/AiAssistantSidebar";
 
 const VIEW_LABELS: Record<SidebarView, string> = {
   process:          "Pipeline",
@@ -209,6 +210,7 @@ const Index = () => {
       </div>
 
       <CreateProcessDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+      <AiAssistantSidebar />
     </div>
   );
 };
