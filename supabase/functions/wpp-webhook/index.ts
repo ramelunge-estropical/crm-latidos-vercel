@@ -198,6 +198,24 @@ async function downloadMetaMedia(mediaId: string, accessToken: string, mimeHint?
   }
 }
 
+/** Actualiza la conversación después de recibir un mensaje inbound */
+async function touchConversacion(convId: string, contenido: string) {
+  const { data: c } = await supabase
+    .from("lat_conversaciones")
+    .select("no_leidos")
+    .eq("id", convId)
+    .single();
+  await supabase
+    .from("lat_conversaciones")
+    .update({
+      ultimo_mensaje:    contenido.slice(0, 120),
+      ultima_interaccion: new Date().toISOString(),
+      no_leidos:         (c?.no_leidos ?? 0) + 1,
+      en_foco:           true,
+    })
+    .eq("id", convId);
+}
+
 /** Busca conversación activa por teléfono o crea una nueva */
 async function findOrCreateConversacion(telefono: string, clienteNombre: string | null): Promise<string> {
   const phone = normalizePhone(telefono);
@@ -353,7 +371,7 @@ Deno.serve(async (req: Request) => {
         contenido = `[${innerTyp}]`;
       }
 
-      await supabase.from("lat_mensajes").insert({
+      const { error: insErr } = await supabase.from("lat_mensajes").insert({
         conversacion_id: convId,
         tipo:            "inbound",
         contenido,
@@ -363,6 +381,8 @@ Deno.serve(async (req: Request) => {
         adjunto_nombre:  adjNom,
         adjunto_tipo:    adjTipo,
       });
+      if (insErr) console.error("lat_mensajes insert error (gupshup):", insErr);
+      else await touchConversacion(convId, contenido);
 
       // Trigger bot agent (only for text messages — bot can't process media)
       if (innerTyp === "text") triggerBotAgent(convId, telefono, contenido);
@@ -419,7 +439,7 @@ Deno.serve(async (req: Request) => {
               contenido = `[${msg.type}]`;
             }
 
-            await supabase.from("lat_mensajes").insert({
+            const { error: insErrMeta } = await supabase.from("lat_mensajes").insert({
               conversacion_id: convId,
               tipo:            "inbound",
               contenido,
@@ -429,6 +449,8 @@ Deno.serve(async (req: Request) => {
               adjunto_nombre:  adjNom,
               adjunto_tipo:    adjTipo,
             });
+            if (insErrMeta) console.error("lat_mensajes insert error (meta):", insErrMeta);
+            else await touchConversacion(convId, contenido);
 
             if (msg.type === "text") triggerBotAgent(convId, telefono, contenido);
           }
@@ -451,16 +473,19 @@ Deno.serve(async (req: Request) => {
         const stored = await downloadAndStoreMedia(mediaUrl, mime, body.fileName);
         if (stored) { adjUrl = stored.url; adjNom = body.fileName ?? null; adjTipo = mime; }
       }
-      await supabase.from("lat_mensajes").insert({
+      const watiContenido = body.text ?? body.caption ?? body.fileName ?? "[adjunto]";
+      const { error: insErrWati } = await supabase.from("lat_mensajes").insert({
         conversacion_id: convId,
         tipo:            "inbound",
-        contenido:       body.text ?? body.caption ?? body.fileName ?? "[adjunto]",
+        contenido:       watiContenido,
         estado:          "entregado",
         wpp_message_id:  body.id ?? null,
         adjunto_url:     adjUrl,
         adjunto_nombre:  adjNom,
         adjunto_tipo:    adjTipo,
       });
+      if (insErrWati) console.error("lat_mensajes insert error (wati):", insErrWati);
+      else await touchConversacion(convId, watiContenido);
       if (body.text) triggerBotAgent(convId, telefono, body.text);
       return new Response("OK", { status: 200 });
     }
