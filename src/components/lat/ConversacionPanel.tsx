@@ -899,7 +899,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             </div>
           )}
           <div
-            className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-3 relative"
+            className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-4 py-3 space-y-3 relative"
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -937,7 +937,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             </div>
           )}
 
-          <div className="border-t border-border px-4 py-3">
+          <div className="border-t border-border px-4 py-3 shrink-0">
             {showNota && (
               <div className="mb-2 flex items-center gap-1.5 text-[10px] text-warning bg-warning/10 px-2 py-1 rounded">
                 <StickyNote className="w-3 h-3" /> Nota interna
