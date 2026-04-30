@@ -24,13 +24,30 @@ const corsHeaders = {
 
 interface Message { role: "user" | "assistant"; content: string; }
 
-async function fetchContext(colaboradorId: string, rol: string): Promise<string> {
-  const isAdmin    = ["admin", "gerente"].includes(rol);
+async function fetchConfig() {
+  const { data } = await supabase
+    .from("ai_assistant_config")
+    .select("*")
+    .limit(1)
+    .single();
+  return data;
+}
+
+async function fetchContext(colaboradorId: string, rol: string, config: any): Promise<string> {
+  const isAdmin      = ["admin", "gerente"].includes(rol);
   const isSupervisor = rol === "supervisor";
 
-  // Colaboradores del equipo (para supervisor/admin)
+  const acceso = isAdmin
+    ? (config?.acceso_admin    ?? { gestiones: true, clientes: true, actividades: true, limite_registros: 50 })
+    : isSupervisor
+    ? (config?.acceso_supervisor ?? { gestiones: true, clientes: true, actividades: true, equipo: true, limite_registros: 30 })
+    : (config?.acceso_asesor   ?? { gestiones: true, clientes: true, actividades: true, limite_registros: 20 });
+
+  const limite = acceso.limite_registros ?? 20;
+
+  // Colaboradores del equipo
   let teamIds: string[] = [colaboradorId];
-  if (isSupervisor) {
+  if (isSupervisor && acceso.equipo) {
     const { data: team } = await supabase
       .from("colaboradores")
       .select("id")
@@ -40,43 +57,43 @@ async function fetchContext(colaboradorId: string, rol: string): Promise<string>
   }
 
   // Gestiones
-  let gestionesQuery = supabase
-    .from("gestiones")
-    .select("id, titulo, estado, etapa, prioridad, created_at, cliente:clientes(nombre)")
-    .order("created_at", { ascending: false })
-    .limit(isAdmin ? 50 : 20);
-
-  if (!isAdmin) {
-    gestionesQuery = gestionesQuery.in("assigned_to_id", teamIds);
+  let gestiones: any[] = [];
+  if (acceso.gestiones) {
+    let q = supabase
+      .from("gestiones")
+      .select("id, titulo, estado, etapa, prioridad, created_at, cliente:clientes(nombre)")
+      .order("created_at", { ascending: false })
+      .limit(limite);
+    if (!isAdmin) q = q.in("assigned_to_id", teamIds);
+    const { data } = await q;
+    gestiones = data ?? [];
   }
-
-  const { data: gestiones } = await gestionesQuery;
 
   // Clientes
-  let clientesQuery = supabase
-    .from("clientes")
-    .select("id, nombre, email, telefono, canal_contacto")
-    .eq("activo", true)
-    .limit(isAdmin ? 50 : 20);
-
-  if (!isAdmin) {
-    clientesQuery = clientesQuery.in("asesor_id", teamIds);
+  let clientes: any[] = [];
+  if (acceso.clientes) {
+    let q = supabase
+      .from("clientes")
+      .select("id, nombre, email, telefono, canal_contacto")
+      .eq("activo", true)
+      .limit(limite);
+    if (!isAdmin) q = q.in("asesor_id", teamIds);
+    const { data } = await q;
+    clientes = data ?? [];
   }
 
-  const { data: clientes } = await clientesQuery;
-
-  // Actividades recientes
-  let actividadesQuery = supabase
-    .from("activities")
-    .select("id, titulo, tipo, estado, due_date, assigned_to_id")
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  if (!isAdmin) {
-    actividadesQuery = actividadesQuery.in("assigned_to_id", teamIds);
+  // Actividades
+  let actividades: any[] = [];
+  if (acceso.actividades) {
+    let q = supabase
+      .from("activities")
+      .select("id, titulo, tipo, estado, due_date, assigned_to_id")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (!isAdmin) q = q.in("assigned_to_id", teamIds);
+    const { data } = await q;
+    actividades = data ?? [];
   }
-
-  const { data: actividades } = await actividadesQuery;
 
   const lines: string[] = ["=== CONTEXTO CRM ESTROPICAL ===\n"];
 
@@ -106,7 +123,7 @@ async function fetchContext(colaboradorId: string, rol: string): Promise<string>
   return lines.join("\n");
 }
 
-function buildSystemPrompt(colaborador: any, context: string): string {
+function buildSystemPrompt(colaborador: any, context: string, identidad?: string): string {
   const rolLabel: Record<string, string> = {
     admin: "Administrador (acceso total)",
     gerente: "Gerente (acceso total)",
@@ -114,7 +131,8 @@ function buildSystemPrompt(colaborador: any, context: string): string {
     asesor: "Asesor (acceso a sus gestiones y clientes)",
   };
 
-  return `Sos el asistente IA del CRM Latidos de Estropical, una agencia de viajes boliviana.
+  const base = identidad ?? "Sos el asistente IA del CRM Latidos de Estropical, una agencia de viajes boliviana.";
+  return `${base}
 Tu función es ayudar a ${colaborador.nombre} (${rolLabel[colaborador.rol] ?? colaborador.rol}) a entender y gestionar su trabajo en el CRM.
 
 Respondé siempre en español, de forma concisa y útil.
@@ -153,8 +171,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const context = await fetchContext(colaborador_id, colaborador.rol);
-    const systemPrompt = buildSystemPrompt(colaborador, context);
+    const aiConfig = await fetchConfig();
+    const context = await fetchContext(colaborador_id, colaborador.rol, aiConfig);
+    const systemPrompt = buildSystemPrompt(colaborador, context, aiConfig?.identidad);
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -168,7 +187,7 @@ Deno.serve(async (req) => {
         "Authorization": `Bearer ${OPENAI_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: MODEL, messages, temperature: 0.4, max_tokens: 800 }),
+      body: JSON.stringify({ model: MODEL, messages, temperature: aiConfig?.temperatura ?? 0.4, max_tokens: aiConfig?.max_tokens ?? 800 }),
     });
 
     const data = await response.json();
