@@ -117,7 +117,7 @@ export function LatBandejaView() {
   };
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex flex-1 min-h-0 overflow-hidden">
 
       {/* ── Lista de conversaciones ───────────────────────────────────────── */}
       <div className={[
@@ -185,7 +185,7 @@ export function LatBandejaView() {
 
       {/* ── Panel de conversación ──────────────────────────────────────────── */}
       <div className={[
-        'flex-1 min-w-0 flex flex-col bg-background',
+        'flex-1 min-w-0 min-h-0 flex flex-col bg-background overflow-hidden',
         mobileView === 'chat' ? 'flex' : 'hidden md:flex',
       ].join(' ')}>
 
