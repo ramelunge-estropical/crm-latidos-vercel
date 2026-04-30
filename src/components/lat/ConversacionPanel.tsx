@@ -1479,8 +1479,14 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   const isAudio  = !!adjUrl && (adjTipo.startsWith('audio/') || /\.(ogg|mp3|m4a|wav|opus)$/i.test(mensaje.adjunto_nombre ?? ''));
   const isVideo  = !!adjUrl && (adjTipo.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(mensaje.adjunto_nombre ?? ''));
   const isFile   = !!adjUrl && !isImage && !isAudio && !isVideo;
-  const hasMedia = isImage || isAudio || isVideo || isFile;
   const trimmedContent = mensaje.contenido?.trim() ?? '';
+  // Mensajes donde el media existía pero no se pudo guardar la URL (descarga falló en webhook)
+  const isNoUrlMedia = !adjUrl && genericMediaPlaceholderPattern.test(trimmedContent);
+  const noUrlMediaKind: 'image' | 'audio' | 'video' | 'document' =
+    trimmedContent.match(/📷|imagen/i) ? 'image' :
+    trimmedContent.match(/🎤|voz|audio/i) ? 'audio' :
+    trimmedContent.match(/🎥|video/i) ? 'video' : 'document';
+  const hasMedia = isImage || isAudio || isVideo || isFile || isNoUrlMedia;
   const showText = !!trimmedContent && !(hasMedia && genericMediaPlaceholderPattern.test(trimmedContent));
   const linkClassName = isOutbound
     ? 'underline underline-offset-2 decoration-primary-foreground/60 font-medium break-all hover:opacity-80'
@@ -1576,6 +1582,24 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
             </div>
             <Download className={`w-3.5 h-3.5 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`} />
           </button>
+        )}
+
+        {/* Media sin URL (descarga falló en recepción o función no redespllegada) */}
+        {isNoUrlMedia && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] ${
+            isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'
+          }`}>
+            {noUrlMediaKind === 'image'    && <ImageIcon className="w-4 h-4 shrink-0" />}
+            {noUrlMediaKind === 'audio'    && <Play className="w-4 h-4 shrink-0" />}
+            {noUrlMediaKind === 'video'    && <Play className="w-4 h-4 shrink-0" />}
+            {noUrlMediaKind === 'document' && <FileText className="w-4 h-4 shrink-0" />}
+            <span>
+              {noUrlMediaKind === 'image'    ? 'Imagen no disponible' :
+               noUrlMediaKind === 'audio'    ? 'Audio no disponible'  :
+               noUrlMediaKind === 'video'    ? 'Video no disponible'  :
+               'Archivo no disponible'}
+            </span>
+          </div>
         )}
 
         {/* Texto / caption */}
