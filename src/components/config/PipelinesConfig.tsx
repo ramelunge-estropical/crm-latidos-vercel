@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
   useProcesses, useAllStages, useAreasEmpresa, useProcessAreas,
@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Plus, Trash2, ChevronDown, ChevronRight,
   ArrowUp, ArrowDown, Pencil, Check, X, FolderKanban,
-  User, Clock, Layers
+  User, Clock, Layers, Globe
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -34,6 +34,20 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
   const { data: colaboradores    = [] } = useColaboradores();
   const { data: subAreas         = [] } = useSubAreasEmpresa();
   const { data: processSubAreas  = [] } = useProcessSubAreas();
+
+  const { data: sistemasActivos = [] } = useQuery({
+    queryKey: ["sistemas-activos"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .schema("integraciones")
+        .from("sistemas")
+        .select("id, nombre, descripcion")
+        .eq("activo", true)
+        .not("nombre", "eq", "latidos")
+        .order("nombre");
+      return (data ?? []) as { id: string; nombre: string; descripcion: string | null }[];
+    },
+  });
 
   // ── Area expand state ─────────────────────────────────────
   const [expandedAreas,     setExpandedAreas]     = useState<Set<string>>(new Set());
@@ -188,6 +202,14 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
     invalidate();
   };
 
+  const toggleSistema = async (procId: string, sistemaNombre: string, current: string[]) => {
+    const next = current.includes(sistemaNombre)
+      ? current.filter(s => s !== sistemaNombre)
+      : [...current, sistemaNombre];
+    await supabase.from("processes").update({ sistemas_integrados: next } as any).eq("id", procId);
+    invalidate();
+  };
+
   const handleStageDuracion = async (id: string, dias: string) => {
     const val = dias === "" ? null : parseInt(dias, 10);
     if (val !== null && isNaN(val)) return;
@@ -303,6 +325,41 @@ export function PipelinesConfig({ readonly = false }: { readonly?: boolean }) {
             </div>
           );
         })()}
+
+        {/* Integraciones con otros sistemas */}
+        {isOpen && sistemasActivos.length > 0 && (
+          <div className="border-t border-border bg-violet-50/50 px-3 py-2.5 flex items-center gap-2 flex-wrap">
+            <Globe className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+            <span className="text-[10px] font-semibold text-violet-700 uppercase tracking-wide shrink-0">
+              Sincronizar con:
+            </span>
+            {sistemasActivos.map(sis => {
+              const integrados: string[] = (proc as any).sistemas_integrados ?? [];
+              const activo = integrados.includes(sis.nombre);
+              return (
+                <button
+                  key={sis.id}
+                  type="button"
+                  disabled={readonly}
+                  onClick={() => toggleSistema(proc.id, sis.nombre, integrados)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all",
+                    activo
+                      ? "bg-violet-600 text-white border-violet-600"
+                      : "bg-white text-muted-foreground border-border hover:border-violet-400 disabled:cursor-default"
+                  )}
+                  title={sis.descripcion ?? sis.nombre}
+                >
+                  {activo && <Check className="w-3 h-3" />}
+                  <span className="capitalize">{sis.nombre}</span>
+                </button>
+              );
+            })}
+            <span className="text-[10px] text-violet-500 ml-auto">
+              Las gestiones de este proceso se sincronizan automáticamente
+            </span>
+          </div>
+        )}
 
         {/* Stages */}
         {isOpen && (
