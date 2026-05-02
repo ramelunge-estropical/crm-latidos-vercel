@@ -2,7 +2,7 @@
  * lat-email-agent — Agente IA de email para Estropical
  *
  * Flujo:
- *   1. Conecta a total@estropical.com via IMAP
+ *   1. Conecta a aplataformas@estropical.com via IMAP (monitorea alias microvoz@estropical.com)
  *   2. Descarga emails no leídos no procesados
  *   3. Por cada email: parsea MIME completo (HTML + texto + adjuntos)
  *   4. Analiza con GPT, guarda en lat_conversaciones + lat_mensajes con todos los campos email_*
@@ -21,9 +21,13 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const EMAIL_USER   = Deno.env.get("EMAIL_USER")!;
 const EMAIL_PASS   = Deno.env.get("EMAIL_PASSWORD")!;
-const IMAP_HOST    = Deno.env.get("EMAIL_IMAP_HOST") ?? "imap.gmail.com";
-const IMAP_PORT    = parseInt(Deno.env.get("EMAIL_IMAP_PORT") ?? "993");
+const EMAIL_INBOX  = Deno.env.get("EMAIL_INBOX") ?? "microvoz@estropical.com";
 const SMTP_HOST    = Deno.env.get("EMAIL_SMTP_HOST") ?? "smtp.gmail.com";
+
+// Gmail API (OAuth2) — replaces IMAP
+const GMAIL_API          = "https://gmail.googleapis.com/gmail/v1/users/me";
+const GOOGLE_CLIENT_ID_G = Deno.env.get("GMAIL_CLIENT_ID")!;
+const GOOGLE_SECRET      = Deno.env.get("GMAIL_CLIENT_SECRET")!;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 const MODEL    = "gpt-4o-mini";
@@ -169,13 +173,30 @@ function mimeGetParam(header: string, param: string): string | null {
 
 function mimeDecodeBodyText(body: string, cte: string, charset: string): string {
   const enc = cte.toLowerCase().trim();
+  const cs  = charset || "utf-8";
+
+  // Helper: convert a "binary string" (char codes = byte values) to proper Unicode
+  const bytesToString = (s: string): string => {
+    try {
+      const bytes = Uint8Array.from(s, c => c.charCodeAt(0));
+      return new TextDecoder(cs, { fatal: false }).decode(bytes);
+    } catch { return s; }
+  };
+
   if (enc === "base64") {
     try {
       const bytes = Uint8Array.from(atob(body.replace(/\s/g, "")), c => c.charCodeAt(0));
-      return new TextDecoder(charset || "utf-8", { fatal: false }).decode(bytes);
+      return new TextDecoder(cs, { fatal: false }).decode(bytes);
     } catch { return body; }
   }
-  if (enc === "quoted-printable") return decodeQuotedPrintable(body);
+  if (enc === "quoted-printable") {
+    // QP decoding yields a "binary string"; re-interpret with the declared charset
+    return bytesToString(decodeQuotedPrintable(body));
+  }
+  // 7bit / 8bit: body was decoded from raw bytes — apply charset if not plain ASCII
+  if (cs !== "us-ascii" && cs !== "ascii") {
+    return bytesToString(body);
+  }
   return body;
 }
 
@@ -347,7 +368,99 @@ function parseRawEmail(raw: string): Partial<ParsedEmail> {
   };
 }
 
-// ─── Fetch unread emails via IMAP ─────────────────────────────────────────────
+// ─── Gmail API helpers ────────────────────────────────────────────────────────
+
+async function getGmailAccessToken(): Promise<string | null> {
+  const { data } = await supabase
+    .from("lat_bot_config")
+    .select("gmail_access_token, gmail_refresh_token, gmail_token_expiry")
+    .eq("canal", "email")
+    .maybeSingle();
+
+  if (!data?.gmail_refresh_token) {
+    console.error("[gmail] No refresh token found — run Gmail OAuth first");
+    return null;
+  }
+
+  // Return cached token if still valid (with 60s buffer)
+  if (data.gmail_access_token && data.gmail_token_expiry &&
+      new Date(data.gmail_token_expiry).getTime() > Date.now() + 60_000) {
+    return data.gmail_access_token;
+  }
+
+  // Refresh
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id:     GOOGLE_CLIENT_ID_G,
+      client_secret: GOOGLE_SECRET,
+      refresh_token: data.gmail_refresh_token,
+      grant_type:    "refresh_token",
+    }),
+  });
+
+  if (!res.ok) {
+    console.error("[gmail] Token refresh failed:", await res.text());
+    return null;
+  }
+
+  const tokens = await res.json();
+  const expiry = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
+  await supabase.from("lat_bot_config").update({
+    gmail_access_token: tokens.access_token,
+    gmail_token_expiry: expiry,
+    updated_at:         new Date().toISOString(),
+  }).eq("canal", "email");
+
+  return tokens.access_token;
+}
+
+async function fetchUnreadEmailsGmail(): Promise<ParsedEmail[]> {
+  const accessToken = await getGmailAccessToken();
+  if (!accessToken) return [];
+
+  // after:2026/04/24 catches last-week-of-April catch-up + all new emails going forward
+  // No is:unread — picks up manually-read emails too; isProcessed() handles deduplication
+  const query = `to:${EMAIL_INBOX} after:2026/04/24`;
+  const listRes = await fetch(
+    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=10`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!listRes.ok) {
+    console.error("[gmail] List failed:", await listRes.text());
+    return [];
+  }
+
+  const listData = await listRes.json();
+  const messages: { id: string }[] = listData.messages ?? [];
+  if (messages.length === 0) { console.log("[gmail] No unread emails"); return []; }
+  console.log(`[gmail] Found ${messages.length} unread emails`);
+
+  const emails: ParsedEmail[] = [];
+  for (const { id } of messages) {
+    const msgRes = await fetch(
+      `${GMAIL_API}/messages/${id}?format=raw`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!msgRes.ok) continue;
+
+    const msgData = await msgRes.json();
+    if (!msgData.raw) continue;
+
+    // Gmail returns base64url — convert to standard base64 then decode
+    const raw = new TextDecoder().decode(
+      Uint8Array.from(atob(msgData.raw.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0)),
+    );
+    const parsed = parseRawEmail(raw) as ParsedEmail;
+    if (parsed?.from) emails.push(parsed);
+  }
+
+  return emails;
+}
+
+// ─── Fetch unread emails via IMAP (legacy — kept for reference) ───────────────
 
 async function fetchUnreadEmails(): Promise<ParsedEmail[]> {
   const conn = await imapConnect();
@@ -359,7 +472,7 @@ async function fetchUnreadEmails(): Promise<ParsedEmail[]> {
       return [];
     }
     await imapCommand(conn, "a2", "SELECT INBOX");
-    const searchResp = await imapCommand(conn, "a3", "SEARCH UNSEEN");
+    const searchResp = await imapCommand(conn, "a3", `SEARCH UNSEEN SINCE 1-Apr-2026 TO "${EMAIL_INBOX}"`);
     const searchLine = searchResp.find(l => l.startsWith("* SEARCH")) ?? "";
     const uids = searchLine.replace("* SEARCH", "").trim().split(/\s+/).filter(Boolean);
     conn.close();
@@ -526,7 +639,7 @@ async function findOrCreateConvEmail(email: string, nombre: string | null, subje
 async function getBotConfig() {
   const { data } = await supabase
     .from("lat_bot_config")
-    .select("activo, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
+    .select("activo, auto_reply, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
     .eq("canal", "email")
     .maybeSingle();
   return data as any;
@@ -891,6 +1004,25 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
   const body = await req.json().catch(() => ({}));
+  if ((body as any)?.action === "debug-gmail") {
+    const token = await getGmailAccessToken();
+    if (!token) return new Response(JSON.stringify({ error: "no token" }), { status: 200 });
+    const queries = [
+      `to:${EMAIL_INBOX} after:2026/04/24`,
+      `after:2026/04/24`,
+      `is:unread`,
+    ];
+    const results: any[] = [];
+    for (const q of queries) {
+      const r = await fetch(`${GMAIL_API}/messages?q=${encodeURIComponent(q)}&maxResults=5`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await r.json();
+      results.push({ query: q, status: r.status, count: d.messages?.length ?? 0, resultSizeEstimate: d.resultSizeEstimate });
+    }
+    return new Response(JSON.stringify({ ok: true, results }), { status: 200 });
+  }
+
   if ((body as any)?.action === "backfill") {
     console.log("[email-agent] Backfill mode");
     return handleBackfill();
@@ -909,12 +1041,13 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
     }
 
-    const emails = await fetchUnreadEmails();
+    const emails = await fetchUnreadEmailsGmail();
     let processed = 0, skipped = 0;
 
     for (const email of emails) {
       if (await isProcessed(email.messageId)) { skipped++; continue; }
-      if (email.from.toLowerCase() === EMAIL_USER.toLowerCase()) { skipped++; continue; }
+      const selfAddrs = [EMAIL_USER.toLowerCase(), EMAIL_INBOX.toLowerCase()];
+      if (selfAddrs.includes(email.from.toLowerCase())) { skipped++; continue; }
 
       console.log(`[email] Processing: ${email.subject} from ${email.from}`);
 
@@ -990,7 +1123,7 @@ Deno.serve(async (req: Request) => {
 
       await crearGestion(convId, cliente?.id ?? null, cliente?.nombre_completo ?? email.fromName ?? email.from, analysis.categoria, analysis.urgencia, analysis.resumen, cfg);
 
-      if (analysis.puede_responder && analysis.respuesta) {
+      if (cfg?.auto_reply === true && analysis.puede_responder && analysis.respuesta) {
         const sent = await sendEmailReply(
           email.replyTo ?? email.from,
           email.subject,
