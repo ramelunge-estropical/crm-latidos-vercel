@@ -688,7 +688,7 @@ async function handleBackfill(): Promise<Response> {
     .from("lat_mensajes")
     .select("id, contenido, wpp_message_id, conversacion_id, autor_nombre, created_at")
     .in("conversacion_id", convIds)
-    .is("email_body_html", null)
+    .is("email_subject", null)
     .not("contenido", "is", null)
     .eq("tipo", "inbound")
     .limit(50);
