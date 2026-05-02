@@ -785,42 +785,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               En foco
             </button>
           )}
-          <button
-            onClick={() => setActiveTab('chat')}
-            title="Chat"
-            className={`p-1.5 rounded-md transition-colors ${activeTab === 'chat' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <MessageSquare className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setActiveTab('gestiones')}
-            title="Gestiones"
-            className={`p-1.5 rounded-md transition-colors relative ${activeTab === 'gestiones' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <ClipboardList className="w-4 h-4" />
-            {activeGestiones.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center">
-                {activeGestiones.length > 9 ? '9+' : activeGestiones.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('cliente')}
-            title="Cliente"
-            className={`p-1.5 rounded-md transition-colors relative ${activeTab === 'cliente' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <User className="w-4 h-4" />
-            {!clienteId && !isMock && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-warning" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('trazabilidad')}
-            title="Trazabilidad"
-            className={`p-1.5 rounded-md transition-colors ${activeTab === 'trazabilidad' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <Activity className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
