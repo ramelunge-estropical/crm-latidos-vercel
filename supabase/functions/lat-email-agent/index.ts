@@ -4,12 +4,9 @@
  * Flujo:
  *   1. Conecta a total@estropical.com via IMAP
  *   2. Descarga emails no leídos no procesados
- *   3. Por cada email: identifica cliente, analiza necesidad con GPT
- *   4. Guarda en lat_conversaciones (canal=email) + lat_mensajes
+ *   3. Por cada email: parsea MIME completo (HTML + texto + adjuntos)
+ *   4. Analiza con GPT, guarda en lat_conversaciones + lat_mensajes con todos los campos email_*
  *   5. Si puede responder solo → responde y deriva; si no → solo deriva al asesor
- *
- * Triggereado cada 2 minutos via pg_cron → wpp-webhook no aplica aquí,
- * llamado por HTTP POST desde cron job.
  *
  * Secrets requeridos:
  *   EMAIL_USER, EMAIL_PASSWORD, EMAIL_IMAP_HOST, EMAIL_IMAP_PORT
@@ -27,26 +24,44 @@ const EMAIL_PASS   = Deno.env.get("EMAIL_PASSWORD")!;
 const IMAP_HOST    = Deno.env.get("EMAIL_IMAP_HOST") ?? "imap.gmail.com";
 const IMAP_PORT    = parseInt(Deno.env.get("EMAIL_IMAP_PORT") ?? "993");
 const SMTP_HOST    = Deno.env.get("EMAIL_SMTP_HOST") ?? "smtp.gmail.com";
-const SMTP_PORT    = parseInt(Deno.env.get("EMAIL_SMTP_PORT") ?? "587");
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 const MODEL    = "gpt-4o-mini";
-const MAX_EMAIL_BODY = 3000; // chars to send to GPT
+const MAX_EMAIL_BODY = 3000;
+const BUCKET   = "lat-adjuntos";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ParsedEmail {
-  messageId:  string;
-  from:       string;
-  fromName:   string | null;
-  to:         string;
-  subject:    string;
-  body:       string;
-  date:       Date;
-  replyTo:    string | null;
+interface EmailAttachmentData {
+  filename: string;
+  mimeType: string;
+  data: Uint8Array;
+  inline: boolean;
+  contentId?: string;
 }
 
-// ─── IMAP client (manual TCP via Deno.connectTls) ────────────────────────────
+interface ParsedEmail {
+  messageId:   string;
+  from:        string;
+  fromName:    string | null;
+  to:          string;
+  subject:     string;
+  bodyText:    string | null;
+  bodyHtml:    string | null;
+  date:        Date;
+  replyTo:     string | null;
+  inlineImages: { contentId: string; mimeType: string; data: Uint8Array }[];
+  attachments: EmailAttachmentData[];
+}
+
+interface ExtractedParts {
+  bodyHtml:     string | null;
+  bodyText:     string | null;
+  inlineImages: { contentId: string; mimeType: string; data: Uint8Array }[];
+  attachments:  EmailAttachmentData[];
+}
+
+// ─── IMAP client ──────────────────────────────────────────────────────────────
 
 async function imapConnect(): Promise<Deno.TlsConn> {
   return await Deno.connectTls({ hostname: IMAP_HOST, port: IMAP_PORT });
@@ -95,7 +110,7 @@ async function imapCommand(conn: Deno.TlsConn, tag: string, cmd: string): Promis
   return lines;
 }
 
-// ─── Parse email helpers ──────────────────────────────────────────────────────
+// ─── Header decode helpers ────────────────────────────────────────────────────
 
 function decodeBase64(str: string): string {
   try { return atob(str.replace(/\s/g, "")); } catch { return str; }
@@ -110,36 +125,173 @@ function decodeQuotedPrintable(str: string): string {
 function decodeMimeWord(word: string): string {
   const m = word.match(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/);
   if (!m) return word;
-  const [, , enc, val] = m;
-  if (enc.toUpperCase() === "B") return decodeBase64(val);
-  if (enc.toUpperCase() === "Q") return decodeQuotedPrintable(val.replace(/_/g, " "));
-  return val;
+  const [, charset, enc, val] = m;
+  let decoded: string;
+  if (enc.toUpperCase() === "B") {
+    try {
+      const bytes = Uint8Array.from(atob(val), c => c.charCodeAt(0));
+      decoded = new TextDecoder(charset, { fatal: false }).decode(bytes);
+    } catch { decoded = decodeBase64(val); }
+  } else {
+    decoded = decodeQuotedPrintable(val.replace(/_/g, " "));
+  }
+  return decoded;
 }
 
 function decodeMimeHeader(header: string): string {
-  return header.replace(/=\?[^?]+\?[BbQq]\?[^?]*\?=/g, decodeMimeWord);
+  return header.replace(/=\?[^?]+\?[BbQq]\?[^?]*\?=/g, decodeMimeWord).trim();
 }
 
 function extractEmailAddress(from: string): { email: string; name: string | null } {
   const m = from.match(/^(.*?)\s*<([^>]+)>/);
   if (m) return { name: m[1].trim().replace(/^"|"$/g, "") || null, email: m[2].trim() };
-  const plain = from.trim();
-  return { email: plain, name: null };
+  return { email: from.trim(), name: null };
 }
 
-function parseRawEmail(raw: string): Partial<ParsedEmail> {
-  const [headerSection, ...bodyParts] = raw.split(/\r?\n\r?\n/);
-  const headers: Record<string, string> = {};
+// ─── MIME Parser ──────────────────────────────────────────────────────────────
 
-  // Parse headers (handle folded headers)
-  const headerLines = headerSection.replace(/\r?\n\s+/g, " ").split(/\r?\n/);
-  for (const line of headerLines) {
-    const idx = line.indexOf(":");
-    if (idx < 0) continue;
-    const key   = line.slice(0, idx).trim().toLowerCase();
-    const value = line.slice(idx + 1).trim();
-    headers[key] = value;
+function mimeParseHeaders(section: string): Record<string, string> {
+  const h: Record<string, string> = {};
+  const lines = section.replace(/\r?\n[ \t]+/g, " ").split(/\r?\n/);
+  for (const l of lines) {
+    const i = l.indexOf(":");
+    if (i < 0) continue;
+    h[l.slice(0, i).trim().toLowerCase()] = l.slice(i + 1).trim();
   }
+  return h;
+}
+
+function mimeGetParam(header: string, param: string): string | null {
+  const re = new RegExp(`${param}\\s*=\\s*["']?([^"'\\s;]+)["']?`, "i");
+  const m = header.match(re);
+  return m ? m[1] : null;
+}
+
+function mimeDecodeBodyText(body: string, cte: string, charset: string): string {
+  const enc = cte.toLowerCase().trim();
+  if (enc === "base64") {
+    try {
+      const bytes = Uint8Array.from(atob(body.replace(/\s/g, "")), c => c.charCodeAt(0));
+      return new TextDecoder(charset || "utf-8", { fatal: false }).decode(bytes);
+    } catch { return body; }
+  }
+  if (enc === "quoted-printable") return decodeQuotedPrintable(body);
+  return body;
+}
+
+function mimeDecodeBinary(body: string, cte: string): Uint8Array {
+  if (cte.toLowerCase().trim() === "base64") {
+    try { return Uint8Array.from(atob(body.replace(/\s/g, "")), c => c.charCodeAt(0)); } catch {}
+  }
+  return new TextEncoder().encode(body);
+}
+
+function mimeSplitParts(body: string, boundary: string): string[] {
+  const delim = "--" + boundary;
+  const parts: string[] = [];
+  // Normalize line endings
+  const normalized = body.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  let inPart = false;
+  let current: string[] = [];
+
+  for (const line of lines) {
+    const stripped = line.trimEnd();
+    if (stripped === delim || stripped === delim + " ") {
+      if (inPart && current.length > 0) {
+        parts.push(current.join("\n"));
+        current = [];
+      }
+      inPart = true;
+    } else if (stripped === delim + "--") {
+      if (inPart && current.length > 0) {
+        parts.push(current.join("\n"));
+      }
+      break;
+    } else if (inPart) {
+      current.push(line);
+    }
+  }
+
+  return parts.filter(p => p.trim());
+}
+
+function mimeExtractParts(raw: string, result: ExtractedParts): void {
+  // Find header/body separator
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const sepIdx = normalized.indexOf("\n\n");
+  if (sepIdx === -1) return;
+
+  const headerSection = normalized.slice(0, sepIdx);
+  const bodySection   = normalized.slice(sepIdx + 2);
+  const hdrs = mimeParseHeaders(headerSection);
+
+  const ct       = hdrs["content-type"] ?? "text/plain";
+  const cte      = hdrs["content-transfer-encoding"] ?? "7bit";
+  const mainType = ct.split(";")[0].trim().toLowerCase();
+  const charset  = mimeGetParam(ct, "charset") ?? "utf-8";
+  const boundary = mimeGetParam(ct, "boundary");
+  const cidRaw   = hdrs["content-id"] ?? "";
+  const contentId = cidRaw.replace(/[<>]/g, "").trim() || undefined;
+  const disp      = hdrs["content-disposition"] ?? "";
+  const dispType  = disp.split(";")[0].trim().toLowerCase();
+
+  // Filename: prefer content-disposition, fallback to content-type name
+  const rawFilename = mimeGetParam(disp, "filename\\*?") ?? mimeGetParam(ct, "name\\*?");
+  const filename = rawFilename ? decodeMimeHeader(rawFilename) : null;
+
+  // Recurse into multipart
+  if (mainType.startsWith("multipart/") && boundary) {
+    for (const part of mimeSplitParts(bodySection, boundary)) {
+      mimeExtractParts(part, result);
+    }
+    return;
+  }
+
+  // text/html — use first found
+  if (mainType === "text/html" && !result.bodyHtml) {
+    result.bodyHtml = mimeDecodeBodyText(bodySection, cte, charset);
+    return;
+  }
+
+  // text/plain — use first found
+  if (mainType === "text/plain" && !result.bodyText) {
+    result.bodyText = mimeDecodeBodyText(bodySection, cte, charset);
+    return;
+  }
+
+  // Inline image with Content-ID
+  if (mainType.startsWith("image/") && contentId) {
+    result.inlineImages.push({
+      contentId,
+      mimeType: mainType,
+      data: mimeDecodeBinary(bodySection, cte),
+    });
+    return;
+  }
+
+  // Regular attachment (has filename or explicit attachment disposition)
+  if (filename || dispType === "attachment") {
+    const isInline = dispType === "inline" || (!!contentId && dispType !== "attachment");
+    result.attachments.push({
+      filename: filename ?? `attachment.${mainType.split("/")[1] ?? "bin"}`,
+      mimeType: mainType,
+      data: mimeDecodeBinary(bodySection, cte),
+      inline: isInline,
+      contentId,
+    });
+  }
+}
+
+// ─── Parse full RFC822 email ──────────────────────────────────────────────────
+
+function parseRawEmail(raw: string): Partial<ParsedEmail> {
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const sepIdx = normalized.indexOf("\n\n");
+  if (sepIdx === -1) return {};
+
+  const headerSection = normalized.slice(0, sepIdx);
+  const headers = mimeParseHeaders(headerSection);
 
   const fromRaw  = decodeMimeHeader(headers["from"] ?? "");
   const { email: fromEmail, name: fromName } = extractEmailAddress(fromRaw);
@@ -147,41 +299,51 @@ function parseRawEmail(raw: string): Partial<ParsedEmail> {
   const msgId    = headers["message-id"]?.replace(/[<>]/g, "").trim() ?? crypto.randomUUID();
   const replyTo  = headers["reply-to"] ? extractEmailAddress(decodeMimeHeader(headers["reply-to"])).email : null;
 
-  // Extract plain text body
-  let body = bodyParts.join("\n\n");
-
-  // Handle Content-Transfer-Encoding
-  const cte = headers["content-transfer-encoding"]?.toLowerCase() ?? "";
-  if (cte === "base64") {
-    try { body = new TextDecoder("utf-8", { fatal: false }).decode(Uint8Array.from(atob(body.replace(/\s/g, "")), c => c.charCodeAt(0))); } catch { /* keep raw */ }
-  } else if (cte === "quoted-printable") {
-    body = decodeQuotedPrintable(body);
+  // Parse original date from email header
+  let date = new Date();
+  if (headers["date"]) {
+    const parsed = new Date(headers["date"]);
+    if (!isNaN(parsed.getTime())) date = parsed;
   }
 
-  // Strip HTML tags if multipart
-  if (body.includes("<html") || body.includes("<HTML")) {
-    body = body.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-               .replace(/<[^>]+>/g, " ")
-               .replace(/&nbsp;/g, " ")
-               .replace(/&lt;/g, "<")
-               .replace(/&gt;/g, ">")
-               .replace(/&amp;/g, "&")
-               .replace(/\s{3,}/g, "\n\n")
-               .trim();
+  // Extract all MIME parts
+  const extracted: ExtractedParts = {
+    bodyHtml: null, bodyText: null, inlineImages: [], attachments: [],
+  };
+  mimeExtractParts(normalized, extracted);
+
+  // Fallback: if no parts found, treat body as flat text/html
+  if (!extracted.bodyHtml && !extracted.bodyText) {
+    const ct       = headers["content-type"] ?? "text/plain";
+    const cte      = headers["content-transfer-encoding"] ?? "7bit";
+    const charset  = mimeGetParam(ct, "charset") ?? "utf-8";
+    const mainType = ct.split(";")[0].trim().toLowerCase();
+    const bodyRaw  = normalized.slice(sepIdx + 2);
+    const decoded  = mimeDecodeBodyText(bodyRaw, cte, charset);
+    if (mainType.includes("html")) {
+      extracted.bodyHtml = decoded;
+    } else {
+      extracted.bodyText = decoded;
+    }
   }
 
-  // Strip quoted reply (lines starting with >)
-  body = body.split("\n").filter(l => !l.trimStart().startsWith(">")).join("\n").trim();
+  // Strip quoted reply lines from plain text
+  const bodyText = extracted.bodyText
+    ? extracted.bodyText.split("\n").filter(l => !l.trimStart().startsWith(">")).join("\n").trim()
+    : null;
 
   return {
-    messageId: msgId,
-    from:      fromEmail,
-    fromName:  fromName || null,
-    to:        EMAIL_USER,
+    messageId:    msgId,
+    from:         fromEmail,
+    fromName:     fromName ?? null,
+    to:           EMAIL_USER,
     subject,
-    body:      body.slice(0, MAX_EMAIL_BODY),
-    date:      new Date(),
-    replyTo:   replyTo,
+    bodyText:     bodyText?.slice(0, MAX_EMAIL_BODY) ?? null,
+    bodyHtml:     extracted.bodyHtml ?? null,
+    date,
+    replyTo,
+    inlineImages: extracted.inlineImages,
+    attachments:  extracted.attachments,
   };
 }
 
@@ -191,45 +353,24 @@ async function fetchUnreadEmails(): Promise<ParsedEmail[]> {
   const conn = await imapConnect();
   try {
     await imapReadLine(conn); // greeting
-
-    // LOGIN
     const loginResp = await imapCommand(conn, "a1", `LOGIN "${EMAIL_USER}" "${EMAIL_PASS}"`);
     if (!loginResp.some(l => l.startsWith("a1 OK"))) {
       console.error("[email] IMAP login failed:", loginResp.join("|"));
       return [];
     }
-
-    // SELECT INBOX
     await imapCommand(conn, "a2", "SELECT INBOX");
-
-    // SEARCH UNSEEN
     const searchResp = await imapCommand(conn, "a3", "SEARCH UNSEEN");
     const searchLine = searchResp.find(l => l.startsWith("* SEARCH")) ?? "";
     const uids = searchLine.replace("* SEARCH", "").trim().split(/\s+/).filter(Boolean);
+    conn.close();
 
     if (uids.length === 0) {
       console.log("[email] No unread emails");
-      conn.close();
       return [];
     }
-
-    console.log(`[email] Found ${uids.length} unread emails: ${uids.join(",")}`);
+    console.log(`[email] Found ${uids.length} unread emails`);
 
     const emails: ParsedEmail[] = [];
-    const uidList = uids.slice(0, 10).join(","); // max 10 per run
-
-    // FETCH all at once
-    await imapSend(conn, `a4 FETCH ${uidList} (RFC822)`);
-
-    let current: string[] = [];
-    let inBody = false;
-    let bodySize = 0;
-    let bytesLeft = 0;
-
-    // Simple sequential fetch per UID
-    conn.close();
-
-    // Re-connect and fetch individually (simpler/more reliable)
     for (const uid of uids.slice(0, 10)) {
       const c2 = await imapConnect();
       try {
@@ -237,12 +378,8 @@ async function fetchUnreadEmails(): Promise<ParsedEmail[]> {
         const lr = await imapCommand(c2, "b1", `LOGIN "${EMAIL_USER}" "${EMAIL_PASS}"`);
         if (!lr.some(l => l.startsWith("b1 OK"))) { c2.close(); continue; }
         await imapCommand(c2, "b2", "SELECT INBOX");
-
-        // FETCH single message
         await imapSend(c2, `b3 FETCH ${uid} RFC822`);
-        let raw = "";
-        let done = false;
-        let octets = 0;
+        let raw = "", done = false, octets = 0;
         while (!done) {
           const line = await imapReadLine(c2);
           if (line.includes("{") && line.includes("}")) {
@@ -259,7 +396,6 @@ async function fetchUnreadEmails(): Promise<ParsedEmail[]> {
         try { c2.close(); } catch { /* ignore */ }
       }
     }
-
     return emails;
   } catch (e) {
     console.error("[email] IMAP error:", e);
@@ -268,26 +404,42 @@ async function fetchUnreadEmails(): Promise<ParsedEmail[]> {
   }
 }
 
-// ─── SMTP send reply ───────────────────────────────────────────────────────────
+// ─── Supabase Storage upload ──────────────────────────────────────────────────
+
+async function uploadEmailFile(
+  data: Uint8Array,
+  mimeType: string,
+  filename: string,
+  convId: string,
+): Promise<string | null> {
+  if (!data || data.length === 0) return null;
+  try {
+    const ext  = mimeType.split("/")[1]?.split(";")[0] ?? "bin";
+    const path = `email/${convId}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from(BUCKET).upload(path, data, {
+      contentType: mimeType,
+      upsert: false,
+    });
+    if (error) { console.error("upload error:", error); return null; }
+    return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  } catch (e) {
+    console.error("uploadEmailFile error:", e);
+    return null;
+  }
+}
+
+// ─── SMTP send reply ──────────────────────────────────────────────────────────
 
 async function sendEmailReply(to: string, subject: string, body: string, inReplyTo?: string): Promise<boolean> {
   try {
     const conn = await Deno.connectTls({ hostname: SMTP_HOST, port: 465 });
     const enc  = new TextEncoder();
     const dec  = new TextDecoder();
-
-    const readLine = async () => {
-      const buf = new Uint8Array(4096);
-      const n = await conn.read(buf);
-      return n ? dec.decode(buf.subarray(0, n)) : "";
-    };
+    const readLine = async () => { const buf = new Uint8Array(4096); const n = await conn.read(buf); return n ? dec.decode(buf.subarray(0, n)) : ""; };
     const send = async (cmd: string) => { await conn.write(enc.encode(cmd + "\r\n")); };
-
-    await readLine(); // greeting
+    await readLine();
     await send("EHLO crm.estropical.com");
     await readLine();
-
-    // AUTH LOGIN
     await send("AUTH LOGIN");
     await readLine();
     await send(btoa(EMAIL_USER));
@@ -295,14 +447,12 @@ async function sendEmailReply(to: string, subject: string, body: string, inReply
     await send(btoa(EMAIL_PASS));
     const authResp = await readLine();
     if (!authResp.includes("235")) { conn.close(); return false; }
-
     await send(`MAIL FROM:<${EMAIL_USER}>`);
     await readLine();
     await send(`RCPT TO:<${to}>`);
     await readLine();
     await send("DATA");
     await readLine();
-
     const headers = [
       `From: Estropical <${EMAIL_USER}>`,
       `To: ${to}`,
@@ -311,7 +461,6 @@ async function sendEmailReply(to: string, subject: string, body: string, inReply
       inReplyTo ? `In-Reply-To: <${inReplyTo}>` : "",
       "",
     ].filter(Boolean).join("\r\n");
-
     await send(headers + "\r\n" + body + "\r\n.");
     await readLine();
     await send("QUIT");
@@ -319,12 +468,11 @@ async function sendEmailReply(to: string, subject: string, body: string, inReply
     return true;
   } catch (e) {
     console.error("[email] SMTP error:", e);
-    // Fallback: try port 587 with STARTTLS (not implemented here, log only)
     return false;
   }
 }
 
-// ─── DB helpers ──────────────────────────────────────────────────────────────
+// ─── DB helpers ───────────────────────────────────────────────────────────────
 
 async function isProcessed(messageId: string): Promise<boolean> {
   const { data } = await supabase
@@ -349,7 +497,6 @@ async function findOrCreateConvEmail(email: string, nombre: string | null, subje
     .order("ultima_interaccion", { ascending: false })
     .limit(1)
     .maybeSingle();
-
   if (existing) return existing.id;
 
   const { data: cliente } = await supabase
@@ -372,7 +519,6 @@ async function findOrCreateConvEmail(email: string, nombre: string | null, subje
     })
     .select("id")
     .single();
-
   if (error) throw error;
   return conv!.id;
 }
@@ -388,21 +534,19 @@ async function getBotConfig() {
 
 async function crearGestion(convId: string, clienteId: string | null, clienteNombre: string, categoria: string, urgencia: string, resumen: string, cfg: any) {
   if (!cfg?.crear_gestion_auto || !cfg?.gestion_process_id) return;
-
   const PRIORIDAD_MAP: Record<string, string> = { critica: "urgent", alta: "high", media: "medium", baja: "low" };
   const TYPE_MAP: Record<string, string> = { vacacional: "consulta", visa: "consulta", grupos: "consulta", corporativo: "consulta", soporte: "soporte", emergencia: "soporte", cobranzas: "cobro", otro: "consulta" };
-
   await supabase.from("gestiones").insert({
-    title:                  `${categoria.charAt(0).toUpperCase() + categoria.slice(1)} — ${clienteNombre} (Email)`,
-    description:            resumen,
-    process_id:             cfg.gestion_process_id,
-    stage_id:               cfg.gestion_stage_id ?? null,
-    cliente_id:             clienteId,
-    cliente_nombre:         clienteNombre,
-    priority:               PRIORIDAD_MAP[urgencia] ?? "medium",
-    type:                   TYPE_MAP[categoria] ?? "consulta",
-    subtype:                categoria,
-    canal_origen:           "email",
+    title: `${categoria.charAt(0).toUpperCase() + categoria.slice(1)} — ${clienteNombre} (Email)`,
+    description: resumen,
+    process_id: cfg.gestion_process_id,
+    stage_id: cfg.gestion_stage_id ?? null,
+    cliente_id: clienteId,
+    cliente_nombre: clienteNombre,
+    priority: PRIORIDAD_MAP[urgencia] ?? "medium",
+    type: TYPE_MAP[categoria] ?? "consulta",
+    subtype: categoria,
+    canal_origen: "email",
     conversacion_id_origen: convId,
   });
 }
@@ -417,57 +561,49 @@ async function analyzeEmail(email: ParsedEmail, clienteInfo: string, cfg: any): 
   const reglas     = cfg?.prompt_reglas     ?? "Respondé en español latinoamericano, cálido y profesional.";
   const categorias = cfg?.prompt_categorias ?? "vacacional, visa, grupos, corporativo, soporte, emergencia, cobranzas, otro";
 
+  // Use plain text for GPT, fallback to stripped HTML
+  const bodyForGpt = email.bodyText
+    ?? email.bodyHtml?.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+                      .replace(/<[^>]+>/g, " ")
+                      .replace(/&nbsp;/g, " ")
+                      .replace(/\s{3,}/g, "\n\n")
+                      .trim()
+                      .slice(0, MAX_EMAIL_BODY)
+    ?? "";
+
   const system = `${identidad}
 Analizás emails entrantes de clientes de Estropical Bolivia.
-
 Tu tarea:
 1. Clasificar el email en una categoría: ${categorias}
 2. Determinar urgencia: baja, media, alta, critica
 3. Hacer un resumen en 2-3 líneas
 4. Decidir si podés responder directamente o si necesita asesor
 5. Si podés responder: redactar respuesta breve, cálida y profesional
-
-Podés responder directamente si:
-- El cliente pide información general (destinos populares, requisitos generales, horarios de oficina)
-- Es una consulta simple de estado de reserva que podés responder con "nuestro equipo te contactará"
-- Es un saludo o agradecimiento
-
-NO respondas directamente si:
-- Pide cotización específica (precios, paquetes concretos)
-- Tiene una queja o problema con una reserva existente
-- Requiere información que solo tiene el asesor
-En esos casos: respuesta breve diciendo que un asesor lo contactará pronto.
-
+Podés responder directamente si el cliente pide información general, saluda o agradece.
+NO respondas directamente si pide cotización, tiene queja o requiere información del asesor.
+${reglas}
 Información del cliente:
 ${clienteInfo}
-
 Respondé SIEMPRE con este JSON exacto:
-{
-  "categoria": "...",
-  "urgencia": "...",
-  "resumen": "...",
-  "puede_responder": true/false,
-  "respuesta": "texto del email de respuesta o null"
-}`;
+{"categoria":"...","urgencia":"...","resumen":"...","puede_responder":true/false,"respuesta":"texto o null"}`;
 
   const user = `De: ${email.fromName ?? email.from} <${email.from}>
 Asunto: ${email.subject}
 Fecha: ${email.date.toISOString()}
 
-${email.body}`;
+${bodyForGpt}`;
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_KEY}` },
     body: JSON.stringify({
-      model:       MODEL,
-      messages:    [{ role: "system", content: system }, { role: "user", content: user }],
+      model: MODEL,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
       temperature: 0.3,
-      max_tokens:  600,
+      max_tokens: 600,
       response_format: { type: "json_object" },
     }),
   });
-
   if (!res.ok) throw new Error(`OpenAI ${res.status}`);
   const data   = await res.json();
   const text   = data.choices?.[0]?.message?.content ?? "{}";
@@ -491,28 +627,20 @@ Deno.serve(async (req: Request) => {
 
   try {
     const cfg = await getBotConfig();
-
-    // Skip if bot is disabled
     if (!cfg || cfg.activo === false) {
-      console.log("[email-agent] Email bot desactivado — no se procesan emails");
+      console.log("[email-agent] Email bot desactivado");
       return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
     }
 
     const emails = await fetchUnreadEmails();
-
-    let processed = 0;
-    let skipped   = 0;
+    let processed = 0, skipped = 0;
 
     for (const email of emails) {
-      // Skip already processed
       if (await isProcessed(email.messageId)) { skipped++; continue; }
-
-      // Skip emails sent by ourselves
       if (email.from.toLowerCase() === EMAIL_USER.toLowerCase()) { skipped++; continue; }
 
       console.log(`[email] Processing: ${email.subject} from ${email.from}`);
 
-      // Find/create client
       const { data: cliente } = await supabase
         .from("clientes")
         .select("id, nombre_completo")
@@ -524,37 +652,67 @@ Deno.serve(async (req: Request) => {
         ? `Nombre: ${cliente.nombre_completo}\nEmail: ${email.from}\n✅ Registrado en BD.`
         : `Email: ${email.from}\nNombre: ${email.fromName ?? "desconocido"}\nNo está registrado en la BD.`;
 
-      // Analyze with GPT
       const analysis = await analyzeEmail(email, clienteInfo, cfg);
+      const convId   = await findOrCreateConvEmail(email.from, email.fromName, email.subject);
 
-      // Create/find conversation
-      const convId = await findOrCreateConvEmail(email.from, email.fromName, email.subject);
+      // ── Upload inline images and resolve CID references ──
+      let finalBodyHtml = email.bodyHtml;
+      if (finalBodyHtml) {
+        for (const img of email.inlineImages) {
+          if (!img.contentId || img.data.length === 0 || img.data.length > 5 * 1024 * 1024) continue;
+          const url = await uploadEmailFile(img.data, img.mimeType, `inline-${img.contentId}`, convId);
+          if (url) {
+            const escaped = img.contentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            finalBodyHtml = finalBodyHtml!
+              .replace(new RegExp(`src=["']cid:${escaped}["']`, "gi"), `src="${url}"`)
+              .replace(new RegExp(`src=["']cid:${escaped.replace("@", "%40")}["']`, "gi"), `src="${url}"`);
+          }
+        }
+      }
 
-      // Save inbound email as message
-      await supabase.from("lat_mensajes").insert({
-        conversacion_id: convId,
-        tipo:            "inbound",
-        contenido:       `**${email.subject}**\n\n${email.body}`,
-        estado:          "entregado",
-        autor_nombre:    email.fromName ?? email.from,
-        wpp_message_id:  email.messageId,
+      // ── Upload first regular attachment ──
+      const regularAtts = email.attachments.filter(a => !a.inline);
+      let adjUrl: string | null = null, adjNom: string | null = null, adjTipo: string | null = null;
+      if (regularAtts.length > 0 && regularAtts[0].data.length > 0) {
+        adjUrl = await uploadEmailFile(regularAtts[0].data, regularAtts[0].mimeType, regularAtts[0].filename, convId);
+        if (adjUrl) { adjNom = regularAtts[0].filename; adjTipo = regularAtts[0].mimeType; }
+      }
+
+      // ── Save inbound email with all metadata ──
+      const { error: insErr } = await supabase.from("lat_mensajes").insert({
+        conversacion_id:  convId,
+        tipo:             "inbound",
+        contenido:        email.subject,
+        estado:           "entregado",
+        autor_nombre:     email.fromName ?? email.from,
+        wpp_message_id:   email.messageId,
+        email_subject:    email.subject,
+        email_from_name:  email.fromName,
+        email_from_email: email.from,
+        email_to:         [email.to],
+        email_body_html:  finalBodyHtml,
+        email_body_text:  email.bodyText?.slice(0, MAX_EMAIL_BODY) ?? null,
+        email_message_id: email.messageId,
+        email_has_attachments: regularAtts.length > 0,
+        adjunto_url:      adjUrl,
+        adjunto_nombre:   adjNom,
+        adjunto_tipo:     adjTipo,
       });
+      if (insErr) console.error("lat_mensajes insert error:", insErr);
 
-      // Update conversation with AI analysis
+      // ── Update conversation ──
       await supabase.from("lat_conversaciones").update({
         ultima_interaccion:  new Date().toISOString(),
-        ultimo_mensaje:      email.body.slice(0, 120),
+        ultimo_mensaje:      email.subject,
         intencion_detectada: analysis.categoria,
         urgencia_detectada:  analysis.urgencia,
         resumen_ia:          analysis.resumen,
         estado:              "en_cola",
-        no_leidos:           supabase.rpc ? 1 : 1,
+        no_leidos:           1,
       }).eq("id", convId);
 
-      // Auto-create gestión
       await crearGestion(convId, cliente?.id ?? null, cliente?.nombre_completo ?? email.fromName ?? email.from, analysis.categoria, analysis.urgencia, analysis.resumen, cfg);
 
-      // Send reply if GPT can handle it
       if (analysis.puede_responder && analysis.respuesta) {
         const sent = await sendEmailReply(
           email.replyTo ?? email.from,
@@ -564,15 +722,18 @@ Deno.serve(async (req: Request) => {
         );
         if (sent) {
           await supabase.from("lat_mensajes").insert({
-            conversacion_id: convId,
-            tipo:            "outbound",
-            contenido:       analysis.respuesta,
-            estado:          "enviado",
-            autor_nombre:    "Lati",
+            conversacion_id:  convId,
+            tipo:             "outbound",
+            contenido:        analysis.respuesta,
+            estado:           "enviado",
+            autor_nombre:     "Lati",
+            email_subject:    `Re: ${email.subject}`,
+            email_from_email: EMAIL_USER,
+            email_to:         [email.replyTo ?? email.from],
+            email_body_text:  analysis.respuesta,
           });
         }
       } else {
-        // Save nota interna con el análisis para el asesor
         await supabase.from("lat_mensajes").insert({
           conversacion_id: convId,
           tipo:            "nota_interna",
@@ -582,15 +743,13 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      // Mark as processed
       await markProcessed(email.messageId, convId);
       processed++;
     }
 
     console.log(`[email-agent] Done. Processed: ${processed}, Skipped: ${skipped}`);
     return new Response(JSON.stringify({ ok: true, processed, skipped }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+      status: 200, headers: { "Content-Type": "application/json" },
     });
 
   } catch (err: any) {

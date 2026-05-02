@@ -64,6 +64,21 @@ export interface LatMensaje {
   autor_nombre: string | null;
   created_at: string;
   _source?: "db" | "mock";
+  // Email fields (populated for canal=email conversations)
+  email_subject?: string | null;
+  email_from_name?: string | null;
+  email_from_email?: string | null;
+  email_to?: string[] | null;
+  email_cc?: string[] | null;
+  email_bcc?: string[] | null;
+  email_body_html?: string | null;
+  email_body_text?: string | null;
+  email_message_id?: string | null;
+  email_thread_id?: string | null;
+  email_in_reply_to?: string | null;
+  email_references?: string | null;
+  email_has_attachments?: boolean | null;
+  email_date?: string | null;
 }
 
 // ── Adapters mock → DB types ──────────────────────────────────────────────────

@@ -44,11 +44,21 @@ export function stripMimeHeaders(raw: string): string {
   return s.trim();
 }
 
-/** Sanea HTML usando DOMPurify, permite tags estándar de email */
+/** Sanea HTML usando DOMPurify, permite tags estándar de email.
+ *  Fuerza target=_blank y rel=noopener noreferrer en todos los links. */
 export function sanitizeEmailHtml(html: string): string {
   if (!html) return "";
   const cleaned = stripMimeHeaders(html);
-  return DOMPurify.sanitize(cleaned, {
+
+  // Hook: forzar apertura segura en nueva pestaña para todos los <a>
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if ("target" in node) {
+      (node as Element).setAttribute("target", "_blank");
+      (node as Element).setAttribute("rel", "noopener noreferrer");
+    }
+  });
+
+  const result = DOMPurify.sanitize(cleaned, {
     ALLOWED_TAGS: [
       "a", "b", "br", "div", "em", "i", "img", "li", "ol", "p", "span",
       "strong", "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
@@ -60,9 +70,13 @@ export function sanitizeEmailHtml(html: string): string {
       "style", "color", "bgcolor", "width", "height", "align",
       "border", "cellpadding", "cellspacing", "class",
     ],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|cid|data):)/i,
+    // cid: se resuelve en el backend antes de guardar — no necesario en frontend
+    ALLOWED_URI_REGEXP: /^(?:https?|mailto|tel|data):/i,
     ADD_ATTR: ["target"],
   });
+
+  DOMPurify.removeHook("afterSanitizeAttributes");
+  return result;
 }
 
 /** Convierte texto plano a HTML preservando saltos y autodetectando links */
