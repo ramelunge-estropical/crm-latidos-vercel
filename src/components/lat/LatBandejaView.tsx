@@ -185,7 +185,7 @@ export function LatBandejaView() {
 
       {/* ── Panel de conversación ──────────────────────────────────────────── */}
       <div className={[
-        'flex-1 min-w-0 min-h-0 flex flex-col bg-background overflow-hidden',
+        'flex-1 min-w-0 flex flex-col bg-background',
         mobileView === 'chat' ? 'flex' : 'hidden md:flex',
       ].join(' ')}>
 

@@ -407,7 +407,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     toast.success('Cliente vinculado');
     setShowVincular(false);
     setVincularSearch('');
-    setActiveTab('gestiones');
   };
 
   const handleAutoVincularCreado = async (cId: string, cNombre: string, tel?: string | null, email?: string | null) => {
@@ -419,7 +418,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       toast.success('Cliente creado y vinculado');
     }
     invalidateAll();
-    setActiveTab('gestiones');
   };
 
   // ── Liberar chat ──────────────────────────────────────────────────────────
@@ -735,7 +733,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full">
 
       {/* ── Header ── */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-border shrink-0 gap-2">
@@ -1074,8 +1072,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </>
       )}
 
-      {/* ── Tab: GESTIONES ── */}
-      {activeTab === 'gestiones' && (
+      {/* ── Tab: GESTIONES (desactivado — contenido movido al panel derecho) ── */}
+      {false && activeTab === 'gestiones' && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Subheader */}
           <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
@@ -1196,8 +1194,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </div>
       )}
 
-      {/* ── Tab: CLIENTE ── */}
-      {activeTab === 'cliente' && (
+      {/* ── Tab: CLIENTE (desactivado — contenido movido al panel derecho) ── */}
+      {false && activeTab === 'cliente' && (
         <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
           {isMock ? (
             <div className="text-center py-8 text-muted-foreground text-xs">Disponible solo en modo real.</div>
@@ -1321,8 +1319,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         </div>
       )}
 
-      {/* ── Tab: TRAZABILIDAD ── */}
-      {activeTab === 'trazabilidad' && (
+      {/* ── Tab: TRAZABILIDAD (desactivado — disponible en panel derecho) ── */}
+      {false && activeTab === 'trazabilidad' && (
         <TrazabilidadTab conversacionId={conversacion.id} />
       )}
 
