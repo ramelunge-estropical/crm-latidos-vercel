@@ -617,11 +617,162 @@ ${bodyForGpt}`;
   };
 }
 
+// ─── Backfill: parse existing messages stored as raw MIME in contenido ─────────
+
+function parseContenidoAsMime(
+  contenido: string,
+  messageId: string,
+  fromEmail: string,
+  fromName: string | null,
+  createdAt: string,
+): ParsedEmail | null {
+  try {
+    // Old agent stored: "**{subject}**\n\n{mime_body_parts}"
+    const subjectMatch = contenido.match(/^\*\*(.+?)\*\*/);
+    const subject = subjectMatch ? subjectMatch[1] : "(sin asunto)";
+
+    // Strip the **subject**\n\n prefix
+    const sepIdx = contenido.indexOf("\n\n");
+    const mimeBody = sepIdx >= 0 ? contenido.slice(sepIdx + 2) : contenido;
+
+    // Detect boundary from first "--boundary" line
+    const boundaryMatch = mimeBody.match(/^--([^\r\n]+)/m);
+    const boundary = boundaryMatch?.[1]?.trim();
+
+    let ctHeader: string;
+    if (boundary) {
+      ctHeader = `Content-Type: multipart/mixed; boundary="${boundary}"`;
+    } else if (/<[^>]+>/.test(mimeBody)) {
+      ctHeader = 'Content-Type: text/html; charset="UTF-8"';
+    } else {
+      ctHeader = 'Content-Type: text/plain; charset="UTF-8"';
+    }
+
+    const cleanMsgId = messageId.replace(/^<|>$/g, "");
+    const fromHdr = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
+
+    const syntheticRfc822 = [
+      `Message-ID: <${cleanMsgId}>`,
+      `From: ${fromHdr}`,
+      `To: ${EMAIL_USER}`,
+      `Subject: ${subject}`,
+      `Date: ${new Date(createdAt).toUTCString()}`,
+      `MIME-Version: 1.0`,
+      ctHeader,
+      ``,
+      mimeBody,
+    ].join("\r\n");
+
+    return parseRawEmail(syntheticRfc822) as ParsedEmail;
+  } catch (e) {
+    console.error("[backfill] parseContenidoAsMime error:", e);
+    return null;
+  }
+}
+
+async function handleBackfill(): Promise<Response> {
+  // Get all email conversation IDs
+  const { data: convRows } = await supabase
+    .from("lat_conversaciones")
+    .select("id, telefono")
+    .eq("canal", "email");
+  if (!convRows || convRows.length === 0) {
+    return new Response(JSON.stringify({ ok: true, updated: 0, reason: "no email conversations" }), { status: 200 });
+  }
+  const convMap: Record<string, string> = {};
+  for (const c of convRows as any[]) convMap[c.id] = c.telefono ?? "";
+  const convIds = Object.keys(convMap);
+
+  // Find inbound messages with missing email fields but with stored MIME in contenido
+  const { data: msgs } = await supabase
+    .from("lat_mensajes")
+    .select("id, contenido, wpp_message_id, conversacion_id, autor_nombre, created_at")
+    .in("conversacion_id", convIds)
+    .is("email_body_html", null)
+    .not("contenido", "is", null)
+    .eq("tipo", "inbound")
+    .limit(50);
+
+  if (!msgs || msgs.length === 0) {
+    return new Response(JSON.stringify({ ok: true, updated: 0, reason: "nothing to backfill" }), { status: 200 });
+  }
+
+  let updated = 0, failed = 0;
+
+  for (const msg of msgs as any[]) {
+    try {
+      const fromEmail = convMap[msg.conversacion_id] ?? "desconocido@email.com";
+      const email = parseContenidoAsMime(
+        msg.contenido ?? "",
+        msg.wpp_message_id ?? crypto.randomUUID(),
+        fromEmail,
+        msg.autor_nombre ?? null,
+        msg.created_at,
+      );
+      if (!email) { failed++; continue; }
+
+      // Inline images (quoted-printable usually; unlikely to have base64 binaries here)
+      let finalBodyHtml = email.bodyHtml;
+      if (finalBodyHtml) {
+        for (const img of email.inlineImages) {
+          if (!img.contentId || img.data.length === 0 || img.data.length > 5 * 1024 * 1024) continue;
+          const url = await uploadEmailFile(img.data, img.mimeType, `inline-${img.contentId}`, msg.conversacion_id);
+          if (url) {
+            const esc = img.contentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            finalBodyHtml = finalBodyHtml!
+              .replace(new RegExp(`src=["']cid:${esc}["']`, "gi"), `src="${url}"`)
+              .replace(new RegExp(`src=["']cid:${esc.replace("@", "%40")}["']`, "gi"), `src="${url}"`);
+          }
+        }
+      }
+
+      const regularAtts = email.attachments.filter(a => !a.inline);
+      let adjUrl: string | null = null, adjNom: string | null = null, adjTipo: string | null = null;
+      if (regularAtts.length > 0 && regularAtts[0].data.length > 0) {
+        adjUrl = await uploadEmailFile(regularAtts[0].data, regularAtts[0].mimeType, regularAtts[0].filename, msg.conversacion_id);
+        if (adjUrl) { adjNom = regularAtts[0].filename; adjTipo = regularAtts[0].mimeType; }
+      }
+
+      const patch: Record<string, unknown> = {
+        contenido:             email.subject,
+        email_subject:         email.subject,
+        email_from_name:       email.fromName,
+        email_from_email:      email.from,
+        email_to:              [email.to],
+        email_body_html:       finalBodyHtml,
+        email_body_text:       email.bodyText?.slice(0, MAX_EMAIL_BODY) ?? null,
+        email_message_id:      email.messageId,
+        email_has_attachments: regularAtts.length > 0,
+      };
+      if (msg.wpp_message_id) patch.email_message_id = msg.wpp_message_id;
+      if (adjUrl) { patch.adjunto_url = adjUrl; patch.adjunto_nombre = adjNom; patch.adjunto_tipo = adjTipo; }
+
+      const { error: updErr } = await supabase.from("lat_mensajes").update(patch).eq("id", msg.id);
+      if (updErr) { console.error("[backfill] update error:", updErr); failed++; }
+      else updated++;
+    } catch (e: any) {
+      console.error("[backfill] error for msg", msg.id, ":", e?.message);
+      failed++;
+    }
+  }
+
+  return new Response(
+    JSON.stringify({ ok: true, updated, failed, total: msgs.length }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200 });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+
+  const body = await req.json().catch(() => ({}));
+  if ((body as any)?.action === "backfill") {
+    console.log("[email-agent] Backfill mode");
+    return handleBackfill();
+  }
 
   console.log("[email-agent] Starting email poll");
 
