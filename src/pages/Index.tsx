@@ -106,6 +106,16 @@ const Index = () => {
     return () => window.removeEventListener("lat-go-bandeja", handler as EventListener);
   }, []);
 
+  // Listener: navegar a Cliente 360 desde panel lateral de Bandeja
+  useEffect(() => {
+    const handler = () => {
+      setActiveView("cliente360");
+      setSelectedProcessId(null);
+    };
+    window.addEventListener("navigate-to-cliente360", handler as EventListener);
+    return () => window.removeEventListener("navigate-to-cliente360", handler as EventListener);
+  }, []);
+
   if (!authReady) return null;
   if (!isLoggedIn) return <Login />;
 

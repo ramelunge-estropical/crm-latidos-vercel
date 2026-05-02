@@ -11,3 +11,9 @@ verify_jwt = false
 
 [functions.wpp-template-suggest]
 verify_jwt = false
+
+[functions.wpp-webhook]
+verify_jwt = false
+
+[functions.lat-bot-agent]
+verify_jwt = false

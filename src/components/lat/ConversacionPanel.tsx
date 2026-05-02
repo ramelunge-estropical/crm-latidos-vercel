@@ -270,6 +270,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [tomandoCola, setTomandoCola]             = useState(false);
   const [liberando, setLiberando]                 = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const invalidateAll = () => {
@@ -285,7 +286,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const isMock = conversacion._source === 'mock';
 
   const mockCliente = isMock ? getCliente(conversacion.id) : null;
-  const clienteNombre = conversacion.cliente_nombre ?? mockCliente?.nombre ?? 'Cliente';
+  const clienteNombre = conversacion.cliente_nombre ?? conversacion.telefono ?? mockCliente?.nombre ?? 'Sin nombre';
   const clienteId     = conversacion.cliente_id ?? null;
 
   const canal = canalMeta[conversacion.canal] ?? canalMeta.whatsapp;
@@ -309,8 +310,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const MAX_QUEUE = 10;
 
   useEffect(() => {
-    if (activeTab === 'chat') {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'chat' && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [mensajes, activeTab]);
 
@@ -734,7 +735,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
 
       {/* ── Header ── */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-border shrink-0 gap-2">
@@ -784,48 +785,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               En foco
             </button>
           )}
-          <button
-            onClick={() => setActiveTab('chat')}
-            title="Chat"
-            className={`p-1.5 rounded-md transition-colors ${activeTab === 'chat' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <MessageSquare className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setActiveTab('gestiones')}
-            title="Gestiones"
-            className={`p-1.5 rounded-md transition-colors relative ${activeTab === 'gestiones' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <ClipboardList className="w-4 h-4" />
-            {activeGestiones.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary text-primary-foreground text-[8px] font-bold flex items-center justify-center">
-                {activeGestiones.length > 9 ? '9+' : activeGestiones.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('cliente')}
-            title="Cliente"
-            className={`p-1.5 rounded-md transition-colors relative ${activeTab === 'cliente' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <User className="w-4 h-4" />
-            {!clienteId && !isMock && (
-              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-warning" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('trazabilidad')}
-            title="Trazabilidad"
-            className={`p-1.5 rounded-md transition-colors ${activeTab === 'trazabilidad' ? 'bg-primary/10 text-primary' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}
-          >
-            <Activity className="w-4 h-4" />
-          </button>
         </div>
       </div>
 
       {/* ── Banner: bot activo ── */}
       {!isMock && (conversacion as any).bot_estado === 'activo' && (
-        <div className="px-4 py-2 bg-fuchsia-500/10 border-b border-fuchsia-500/20 flex items-center gap-2">
+        <div className="px-4 py-2 bg-fuchsia-500/10 border-b border-fuchsia-500/20 flex items-center gap-2 shrink-0">
           <Bot className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
           <span className="text-[11px] text-fuchsia-600 flex-1 font-medium">
             Lati IA está atendiendo esta conversación
@@ -845,7 +810,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
       {/* ── Banner: conversación en cola del equipo ── */}
       {!isMock && conversacion.en_cola && (
-        <div className="px-4 py-2 bg-warning/10 border-b border-warning/20 flex items-center gap-2">
+        <div className="px-4 py-2 bg-warning/10 border-b border-warning/20 flex items-center gap-2 shrink-0">
           <Users className="w-3.5 h-3.5 text-warning shrink-0" />
           <span className="text-[11px] text-warning flex-1">
             En cola del equipo {conversacion.cola_area_nombre ?? ''}. Sin responsable asignado.
@@ -876,7 +841,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         <>
           {/* IA Compact Block */}
           {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (
-            <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex items-center gap-2 flex-wrap">
+            <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex items-center gap-2 flex-wrap shrink-0">
               <Zap className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
               {conversacion.intencion_detectada && (
                 <span className="text-[10px] bg-fuchsia-500/10 text-fuchsia-600 px-2 py-0.5 rounded-full font-medium">
@@ -899,25 +864,30 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             </div>
           )}
           <div
-            className="flex-1 overflow-y-auto scrollbar-thin px-4 py-3 space-y-3 relative"
+            ref={messagesContainerRef}
+            className="flex-1 min-h-0 overflow-y-auto scrollbar-thin relative flex flex-col"
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            {loadingMsgs ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : mensajes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <MessageSquare className="w-8 h-8 text-muted-foreground/30 mb-3" />
-                <p className="text-sm text-muted-foreground">Sin mensajes aún</p>
-              </div>
-            ) : (
-              mensajes.map(msg => <MessageBubble key={msg.id} mensaje={msg} />)
-            )}
-            <div ref={messagesEndRef} />
+            {/* Spacer que empuja los mensajes hacia abajo cuando son pocos */}
+            <div className="flex-1" />
+            <div className="px-4 py-3 space-y-3">
+              {loadingMsgs ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : mensajes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <MessageSquare className="w-8 h-8 text-muted-foreground/30 mb-3" />
+                  <p className="text-sm text-muted-foreground">Sin mensajes aún</p>
+                </div>
+              ) : (
+                mensajes.map(msg => <MessageBubble key={msg.id} mensaje={msg} />)
+              )}
+              <div ref={messagesEndRef} />
+            </div>
 
             {isDragging && dropzoneEnabled && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-primary/10 backdrop-blur-sm border-2 border-dashed border-primary rounded-md pointer-events-none">
@@ -931,13 +901,13 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           </div>
 
           {isWhatsapp && isOutOfWindow && (
-            <div className="px-4 py-2 bg-warning/10 border-t border-warning/20 flex items-center gap-2">
+            <div className="px-4 py-2 bg-warning/10 border-t border-warning/20 flex items-center gap-2 shrink-0">
               <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
               <span className="text-[11px] text-warning">Ventana de 24h expirada. Solo podés enviar plantillas aprobadas.</span>
             </div>
           )}
 
-          <div className="border-t border-border px-4 py-3">
+          <div className="border-t border-border px-4 py-3 shrink-0">
             {showNota && (
               <div className="mb-2 flex items-center gap-1.5 text-[10px] text-warning bg-warning/10 px-2 py-1 rounded">
                 <StickyNote className="w-3 h-3" /> Nota interna
@@ -1435,6 +1405,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 // ── MessageBubble ─────────────────────────────────────────────────────────────
 
 function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
+  const [imgError, setImgError]     = useState(false);
+  const [audioError, setAudioError] = useState(false);
   const isOutbound = mensaje.tipo === 'outbound';
   const isNota     = mensaje.tipo === 'nota_interna';
   const isSistema  = mensaje.tipo === 'sistema';
@@ -1477,8 +1449,14 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   const isAudio  = !!adjUrl && (adjTipo.startsWith('audio/') || /\.(ogg|mp3|m4a|wav|opus)$/i.test(mensaje.adjunto_nombre ?? ''));
   const isVideo  = !!adjUrl && (adjTipo.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(mensaje.adjunto_nombre ?? ''));
   const isFile   = !!adjUrl && !isImage && !isAudio && !isVideo;
-  const hasMedia = isImage || isAudio || isVideo || isFile;
   const trimmedContent = mensaje.contenido?.trim() ?? '';
+  // Mensajes donde el media existía pero no se pudo guardar la URL (descarga falló en webhook)
+  const isNoUrlMedia = !adjUrl && genericMediaPlaceholderPattern.test(trimmedContent);
+  const noUrlMediaKind: 'image' | 'audio' | 'video' | 'document' =
+    trimmedContent.match(/📷|imagen/i) ? 'image' :
+    trimmedContent.match(/🎤|voz|audio/i) ? 'audio' :
+    trimmedContent.match(/🎥|video/i) ? 'video' : 'document';
+  const hasMedia = isImage || isAudio || isVideo || isFile || isNoUrlMedia;
   const showText = !!trimmedContent && !(hasMedia && genericMediaPlaceholderPattern.test(trimmedContent));
   const linkClassName = isOutbound
     ? 'underline underline-offset-2 decoration-primary-foreground/60 font-medium break-all hover:opacity-80'
@@ -1500,26 +1478,46 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
       }`}>
         {/* Imagen */}
         {isImage && (
-          <button
-            type="button"
-            onClick={() => openAttachment({ url: adjUrl!, name: mensaje.adjunto_nombre, type: adjTipo })}
-            className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
-            title="Abrir imagen"
-          >
-            <img
-              src={adjUrl!}
-              alt={mensaje.adjunto_nombre ?? 'Imagen'}
-              className="rounded-xl max-h-72 w-auto object-cover bg-black/5 cursor-zoom-in group-hover:opacity-95 transition-opacity"
-              loading="lazy"
-            />
-          </button>
+          imgError ? (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+              <ImageIcon className="w-4 h-4 shrink-0" />
+              Imagen no disponible
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => openAttachment({ url: adjUrl!, name: mensaje.adjunto_nombre, type: adjTipo })}
+              className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
+              title="Abrir imagen"
+            >
+              <img
+                src={adjUrl!}
+                alt={mensaje.adjunto_nombre ?? 'Imagen'}
+                className="rounded-xl max-h-72 w-auto object-cover bg-black/5 cursor-zoom-in group-hover:opacity-95 transition-opacity"
+                loading="lazy"
+                onError={() => setImgError(true)}
+              />
+            </button>
+          )
         )}
 
         {/* Audio / nota de voz */}
         {isAudio && (
           <div className={`px-2 py-1.5 ${isOutbound ? 'bg-primary-foreground/10' : 'bg-background/40'} rounded-xl flex items-center gap-2 min-w-[220px]`}>
             <Play className={`w-4 h-4 ${isOutbound ? 'text-primary-foreground/80' : 'text-primary'}`} />
-            <audio controls preload="metadata" src={adjUrl!} className="flex-1 h-7 max-w-[260px]" />
+            {audioError ? (
+              <span className={`flex-1 text-[11px] ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+                Audio no disponible
+              </span>
+            ) : (
+              <audio
+                controls
+                preload="metadata"
+                src={adjUrl!}
+                className="flex-1 h-7 max-w-[260px]"
+                onError={() => setAudioError(true)}
+              />
+            )}
           </div>
         )}
 
@@ -1554,6 +1552,24 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
             </div>
             <Download className={`w-3.5 h-3.5 ${isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'}`} />
           </button>
+        )}
+
+        {/* Media sin URL (descarga falló en recepción o función no redespllegada) */}
+        {isNoUrlMedia && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] ${
+            isOutbound ? 'text-primary-foreground/60' : 'text-muted-foreground'
+          }`}>
+            {noUrlMediaKind === 'image'    && <ImageIcon className="w-4 h-4 shrink-0" />}
+            {noUrlMediaKind === 'audio'    && <Play className="w-4 h-4 shrink-0" />}
+            {noUrlMediaKind === 'video'    && <Play className="w-4 h-4 shrink-0" />}
+            {noUrlMediaKind === 'document' && <FileText className="w-4 h-4 shrink-0" />}
+            <span>
+              {noUrlMediaKind === 'image'    ? 'Imagen no disponible' :
+               noUrlMediaKind === 'audio'    ? 'Audio no disponible'  :
+               noUrlMediaKind === 'video'    ? 'Video no disponible'  :
+               'Archivo no disponible'}
+            </span>
+          </div>
         )}
 
         {/* Texto / caption */}
@@ -1705,7 +1721,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
       )}
 
       {!composerOpen && lastMsg && (
-        <div className="border-t bg-muted/30 px-4 py-2 flex items-center gap-2">
+        <div className="border-t bg-muted/30 px-4 py-2 flex items-center gap-2 shrink-0">
           <button
             onClick={() => openCompose(lastMsg, 'reply')}
             className="flex-1 text-left text-sm text-muted-foreground bg-background border rounded-md px-3 py-2 hover:bg-muted/50 transition"

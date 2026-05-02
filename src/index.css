@@ -138,9 +138,20 @@
   * {
     @apply border-border;
   }
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', sans-serif;
+  }
+  #root {
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 }
 
@@ -160,4 +171,59 @@
     background-color: hsl(var(--border));
     border-radius: 3px;
   }
+}
+
+/* Scoped styles for rendered email HTML bodies */
+.email-body {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: hsl(var(--foreground));
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.email-body a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+.email-body a:hover {
+  opacity: 0.8;
+}
+.email-body img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.email-body table {
+  border-collapse: collapse;
+  max-width: 100%;
+}
+.email-body td,
+.email-body th {
+  padding: 4px 8px;
+}
+.email-body blockquote {
+  border-left: 3px solid hsl(var(--border));
+  padding-left: 1rem;
+  margin-left: 0;
+  color: hsl(var(--muted-foreground));
+}
+.email-body pre,
+.email-body code {
+  font-family: monospace;
+  font-size: 0.8125rem;
+  background: hsl(var(--muted));
+  padding: 0.125rem 0.25rem;
+  border-radius: 3px;
+}
+.email-body pre {
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+.email-body p {
+  margin: 0.5em 0;
+}
+.email-body h1, .email-body h2, .email-body h3,
+.email-body h4, .email-body h5, .email-body h6 {
+  font-weight: 600;
+  margin: 0.75em 0 0.25em;
 }

@@ -117,7 +117,7 @@ export function LatBandejaView() {
   };
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex flex-1 min-h-0 overflow-hidden">
 
       {/* ── Lista de conversaciones ───────────────────────────────────────── */}
       <div className={[
@@ -185,7 +185,7 @@ export function LatBandejaView() {
 
       {/* ── Panel de conversación ──────────────────────────────────────────── */}
       <div className={[
-        'flex-1 min-w-0 flex flex-col bg-background',
+        'flex-1 min-w-0 min-h-0 flex flex-col bg-background overflow-hidden',
         mobileView === 'chat' ? 'flex' : 'hidden md:flex',
       ].join(' ')}>
 
@@ -223,12 +223,12 @@ export function LatBandejaView() {
 
       {/* ── Panel Cliente 360 ── */}
       {selectedConv && mockCliente && (
-        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card overflow-y-auto scrollbar-thin">
+        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card min-h-0 overflow-y-auto scrollbar-thin">
           <Cliente360Panel cliente={mockCliente} conversacion={selectedConv as any} />
         </div>
       )}
       {selectedConv && !mockCliente && selectedConv.cliente_id && (
-        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card">
+        <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card min-h-0 overflow-hidden">
           <ClienteDBPanel
             clienteId={selectedConv.cliente_id}
             conversacion={selectedConv}

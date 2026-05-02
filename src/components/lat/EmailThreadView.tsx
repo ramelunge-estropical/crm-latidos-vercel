@@ -55,15 +55,15 @@ function normalize(m: LatMensaje): NormalizedEmail {
   return {
     id: m.id,
     subject: m.email_subject ?? m.contenido?.slice(0, 80) ?? "(sin asunto)",
-    fromName: (m as any).email_from_name ?? m.autor_nombre ?? undefined,
-    fromEmail: (m as any).email_from_email ?? undefined,
-    to: parseAddressList((m as any).email_to),
-    cc: parseAddressList((m as any).email_cc),
-    date: new Date(m.created_at),
+    fromName: m.email_from_name ?? m.autor_nombre ?? undefined,
+    fromEmail: m.email_from_email ?? undefined,
+    to: parseAddressList(m.email_to),
+    cc: parseAddressList(m.email_cc),
+    date: m.email_date ? new Date(m.email_date) : new Date(m.created_at),
     bodyHtml: cleanedHtml,
     bodyPreview: trimQuotedReply(cleanedHtml).replace(/<[^>]+>/g, " ").slice(0, 140).trim(),
     direction,
-    hasAttachment: !!m.adjunto_url || (m as any).email_has_attachments === true,
+    hasAttachment: !!m.adjunto_url || m.email_has_attachments === true,
     attachmentUrl: m.adjunto_url,
     attachmentName: m.adjunto_nombre,
     attachmentType: m.adjunto_tipo,
@@ -146,6 +146,9 @@ export function EmailThreadView({ mensajes, onReply, onReplyAll, onForward }: Pr
                     {email.cc.length > 0 && (
                       <div><span className="font-medium">Cc:</span> {email.cc.map(formatAddress).join(", ")}</div>
                     )}
+                    {parseAddressList(email.raw.email_bcc).length > 0 && (
+                      <div><span className="font-medium">Bcc:</span> {parseAddressList(email.raw.email_bcc).map(formatAddress).join(", ")}</div>
+                    )}
                     <div><span className="font-medium">Fecha:</span> {format(email.date, "EEEE d 'de' MMMM yyyy, HH:mm", { locale: es })}</div>
                   </div>
                 )}
@@ -163,7 +166,7 @@ export function EmailThreadView({ mensajes, onReply, onReplyAll, onForward }: Pr
                 <Separator />
                 <div className="px-4 py-4">
                   <div
-                    className="email-body prose prose-sm max-w-none text-sm text-foreground [&_a]:text-primary [&_a]:underline [&_img]:max-w-full [&_img]:h-auto [&_table]:border-collapse [&_td]:px-2 [&_td]:py-1"
+                    className="email-body"
                     dangerouslySetInnerHTML={{ __html: email.bodyHtml || "<em>(sin contenido)</em>" }}
                   />
 

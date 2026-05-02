@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { GestionDetailView } from '@/components/GestionDetailView';
+import { GestionDialog } from '@/components/GestionDialog';
 import { useQuery } from '@tanstack/react-query';
 import {
   User, Phone as PhoneIcon, Mail, ChevronDown, ChevronRight,
@@ -13,7 +14,6 @@ import { LatConversacion } from '@/hooks/useLatData';
 interface ClienteDBPanelProps {
   clienteId: string;
   conversacion: LatConversacion;
-  onCrearGestion?: () => void;
 }
 
 function Section({ title, icon: Icon, defaultOpen = true, children }: {
@@ -59,8 +59,9 @@ const priorityCfg: Record<string, { label: string; className: string }> = {
   low:    { label: 'Baja',    className: 'text-muted-foreground' },
 };
 
-export function ClienteDBPanel({ clienteId, conversacion, onCrearGestion }: ClienteDBPanelProps) {
+export function ClienteDBPanel({ clienteId, conversacion }: ClienteDBPanelProps) {
   const [selectedGestionId, setSelectedGestionId] = useState<string | null>(null);
+  const [showCreateGestion, setShowCreateGestion] = useState(false);
   const { data: cliente } = useQuery<any>({
     queryKey: ['cliente-db-panel', clienteId],
     queryFn: async () => {
@@ -172,7 +173,7 @@ export function ClienteDBPanel({ clienteId, conversacion, onCrearGestion }: Clie
           </div>
         )}
         <button
-          onClick={onCrearGestion}
+          onClick={() => setShowCreateGestion(true)}
           className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] text-primary border border-primary/30 rounded-lg py-1 hover:bg-primary/5 transition-colors"
         >
           <Plus className="w-3 h-3" /> Nueva gestión
@@ -212,6 +213,12 @@ export function ClienteDBPanel({ clienteId, conversacion, onCrearGestion }: Clie
         open={!!selectedGestionId}
         onOpenChange={(o) => { if (!o) setSelectedGestionId(null); }}
         gestionId={selectedGestionId ?? ''}
+      />
+      <GestionDialog
+        open={showCreateGestion}
+        onOpenChange={setShowCreateGestion}
+        defaultClienteId={clienteId}
+        defaultClienteNombre={nombre}
       />
 
       {/* Link a Cliente 360 completo */}

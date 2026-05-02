@@ -64,6 +64,21 @@ export interface LatMensaje {
   autor_nombre: string | null;
   created_at: string;
   _source?: "db" | "mock";
+  // Email fields (populated for canal=email conversations)
+  email_subject?: string | null;
+  email_from_name?: string | null;
+  email_from_email?: string | null;
+  email_to?: string[] | null;
+  email_cc?: string[] | null;
+  email_bcc?: string[] | null;
+  email_body_html?: string | null;
+  email_body_text?: string | null;
+  email_message_id?: string | null;
+  email_thread_id?: string | null;
+  email_in_reply_to?: string | null;
+  email_references?: string | null;
+  email_has_attachments?: boolean | null;
+  email_date?: string | null;
 }
 
 // ── Adapters mock → DB types ──────────────────────────────────────────────────
@@ -135,7 +150,13 @@ export function useLatConversaciones() {
           queryClient.invalidateQueries({ queryKey: ["lat-conversaciones"] });
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ["lat_conversaciones"] });
+          }, 3000);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -204,7 +225,13 @@ export function useLatMensajes(conversacionId: string | null, isMock: boolean) {
         { event: "UPDATE", schema: "public", table: "lat_mensajes", filter: `conversacion_id=eq.${conversacionId}` },
         () => queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] })
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] });
+          }, 3000);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
