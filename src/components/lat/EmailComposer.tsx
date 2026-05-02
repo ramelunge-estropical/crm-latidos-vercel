@@ -85,16 +85,28 @@ function ToolbarSelect({
   const [open, setOpen]   = useState(false);
   const [pos, setPos]     = useState({ top: 0, left: 0 });
   const btnRef            = useRef<HTMLButtonElement>(null);
+  const idRef             = useRef(`ts-${Math.random()}`);
 
   const handleOpen = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 2, left: r.left });
+    if (!open) {
+      window.dispatchEvent(new CustomEvent("toolbar-dropdown-open", { detail: idRef.current }));
+      if (btnRef.current) {
+        const r = btnRef.current.getBoundingClientRect();
+        setPos({ top: r.bottom + 2, left: r.left });
+      }
     }
     setOpen((o) => !o);
   };
+
+  useEffect(() => {
+    const closeOthers = (e: Event) => {
+      if ((e as CustomEvent).detail !== idRef.current) setOpen(false);
+    };
+    window.addEventListener("toolbar-dropdown-open", closeOthers);
+    return () => window.removeEventListener("toolbar-dropdown-open", closeOthers);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -154,16 +166,28 @@ function ColorPicker({
   const [open, setOpen] = useState(false);
   const [pos, setPos]   = useState({ top: 0, left: 0 });
   const btnRef          = useRef<HTMLButtonElement>(null);
+  const idRef           = useRef(`cp-${Math.random()}`);
 
   const handleOpen = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect();
-      setPos({ top: r.bottom + 2, left: r.left });
+    if (!open) {
+      window.dispatchEvent(new CustomEvent("toolbar-dropdown-open", { detail: idRef.current }));
+      if (btnRef.current) {
+        const r = btnRef.current.getBoundingClientRect();
+        setPos({ top: r.bottom + 2, left: r.left });
+      }
     }
     setOpen((o) => !o);
   };
+
+  useEffect(() => {
+    const closeOthers = (e: Event) => {
+      if ((e as CustomEvent).detail !== idRef.current) setOpen(false);
+    };
+    window.addEventListener("toolbar-dropdown-open", closeOthers);
+    return () => window.removeEventListener("toolbar-dropdown-open", closeOthers);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
