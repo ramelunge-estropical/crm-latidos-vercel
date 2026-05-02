@@ -735,7 +735,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── Header ── */}
       <div className="h-14 px-4 flex items-center justify-between border-b border-border shrink-0 gap-2">
