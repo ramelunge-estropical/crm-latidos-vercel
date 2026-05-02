@@ -36,8 +36,8 @@ export function stripMimeHeaders(raw: string): string {
   // Remover boundary markers
   s = s.replace(/^--[=_a-zA-Z0-9-]+(?:--)?\s*$/gm, "");
 
-  // Quoted-printable
-  if (/=[0-9A-F]{2}/.test(s) || /=\r?\n/.test(s)) {
+  // Quoted-printable — solo si no parece HTML ya decodificado (URLs con =XX corrompen Unicode)
+  if (!/<[a-z]/i.test(s) && (/=[0-9A-F]{2}/.test(s) || /=\r?\n/.test(s))) {
     s = decodeQuotedPrintable(s);
   }
 
@@ -45,10 +45,13 @@ export function stripMimeHeaders(raw: string): string {
 }
 
 /** Sanea HTML usando DOMPurify, permite tags estándar de email.
- *  Fuerza target=_blank y rel=noopener noreferrer en todos los links. */
+ *  Fuerza target=_blank y rel=noopener noreferrer en todos los links.
+ *  NO llama stripMimeHeaders: email_body_html ya viene decodificado del backend.
+ *  Llamar decodeQuotedPrintable sobre HTML decoded corrompe caracteres Unicode
+ *  porque toma charCodes >127 (ej. ñ=241) como bytes UTF-8 inválidos. */
 export function sanitizeEmailHtml(html: string): string {
   if (!html) return "";
-  const cleaned = stripMimeHeaders(html);
+  const cleaned = html;
 
   // Hook: forzar apertura segura en nueva pestaña para todos los <a>
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
