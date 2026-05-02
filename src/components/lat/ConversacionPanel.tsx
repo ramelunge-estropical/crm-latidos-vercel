@@ -270,6 +270,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const [tomandoCola, setTomandoCola]             = useState(false);
   const [liberando, setLiberando]                 = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const invalidateAll = () => {
@@ -309,8 +310,8 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const MAX_QUEUE = 10;
 
   useEffect(() => {
-    if (activeTab === 'chat') {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'chat' && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [mensajes, activeTab]);
 
@@ -899,6 +900,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
             </div>
           )}
           <div
+            ref={messagesContainerRef}
             className="flex-1 min-h-0 overflow-y-auto scrollbar-thin relative flex flex-col"
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
