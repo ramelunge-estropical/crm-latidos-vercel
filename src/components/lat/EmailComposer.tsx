@@ -8,7 +8,7 @@ import {
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Eraser, Paperclip, X, Send, Loader2, Palette, Highlighter,
   Quote, Indent, Outdent, Undo2, Redo2, Trash2, Image as ImageIcon,
-  ChevronDown,
+  ChevronDown, SpellCheck2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -69,6 +69,21 @@ const COLOR_PALETTE = [
 ];
 
 type SendStatus = "idle" | "sending" | "sent" | "error";
+
+interface SpellMatch {
+  offset: number;
+  length: number;
+  message: string;
+  replacements: { value: string }[];
+}
+
+interface SpellPopup {
+  x: number;
+  y: number;
+  suggestions: string[];
+  message: string;
+  spanEl: HTMLElement;
+}
 
 // ── Portal dropdown for font / size ──────────────────────────────────────────
 function ToolbarSelect({
@@ -251,6 +266,10 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
   const [status, setStatus] = useState<SendStatus>("idle");
   const [error, setError]   = useState<string | null>(null);
 
+  const [spellChecking, setSpellChecking] = useState(false);
+  const [spellActive, setSpellActive]     = useState(false);
+  const [spellPopup, setSpellPopup]       = useState<SpellPopup | null>(null);
+
   useEffect(() => {
     setTo(initial.to.join(", "));
     setCc(initial.cc.join(", "));
@@ -285,6 +304,129 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
     document.execCommand(command, false, value);
     saveSelection();
   }, [restoreSelection, saveSelection]);
+
+  // ── Spell check ──────────────────────────────────────────────────────────
+  const clearSpellHighlights = useCallback(() => {
+    if (!editorRef.current) return;
+    editorRef.current.querySelectorAll("[data-spell-error]").forEach((el) => {
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+    });
+    editorRef.current.normalize();
+  }, []);
+
+  const applySpellHighlights = useCallback((matches: SpellMatch[], fullText: string) => {
+    if (!editorRef.current) return;
+    clearSpellHighlights();
+    if (matches.length === 0) return;
+
+    // Deduplicate by word — highlight every occurrence of each misspelled word
+    const wordMap = new Map<string, SpellMatch>();
+    for (const m of matches) {
+      const word = fullText.slice(m.offset, m.offset + m.length);
+      if (word && !wordMap.has(word)) wordMap.set(word, m);
+    }
+
+    wordMap.forEach((match, word) => {
+      const suggestions = match.replacements.slice(0, 5).map((r) => r.value);
+      const walker = document.createTreeWalker(editorRef.current!, NodeFilter.SHOW_TEXT);
+      const textNodes: Text[] = [];
+      let n: Node | null;
+      while ((n = walker.nextNode())) {
+        if ((n.textContent ?? "").includes(word)) textNodes.push(n as Text);
+      }
+      // Process in reverse DOM order so we don't shift positions
+      for (const textNode of textNodes.reverse()) {
+        let remaining: Text = textNode;
+        let idx: number;
+        while ((idx = (remaining.textContent ?? "").indexOf(word)) !== -1) {
+          const span = document.createElement("span");
+          span.setAttribute("data-spell-error", "1");
+          span.dataset.suggestions = suggestions.join("|");
+          span.dataset.message = match.message;
+          span.style.textDecoration = "underline";
+          span.style.textDecorationColor = "#ef4444";
+          span.style.textDecorationStyle = "wavy";
+          span.style.cursor = "pointer";
+          const mid = remaining.splitText(idx);
+          remaining = mid.splitText(word.length);
+          span.textContent = mid.textContent;
+          mid.parentNode?.replaceChild(span, mid);
+        }
+      }
+    });
+  }, [clearSpellHighlights]);
+
+  const runSpellCheck = useCallback(async () => {
+    if (!editorRef.current || spellChecking) return;
+    if (spellActive) {
+      clearSpellHighlights();
+      setSpellActive(false);
+      setSpellPopup(null);
+      return;
+    }
+    const text = editorRef.current.innerText.trim();
+    if (!text) return;
+    setSpellChecking(true);
+    try {
+      const res = await fetch("https://api.languagetool.org/v2/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ text, language: "es", enabledOnly: "false" }),
+      });
+      const data = await res.json();
+      const matches: SpellMatch[] = (data.matches ?? []).filter(
+        (m: any) => m.rule?.issueType === "misspelling" || m.rule?.category?.id === "TYPOS",
+      );
+      if (matches.length === 0) {
+        toast.success("Sin errores ortográficos");
+      } else {
+        applySpellHighlights(matches, text);
+        setSpellActive(true);
+        toast.info(`${matches.length} error${matches.length !== 1 ? "es" : ""} encontrado${matches.length !== 1 ? "s" : ""}`);
+      }
+    } catch {
+      toast.error("Error al verificar ortografía");
+    } finally {
+      setSpellChecking(false);
+    }
+  }, [spellChecking, spellActive, clearSpellHighlights, applySpellHighlights]);
+
+  const handleEditorClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.getAttribute("data-spell-error") === "1") {
+      const rect = target.getBoundingClientRect();
+      setSpellPopup({
+        x: rect.left,
+        y: rect.bottom + 6,
+        suggestions: target.dataset.suggestions?.split("|").filter(Boolean) ?? [],
+        message: target.dataset.message ?? "",
+        spanEl: target,
+      });
+    } else {
+      setSpellPopup(null);
+    }
+    saveSelection();
+  }, [saveSelection]);
+
+  // Close spell popup on outside click
+  useEffect(() => {
+    if (!spellPopup) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-spell-popup]")) setSpellPopup(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [spellPopup]);
+
+  // Clear highlights when user starts typing
+  const handleEditorInput = useCallback(() => {
+    if (spellActive) { clearSpellHighlights(); setSpellActive(false); setSpellPopup(null); }
+    fireChange();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spellActive, clearSpellHighlights]);
 
   const handleInsertLink  = () => { const u = window.prompt("URL del enlace:", "https://"); if (u) cmd("createLink", u); };
   const handleInsertImage = () => { const u = window.prompt("URL de la imagen:", "https://"); if (u) cmd("insertImage", u); };
@@ -465,6 +607,24 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
           <Paperclip className="w-3.5 h-3.5" /> Adjuntar
           <input type="file" multiple onChange={handleAttach} className="hidden" />
         </label>
+
+        <Sep />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={runSpellCheck}
+          title={spellActive ? "Desactivar corrector" : "Revisar ortografía"}
+          className={`h-7 px-2 inline-flex items-center gap-1 text-xs rounded transition ${
+            spellActive
+              ? "bg-primary/15 text-primary hover:bg-primary/25"
+              : "hover:bg-muted text-foreground/80 hover:text-foreground"
+          }`}
+        >
+          {spellChecking
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <SpellCheck2 className="w-3.5 h-3.5" />}
+          <span className="hidden sm:inline">Ortografía</span>
+        </button>
       </div>
 
       {/* Editor */}
@@ -472,10 +632,11 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        onInput={fireChange}
+        onInput={handleEditorInput}
         onKeyUp={saveSelection}
         onMouseUp={saveSelection}
         onBlur={saveSelection}
+        onClick={handleEditorClick}
         className="px-4 py-3 flex-1 min-h-[100px] max-h-[220px] overflow-y-auto text-sm focus:outline-none [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_img]:max-w-full [&_img]:h-auto [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5"
         data-placeholder="Escribe tu respuesta por correo..."
       />
@@ -494,6 +655,53 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
             </Badge>
           ))}
         </div>
+      )}
+
+      {/* Spell popup */}
+      {spellPopup && createPortal(
+        <div
+          data-spell-popup="1"
+          style={{ position: "fixed", top: spellPopup.y, left: spellPopup.x, zIndex: 9999 }}
+          className="bg-popover border border-border rounded-lg shadow-xl px-2 py-1.5 flex items-center gap-1.5 flex-wrap max-w-[300px]"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {spellPopup.suggestions.length > 0 ? (
+            spellPopup.suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => {
+                  const span = spellPopup.spanEl;
+                  const text = document.createTextNode(s);
+                  span.parentNode?.replaceChild(text, span);
+                  editorRef.current?.normalize();
+                  setSpellPopup(null);
+                  fireChange();
+                }}
+                className="px-2.5 py-0.5 bg-primary/10 text-primary text-xs rounded-full hover:bg-primary/20 transition-colors font-medium"
+              >
+                {s}
+              </button>
+            ))
+          ) : (
+            <span className="text-xs text-muted-foreground italic">Sin sugerencias</span>
+          )}
+          <button
+            type="button"
+            title="Ignorar"
+            onClick={() => {
+              const span = spellPopup.spanEl;
+              const text = document.createTextNode(span.textContent ?? "");
+              span.parentNode?.replaceChild(text, span);
+              editorRef.current?.normalize();
+              setSpellPopup(null);
+            }}
+            className="ml-1 p-0.5 rounded hover:bg-muted transition-colors"
+          >
+            <X className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        </div>,
+        document.body,
       )}
 
       {/* Footer */}
