@@ -825,7 +825,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
       {/* ── Banner: bot activo ── */}
       {!isMock && (conversacion as any).bot_estado === 'activo' && (
-        <div className="px-4 py-2 bg-fuchsia-500/10 border-b border-fuchsia-500/20 flex items-center gap-2">
+        <div className="px-4 py-2 bg-fuchsia-500/10 border-b border-fuchsia-500/20 flex items-center gap-2 shrink-0">
           <Bot className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
           <span className="text-[11px] text-fuchsia-600 flex-1 font-medium">
             Lati IA está atendiendo esta conversación
@@ -845,7 +845,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
       {/* ── Banner: conversación en cola del equipo ── */}
       {!isMock && conversacion.en_cola && (
-        <div className="px-4 py-2 bg-warning/10 border-b border-warning/20 flex items-center gap-2">
+        <div className="px-4 py-2 bg-warning/10 border-b border-warning/20 flex items-center gap-2 shrink-0">
           <Users className="w-3.5 h-3.5 text-warning shrink-0" />
           <span className="text-[11px] text-warning flex-1">
             En cola del equipo {conversacion.cola_area_nombre ?? ''}. Sin responsable asignado.
@@ -876,7 +876,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         <>
           {/* IA Compact Block */}
           {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (
-            <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex items-center gap-2 flex-wrap">
+            <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex items-center gap-2 flex-wrap shrink-0">
               <Zap className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
               {conversacion.intencion_detectada && (
                 <span className="text-[10px] bg-fuchsia-500/10 text-fuchsia-600 px-2 py-0.5 rounded-full font-medium">
@@ -935,7 +935,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           </div>
 
           {isWhatsapp && isOutOfWindow && (
-            <div className="px-4 py-2 bg-warning/10 border-t border-warning/20 flex items-center gap-2">
+            <div className="px-4 py-2 bg-warning/10 border-t border-warning/20 flex items-center gap-2 shrink-0">
               <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
               <span className="text-[11px] text-warning">Ventana de 24h expirada. Solo podés enviar plantillas aprobadas.</span>
             </div>
@@ -1755,7 +1755,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
       )}
 
       {!composerOpen && lastMsg && (
-        <div className="border-t bg-muted/30 px-4 py-2 flex items-center gap-2">
+        <div className="border-t bg-muted/30 px-4 py-2 flex items-center gap-2 shrink-0">
           <button
             onClick={() => openCompose(lastMsg, 'reply')}
             className="flex-1 text-left text-sm text-muted-foreground bg-background border rounded-md px-3 py-2 hover:bg-muted/50 transition"
