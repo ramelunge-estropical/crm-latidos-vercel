@@ -635,14 +635,18 @@ function parseContenidoAsMime(
     const sepIdx = contenido.indexOf("\n\n");
     const mimeBody = sepIdx >= 0 ? contenido.slice(sepIdx + 2) : contenido;
 
+    // Normalize all line endings to CRLF — the MIME parser requires \r\n\r\n
+    // as the header/body separator and stored contenido often has bare \n
+    const normalizedBody = mimeBody.replace(/\r?\n/g, "\r\n");
+
     // Detect boundary from first "--boundary" line
-    const boundaryMatch = mimeBody.match(/^--([^\r\n]+)/m);
+    const boundaryMatch = normalizedBody.match(/^--([^\r\n]+)/m);
     const boundary = boundaryMatch?.[1]?.trim();
 
     let ctHeader: string;
     if (boundary) {
       ctHeader = `Content-Type: multipart/mixed; boundary="${boundary}"`;
-    } else if (/<[^>]+>/.test(mimeBody)) {
+    } else if (/<[^>]+>/.test(normalizedBody)) {
       ctHeader = 'Content-Type: text/html; charset="UTF-8"';
     } else {
       ctHeader = 'Content-Type: text/plain; charset="UTF-8"';
@@ -660,7 +664,7 @@ function parseContenidoAsMime(
       `MIME-Version: 1.0`,
       ctHeader,
       ``,
-      mimeBody,
+      normalizedBody,
     ].join("\r\n");
 
     return parseRawEmail(syntheticRfc822) as ParsedEmail;
@@ -762,6 +766,124 @@ async function handleBackfill(): Promise<Response> {
   );
 }
 
+// ─── Re-backfill: fix messages where email_body_text has raw MIME (line-ending bug) ─
+
+async function handleReBackfill(): Promise<Response> {
+  const { data: convRows } = await supabase
+    .from("lat_conversaciones")
+    .select("id, telefono")
+    .eq("canal", "email");
+  if (!convRows || convRows.length === 0) {
+    return new Response(JSON.stringify({ ok: true, updated: 0, reason: "no email conversations" }), { status: 200 });
+  }
+  const convMap: Record<string, string> = {};
+  for (const c of convRows as any[]) convMap[c.id] = c.telefono ?? "";
+  const convIds = Object.keys(convMap);
+
+  // Target: backfilled messages where email_body_text has raw MIME (starts with "--")
+  const { data: msgs } = await supabase
+    .from("lat_mensajes")
+    .select("id, email_subject, email_body_text, email_from_email, email_from_name, wpp_message_id, conversacion_id, created_at, autor_nombre")
+    .in("conversacion_id", convIds)
+    .is("email_body_html", null)
+    .not("email_subject", "is", null)
+    .like("email_body_text", "--%")
+    .eq("tipo", "inbound")
+    .limit(50);
+
+  if (!msgs || msgs.length === 0) {
+    return new Response(JSON.stringify({ ok: true, updated: 0, reason: "nothing to re-backfill" }), { status: 200 });
+  }
+
+  let updated = 0, skipped = 0, failed = 0;
+
+  for (const msg of msgs as any[]) {
+    const mimeRaw: string = msg.email_body_text ?? "";
+    // Only re-process if email_body_text looks like raw MIME (starts with boundary)
+    if (!mimeRaw.trimStart().startsWith("--")) { skipped++; continue; }
+
+    try {
+      const fromEmail = msg.email_from_email ?? convMap[msg.conversacion_id] ?? "desconocido@email.com";
+      const fromName  = msg.email_from_name ?? msg.autor_nombre ?? null;
+      const subject   = msg.email_subject ?? "(sin asunto)";
+      const msgId     = msg.wpp_message_id ?? crypto.randomUUID();
+
+      // Detect boundary from the raw MIME body
+      const boundaryMatch = mimeRaw.match(/^--([^\r\n]+)/m);
+      const boundary = boundaryMatch?.[1]?.trim();
+      const ctHeader = boundary
+        ? `Content-Type: multipart/mixed; boundary="${boundary}"`
+        : 'Content-Type: text/plain; charset="UTF-8"';
+
+      // Normalize to CRLF before parsing
+      const normalizedBody = mimeRaw.replace(/\r?\n/g, "\r\n");
+      const cleanMsgId = msgId.replace(/^<|>$/g, "");
+      const fromHdr = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
+
+      const syntheticRfc822 = [
+        `Message-ID: <${cleanMsgId}>`,
+        `From: ${fromHdr}`,
+        `To: ${EMAIL_USER}`,
+        `Subject: ${subject}`,
+        `Date: ${new Date(msg.created_at).toUTCString()}`,
+        `MIME-Version: 1.0`,
+        ctHeader,
+        ``,
+        normalizedBody,
+      ].join("\r\n");
+
+      const email = parseRawEmail(syntheticRfc822) as ParsedEmail;
+      if (!email?.from) { failed++; continue; }
+
+      // Resolve inline images
+      let finalBodyHtml = email.bodyHtml;
+      if (finalBodyHtml) {
+        for (const img of email.inlineImages) {
+          if (!img.contentId || img.data.length === 0 || img.data.length > 5 * 1024 * 1024) continue;
+          const url = await uploadEmailFile(img.data, img.mimeType, `inline-${img.contentId}`, msg.conversacion_id);
+          if (url) {
+            const esc = img.contentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            finalBodyHtml = finalBodyHtml!
+              .replace(new RegExp(`src=["']cid:${esc}["']`, "gi"), `src="${url}"`)
+              .replace(new RegExp(`src=["']cid:${esc.replace("@", "%40")}["']`, "gi"), `src="${url}"`);
+          }
+        }
+      }
+
+      // Only update if we actually extracted HTML
+      if (!finalBodyHtml) { skipped++; continue; }
+
+      const patch: Record<string, unknown> = {
+        email_body_html: finalBodyHtml,
+        email_body_text: email.bodyText?.slice(0, MAX_EMAIL_BODY) ?? null,
+      };
+
+      const regularAtts = email.attachments.filter(a => !a.inline);
+      if (regularAtts.length > 0 && regularAtts[0].data.length > 0 && !msg.adjunto_url) {
+        const adjUrl = await uploadEmailFile(regularAtts[0].data, regularAtts[0].mimeType, regularAtts[0].filename, msg.conversacion_id);
+        if (adjUrl) {
+          patch.adjunto_url = adjUrl;
+          patch.adjunto_nombre = regularAtts[0].filename;
+          patch.adjunto_tipo = regularAtts[0].mimeType;
+          patch.email_has_attachments = true;
+        }
+      }
+
+      const { error: updErr } = await supabase.from("lat_mensajes").update(patch).eq("id", msg.id);
+      if (updErr) { console.error("[re-backfill] update error:", updErr); failed++; }
+      else updated++;
+    } catch (e: any) {
+      console.error("[re-backfill] error for msg", msg.id, ":", e?.message);
+      failed++;
+    }
+  }
+
+  return new Response(
+    JSON.stringify({ ok: true, updated, skipped, failed, total: msgs.length }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -772,6 +894,10 @@ Deno.serve(async (req: Request) => {
   if ((body as any)?.action === "backfill") {
     console.log("[email-agent] Backfill mode");
     return handleBackfill();
+  }
+  if ((body as any)?.action === "re-backfill") {
+    console.log("[email-agent] Re-backfill mode");
+    return handleReBackfill();
   }
 
   console.log("[email-agent] Starting email poll");
