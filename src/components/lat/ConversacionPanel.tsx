@@ -1629,12 +1629,14 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
     }
   }, [draft?.id]); // eslint-disable-line
 
-  const lastMsg = mensajes[mensajes.length - 1];
-
   const buildReply = (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward'): ComposerInitial => {
+    // Detectar emails propios mirando mensajes outbound del hilo
     const ownAccounts = new Set<string>(
-      ['info@estropical.com.bo', 'reservas@estropical.com.bo', 'contacto@estropical.com.bo']
-        .map((s) => s.toLowerCase())
+      mensajes
+        .filter(m => m.tipo === 'outbound' && (m as any).email_from_email)
+        .map(m => String((m as any).email_from_email).toLowerCase())
+        .concat(['microvoz@estropical.com', 'aplataforma@estropical.com',
+                 'info@estropical.com.bo', 'reservas@estropical.com.bo'])
     );
 
     const toEmail = (v: any): string => {
@@ -1652,7 +1654,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
       return arr.map(toEmail).filter(Boolean);
     };
 
-    const fromEmail = toEmail((msg as any).email_from_email ?? (msg as any).email_from_name ?? '');
+    const fromEmail = toEmail((msg as any).email_from_email ?? '');
     const to = type === 'forward' ? [] : (fromEmail ? [fromEmail] : []);
     let cc: string[] = [];
     if (type === 'reply_all') {
@@ -1730,8 +1732,8 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
             scrollable={false}
           />
 
-          {/* Caja de respuesta embebida al final del hilo */}
-          {composerOpen && composerInitial ? (
+          {/* Composer embebido al fondo del hilo (se abre solo desde los botones del mensaje) */}
+          {composerOpen && composerInitial && (
             <div className="border-t bg-background">
               <EmailComposer
                 conversacionId={conversacionId}
@@ -1748,18 +1750,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
                 })}
               />
             </div>
-          ) : lastMsg ? (
-            <div className="border-t bg-muted/30 px-4 py-3 shrink-0">
-              <button
-                onClick={() => openCompose(lastMsg, 'reply')}
-                className="w-full text-left text-sm text-muted-foreground bg-background border rounded-lg px-4 py-2.5 hover:bg-muted/50 transition shadow-sm"
-              >
-                {draft
-                  ? <span className="text-warning font-medium">Borrador guardado — continuar redacción…</span>
-                  : "Escribe tu respuesta por correo..."}
-              </button>
-            </div>
-          ) : null}
+          )}
         </div>
       )}
     </div>
