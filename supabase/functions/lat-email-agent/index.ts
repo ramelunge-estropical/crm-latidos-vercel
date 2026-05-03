@@ -1080,12 +1080,17 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // ── Upload first regular attachment ──
+      // ── Upload ALL regular attachments ──
       const regularAtts = email.attachments.filter(a => !a.inline);
       let adjUrl: string | null = null, adjNom: string | null = null, adjTipo: string | null = null;
-      if (regularAtts.length > 0 && regularAtts[0].data.length > 0) {
-        adjUrl = await uploadEmailFile(regularAtts[0].data, regularAtts[0].mimeType, regularAtts[0].filename, convId);
-        if (adjUrl) { adjNom = regularAtts[0].filename; adjTipo = regularAtts[0].mimeType; }
+      const allAttachments: { url: string; nombre: string; tipo: string; size_bytes: number }[] = [];
+      for (const att of regularAtts) {
+        if (!att.data.length || att.data.length > 20 * 1024 * 1024) continue;
+        const url = await uploadEmailFile(att.data, att.mimeType, att.filename, convId);
+        if (url) {
+          allAttachments.push({ url, nombre: att.filename, tipo: att.mimeType, size_bytes: att.data.length });
+          if (!adjUrl) { adjUrl = url; adjNom = att.filename; adjTipo = att.mimeType; }
+        }
       }
 
       // ── Save inbound email with all metadata ──
@@ -1104,6 +1109,7 @@ Deno.serve(async (req: Request) => {
         email_body_text:  email.bodyText?.slice(0, MAX_EMAIL_BODY) ?? null,
         email_message_id: email.messageId,
         email_has_attachments: regularAtts.length > 0,
+        email_attachments: allAttachments.length > 0 ? allAttachments : [],
         adjunto_url:      adjUrl,
         adjunto_nombre:   adjNom,
         adjunto_tipo:     adjTipo,

@@ -496,7 +496,7 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
   };
 
   return (
-    <div className="border-t bg-background flex flex-col overflow-hidden">
+    <div className="bg-background flex flex-col">
 
       {/* Cabecera */}
       <div className="px-4 py-2 border-b bg-muted/40 flex items-center justify-between shrink-0">
@@ -637,7 +637,7 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
         onMouseUp={saveSelection}
         onBlur={saveSelection}
         onClick={handleEditorClick}
-        className="px-4 py-3 flex-1 min-h-[100px] max-h-[220px] overflow-y-auto text-sm focus:outline-none [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_img]:max-w-full [&_img]:h-auto [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5"
+        className="px-4 py-3 min-h-[120px] max-h-[260px] overflow-y-auto text-sm focus:outline-none [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_img]:max-w-full [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5"
         data-placeholder="Escribe tu respuesta por correo..."
       />
 
