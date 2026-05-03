@@ -269,6 +269,7 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
   const [spellChecking, setSpellChecking] = useState(false);
   const [spellActive, setSpellActive]     = useState(false);
   const [spellPopup, setSpellPopup]       = useState<SpellPopup | null>(null);
+  const [imgToolbar, setImgToolbar]       = useState<{ el: HTMLImageElement; x: number; y: number } | null>(null);
 
   useEffect(() => {
     setTo(initial.to.join(", "));
@@ -396,6 +397,17 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
 
   const handleEditorClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
+
+    // Click en imagen → mostrar toolbar de tamaño
+    if (target.tagName === "IMG") {
+      const img = target as HTMLImageElement;
+      const rect = img.getBoundingClientRect();
+      setImgToolbar({ el: img, x: rect.left, y: rect.bottom + 6 });
+      setSpellPopup(null);
+      return;
+    }
+    setImgToolbar(null);
+
     if (target.getAttribute("data-spell-error") === "1") {
       const rect = target.getBoundingClientRect();
       setSpellPopup({
@@ -420,6 +432,17 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [spellPopup]);
+
+  // Close image toolbar on outside click
+  useEffect(() => {
+    if (!imgToolbar) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (!t.closest("[data-img-toolbar]") && t !== imgToolbar.el) setImgToolbar(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [imgToolbar]);
 
   // Clear highlights when user starts typing
   const handleEditorInput = useCallback(() => {
@@ -699,6 +722,53 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
             className="ml-1 p-0.5 rounded hover:bg-muted transition-colors"
           >
             <X className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        </div>,
+        document.body,
+      )}
+
+      {/* Toolbar de tamaño de imagen (aparece al hacer clic en una imagen) */}
+      {imgToolbar && createPortal(
+        <div
+          data-img-toolbar="1"
+          style={{ position: "fixed", top: imgToolbar.y, left: imgToolbar.x, zIndex: 9999 }}
+          className="bg-background border rounded-lg shadow-lg flex items-center gap-1 px-2 py-1.5 text-xs"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <span className="text-muted-foreground pr-1 font-medium">Tamaño:</span>
+          {([
+            ["Pequeño",  "150px"],
+            ["Mediano",  "300px"],
+            ["Grande",   "500px"],
+            ["Original", ""],
+          ] as [string, string][]).map(([label, w]) => (
+            <button
+              key={label}
+              className="px-2 py-0.5 rounded hover:bg-muted transition text-xs font-medium"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                if (w) {
+                  imgToolbar.el.style.width = w;
+                  imgToolbar.el.style.height = "auto";
+                  imgToolbar.el.removeAttribute("height");
+                } else {
+                  imgToolbar.el.style.width = "";
+                  imgToolbar.el.style.height = "";
+                  imgToolbar.el.removeAttribute("width");
+                  imgToolbar.el.removeAttribute("height");
+                }
+                fireChange();
+                setImgToolbar(null);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            className="ml-1 p-0.5 rounded hover:bg-muted text-muted-foreground"
+            onMouseDown={(e) => { e.preventDefault(); setImgToolbar(null); }}
+          >
+            <X className="w-3 h-3" />
           </button>
         </div>,
         document.body,
