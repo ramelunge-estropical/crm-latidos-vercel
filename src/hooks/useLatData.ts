@@ -79,6 +79,8 @@ export interface LatMensaje {
   email_references?: string | null;
   email_has_attachments?: boolean | null;
   email_date?: string | null;
+  /** Array de adjuntos: [{url, nombre, tipo, size_bytes}] */
+  email_attachments?: { url: string; nombre: string; tipo: string; size_bytes?: number }[] | null;
 }
 
 // ── Adapters mock → DB types ──────────────────────────────────────────────────
@@ -136,6 +138,8 @@ export function useLatConversaciones() {
       }
     },
     staleTime: 30_000,
+    refetchInterval: 30_000,           // polling fallback si Realtime falla
+    refetchIntervalInBackground: false,
   });
 
   // Realtime subscription
@@ -208,6 +212,8 @@ export function useLatMensajes(conversacionId: string | null, isMock: boolean) {
       }
     },
     staleTime: 10_000,
+    refetchInterval: 15_000,           // polling fallback para mensajes
+    refetchIntervalInBackground: false,
   });
 
   // Realtime para mensajes en tiempo real

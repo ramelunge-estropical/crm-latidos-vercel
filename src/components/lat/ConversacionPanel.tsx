@@ -1611,6 +1611,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
   const queryClient = useQueryClient();
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerInitial, setComposerInitial] = useState<ComposerInitial | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Si hay borrador previo, abrir composer con él
   useEffect(() => {
@@ -1705,6 +1706,13 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
     setComposerInitial(null);
   };
 
+  // Auto-scroll al fondo cuando se abre el composer (igual que Gmail)
+  useEffect(() => {
+    if (!composerOpen || !scrollRef.current) return;
+    const el = scrollRef.current;
+    setTimeout(() => { el.scrollTop = el.scrollHeight; }, 80);
+  }, [composerOpen]);
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {loading ? (
@@ -1712,45 +1720,47 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <EmailThreadView
-          mensajes={mensajes}
-          onReply={(m) => openCompose(m, 'reply')}
-          onReplyAll={(m) => openCompose(m, 'reply_all')}
-          onForward={(m) => openCompose(m, 'forward')}
-        />
-      )}
+        /* ── Scroll único: hilo + composer al fondo (experiencia Gmail) ── */
+        <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col">
+          <EmailThreadView
+            mensajes={mensajes}
+            onReply={(m) => openCompose(m, 'reply')}
+            onReplyAll={(m) => openCompose(m, 'reply_all')}
+            onForward={(m) => openCompose(m, 'forward')}
+            scrollable={false}
+          />
 
-      {!composerOpen && lastMsg && (
-        <div className="border-t bg-muted/30 px-4 py-2 flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => openCompose(lastMsg, 'reply')}
-            className="flex-1 text-left text-sm text-muted-foreground bg-background border rounded-md px-3 py-2 hover:bg-muted/50 transition"
-          >
-            Escribe tu respuesta por correo...
-          </button>
-          {draft && (
-            <span className="text-[10px] text-warning font-medium px-2 py-1 bg-warning/10 rounded">
-              Borrador
-            </span>
-          )}
+          {/* Caja de respuesta embebida al final del hilo */}
+          {composerOpen && composerInitial ? (
+            <div className="border-t bg-background">
+              <EmailComposer
+                conversacionId={conversacionId}
+                initial={composerInitial}
+                autorNombre={autorNombre}
+                onSent={handleSent}
+                onDiscard={handleDiscard}
+                onChange={(s) => saveDebounced({
+                  reply_type: s.reply_type,
+                  email_to: s.to, email_cc: s.cc, email_bcc: s.bcc,
+                  subject: s.subject, body_html: s.body_html,
+                  in_reply_to_message_id: s.in_reply_to_message_id ?? null,
+                  created_by: autorNombre,
+                })}
+              />
+            </div>
+          ) : lastMsg ? (
+            <div className="border-t bg-muted/30 px-4 py-3 shrink-0">
+              <button
+                onClick={() => openCompose(lastMsg, 'reply')}
+                className="w-full text-left text-sm text-muted-foreground bg-background border rounded-lg px-4 py-2.5 hover:bg-muted/50 transition shadow-sm"
+              >
+                {draft
+                  ? <span className="text-warning font-medium">Borrador guardado — continuar redacción…</span>
+                  : "Escribe tu respuesta por correo..."}
+              </button>
+            </div>
+          ) : null}
         </div>
-      )}
-
-      {composerOpen && composerInitial && (
-        <EmailComposer
-          conversacionId={conversacionId}
-          initial={composerInitial}
-          autorNombre={autorNombre}
-          onSent={handleSent}
-          onDiscard={handleDiscard}
-          onChange={(s) => saveDebounced({
-            reply_type: s.reply_type,
-            email_to: s.to, email_cc: s.cc, email_bcc: s.bcc,
-            subject: s.subject, body_html: s.body_html,
-            in_reply_to_message_id: s.in_reply_to_message_id ?? null,
-            created_by: autorNombre,
-          })}
-        />
       )}
     </div>
   );
