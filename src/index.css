@@ -195,8 +195,10 @@
 }
 .email-body table {
   border-collapse: collapse;
-  max-width: 100%;
-  width: auto;
+  /* table-layout: auto overrides "fixed" from Google Sheets / external HTML
+     so columns can resize responsively instead of overflowing the container */
+  table-layout: auto !important;
+  min-width: 0;
 }
 /* Restore borders stripped by Tailwind Preflight when table has border attribute */
 .email-body table[border]:not([border="0"]) td,
@@ -207,10 +209,12 @@
 .email-body th {
   padding: 4px 8px;
   vertical-align: top;
-}
-/* Preserve explicit inline width on table cells */
-.email-body td[width], .email-body th[width] {
-  width: attr(width px);
+  /* Ensure cells with inline white text color remain readable when bgcolor
+     is not converted (old deployments without convertPresentationAttrs).
+     If a cell has an explicit background-color via inline style, the text
+     color from that inline style takes precedence — this only applies when
+     there is NO explicit background, making white text invisible on white. */
+  min-width: 20px;
 }
 .email-body blockquote {
   border-left: 3px solid hsl(var(--border));

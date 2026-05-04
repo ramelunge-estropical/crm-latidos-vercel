@@ -54,6 +54,17 @@ function convertPresentationAttrs(html: string): string {
   const div = document.createElement("div");
   div.innerHTML = html;
 
+  // Tables: override fixed layout so tables don't overflow narrow containers
+  div.querySelectorAll("table").forEach((el) => {
+    const e = el as HTMLElement;
+    if (e.style.tableLayout === "fixed") e.style.tableLayout = "auto";
+    // Remove explicit pixel/percentage widths wider than 100% so tables
+    // don't force the container to scroll when they shouldn't need to.
+    const w = e.getAttribute("width");
+    if (w && !w.endsWith("%")) e.removeAttribute("width");
+    if (e.style.width && !e.style.width.endsWith("%")) e.style.width = "";
+  });
+
   // Tables: border="1" → border on cells; bgcolor on table/tr/td
   div.querySelectorAll("table, thead, tbody, tfoot, tr, td, th").forEach((el) => {
     const e = el as HTMLElement;

@@ -169,10 +169,12 @@ export function EmailThreadView({ mensajes, onReply, onReplyAll, onForward, scro
               <>
                 <Separator />
                 <div className="px-4 py-4">
+                  <div className="overflow-x-auto">
                   <div
-                    className="email-body [&_table]:border-collapse [&_table]:max-w-full [&_td]:px-2 [&_td]:py-1 [&_th]:px-2 [&_th]:py-1 [&_img]:max-w-full [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground"
+                    className="email-body [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground"
                     dangerouslySetInnerHTML={{ __html: email.bodyHtml || "<em>(sin contenido)</em>" }}
                   />
+                  </div>
 
                   {/* Adjuntos: usa email_attachments[] si existe, o el campo legado adjunto_url */}
                   {(() => {
