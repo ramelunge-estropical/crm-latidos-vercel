@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -25,6 +25,18 @@ export function useEmailDraft(conversacionId: string | null) {
     enabled: !!conversacionId,
     queryFn: async () => {
       if (!conversacionId) return null;
+      // Limpia duplicados: solo conserva el más reciente
+      const { data: rows } = await (supabase as any)
+        .from("email_drafts")
+        .select("id, updated_at")
+        .eq("conversacion_id", conversacionId)
+        .order("updated_at", { ascending: false });
+
+      if (rows && rows.length > 1) {
+        const toDelete = rows.slice(1).map((r: any) => r.id);
+        await (supabase as any).from("email_drafts").delete().in("id", toDelete);
+      }
+
       const { data, error } = await (supabase as any)
         .from("email_drafts")
         .select("*")
@@ -54,14 +66,25 @@ export function useEmailDraft(conversacionId: string | null) {
       body_text: d.body_text ?? null,
       attachments: d.attachments ?? [],
       created_by: d.created_by ?? null,
+      updated_at: new Date().toISOString(),
     };
-    if (draft?.id) {
-      await (supabase as any).from("email_drafts").update(payload).eq("id", draft.id);
+
+    // Siempre buscar el draft existente para evitar insertar duplicados
+    const { data: existing } = await (supabase as any)
+      .from("email_drafts")
+      .select("id")
+      .eq("conversacion_id", conversacionId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existing?.id) {
+      await (supabase as any).from("email_drafts").update(payload).eq("id", existing.id);
     } else {
       await (supabase as any).from("email_drafts").insert(payload);
     }
     qc.invalidateQueries({ queryKey: ["email_draft", conversacionId] });
-  }, [conversacionId, draft?.id, qc]);
+  }, [conversacionId, qc]);
 
   const saveDebounced = useCallback((d: Partial<EmailDraft>) => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -72,11 +95,12 @@ export function useEmailDraft(conversacionId: string | null) {
     if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null; }
   }, []);
 
+  // Borra TODOS los borradores de esta conversación (evita que queden huérfanos)
   const remove = useCallback(async () => {
-    if (!draft?.id) return;
-    await (supabase as any).from("email_drafts").delete().eq("id", draft.id);
+    if (!conversacionId) return;
+    await (supabase as any).from("email_drafts").delete().eq("conversacion_id", conversacionId);
     qc.invalidateQueries({ queryKey: ["email_draft", conversacionId] });
-  }, [draft?.id, qc, conversacionId]);
+  }, [conversacionId, qc]);
 
   useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
 
