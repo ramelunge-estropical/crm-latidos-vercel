@@ -1,10 +1,25 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Bot, Save, RotateCcw, Info, GitMerge, ClipboardList, Power, PowerOff } from "lucide-react";
+import { Bot, Save, RotateCcw, Info, GitMerge, ClipboardList, Power, PowerOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const ANON_KEY     = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+async function getGmailOAuthUrl(): Promise<string | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-gmail-oauth-url`, {
+      headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
+    });
+    const json = await res.json();
+    return json.url ?? null;
+  } catch {
+    return null;
+  }
+}
 
 interface BotConfig {
   id: string;
@@ -57,6 +72,7 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
   const [saving, setSaving] = useState(false);
   const [togglingPower, setTogglingPower] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [connectingGmail, setConnectingGmail] = useState(false);
 
   const current = { ...cfg, ...form } as BotConfig;
   const isEnabled = current.activo ?? false;
@@ -160,6 +176,29 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Reconectar Gmail con scopes de envío */}
+          {canal === "email" && !readonly && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
+              disabled={connectingGmail}
+              onClick={async () => {
+                setConnectingGmail(true);
+                const url = await getGmailOAuthUrl();
+                setConnectingGmail(false);
+                if (url) {
+                  window.location.href = url;
+                } else {
+                  toast.error("No se pudo obtener la URL de autorización Gmail");
+                }
+              }}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${connectingGmail ? "animate-spin" : ""}`} />
+              {connectingGmail ? "Cargando…" : "Reconectar Gmail"}
+            </Button>
+          )}
+
           {/* Power toggle */}
           {!readonly && (
             <Button
