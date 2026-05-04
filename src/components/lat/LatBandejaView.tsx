@@ -127,6 +127,7 @@ export function LatBandejaView() {
       ].join(' ')}>
 
         {/* Toolbar superior: Mi foco / Todos + Nueva conversación */}
+        {/* build:2026-05-04-v2 */}
         <div className="px-3 pt-3 pb-1 flex items-center gap-1.5 shrink-0 border-b border-border/50">
           <button
             onClick={() => setFocusFilter('foco')}
