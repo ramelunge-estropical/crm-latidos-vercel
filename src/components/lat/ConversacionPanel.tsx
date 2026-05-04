@@ -24,6 +24,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useClientes } from '@/hooks/useSharedQueries';
+import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 // ── Configs ───────────────────────────────────────────────────────────────────
