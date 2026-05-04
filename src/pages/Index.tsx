@@ -14,6 +14,7 @@ import { SpecializedView } from "@/components/SpecializedView";
 import { LatBandejaView } from "@/components/lat/LatBandejaView";
 import { LatDashboardView } from "@/components/lat/LatDashboardView";
 import { GranolaView } from "@/components/GranolaView";
+import { MiDiaView } from "@/components/MiDiaView";
 import { CreateProcessDialog } from "@/components/CreateProcessDialog";
 import { LayoutGrid, Menu } from "lucide-react";
 import logoHeart from "@/assets/logo-heart.png";
@@ -22,6 +23,7 @@ import { AiAssistantSidebar } from "@/components/AiAssistantSidebar";
 const VIEW_LABELS: Record<SidebarView, string> = {
   process:          "Pipeline",
   agenda:           "Agenda",
+  "mi-dia":         "Mi Día",
   "cliente360":     "Cliente 360",
   "mis-gestiones":  "Mis Gestiones",
   resumen:          "Resumen Diario",
@@ -38,7 +40,7 @@ const VIEW_LABELS: Record<SidebarView, string> = {
 const Index = () => {
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeView, setActiveView] = useState<SidebarView>("mis-gestiones");
+  const [activeView, setActiveView] = useState<SidebarView>("mi-dia");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -128,6 +130,7 @@ const Index = () => {
 
   const renderContent = () => {
     switch (activeView) {
+      case "mi-dia":          return <MiDiaView />;
       case "agenda":          return <AgendaView />;
       case "cliente360":      return <Cliente360View />;
       case "mis-gestiones":   return <MisGestionesView />;
