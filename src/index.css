@@ -196,10 +196,21 @@
 .email-body table {
   border-collapse: collapse;
   max-width: 100%;
+  width: auto;
+}
+/* Restore borders stripped by Tailwind Preflight when table has border attribute */
+.email-body table[border]:not([border="0"]) td,
+.email-body table[border]:not([border="0"]) th {
+  border: 1px solid #ccc;
 }
 .email-body td,
 .email-body th {
   padding: 4px 8px;
+  vertical-align: top;
+}
+/* Preserve explicit inline width on table cells */
+.email-body td[width], .email-body th[width] {
+  width: attr(width px);
 }
 .email-body blockquote {
   border-left: 3px solid hsl(var(--border));

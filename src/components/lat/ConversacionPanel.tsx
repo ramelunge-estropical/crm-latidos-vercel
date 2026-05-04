@@ -1609,30 +1609,21 @@ interface EmailPanelProps {
 function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPanelProps) {
   const { draft, saveDebounced, cancelSave, remove } = useEmailDraft(conversacionId);
   const queryClient = useQueryClient();
-  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerOpen, setComposerOpen]     = useState(false);
   const [composerInitial, setComposerInitial] = useState<ComposerInitial | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const justClosedRef = useRef(false); // evita que el efecto reabra el composer tras enviar/descartar
+  // pendingDraft: draft found in DB but not yet opened. Shown as a banner instead of auto-opening.
+  const [pendingDraft, setPendingDraft]     = useState<typeof draft>(null);
+  const scrollRef     = useRef<HTMLDivElement>(null);
+  const justClosedRef = useRef(false);
 
-  // Si hay borrador previo, abrir composer con él (solo en carga inicial, no tras envío)
+  // When a saved draft is found, show banner — don't auto-open the composer
   useEffect(() => {
     if (draft && !composerOpen && !justClosedRef.current) {
-      setComposerInitial({
-        reply_type: (draft.reply_type as any) ?? 'reply',
-        to: draft.email_to ?? [],
-        cc: draft.email_cc ?? [],
-        bcc: draft.email_bcc ?? [],
-        subject: draft.subject ?? '',
-        body_html: draft.body_html ?? '',
-        in_reply_to_message_id: draft.in_reply_to_message_id,
-        isDraft: true, // indica que no se debe añadir la firma de nuevo
-      });
-      setComposerOpen(true);
+      setPendingDraft(draft);
     }
   }, [draft?.id]); // eslint-disable-line
 
   const buildReply = (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward'): ComposerInitial => {
-    // Detectar emails propios mirando mensajes outbound del hilo
     const ownAccounts = new Set<string>(
       mensajes
         .filter(m => m.tipo === 'outbound' && (m as any).email_from_email)
@@ -1641,6 +1632,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
                  'info@estropical.com.bo', 'reservas@estropical.com.bo'])
     );
 
+    // Extract only the email address from various formats
     const toEmail = (v: any): string => {
       if (!v) return '';
       if (typeof v === 'string') {
@@ -1650,33 +1642,59 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
       if (typeof v === 'object' && v.email) return String(v.email).trim().toLowerCase();
       return '';
     };
-    const listToEmails = (raw: any): string[] => {
-      if (!raw) return [];
-      const arr = Array.isArray(raw) ? raw : String(raw).split(/[,;]/);
-      return arr.map(toEmail).filter(Boolean);
+
+    // Build "Name <email>" string (preserves display name for chips)
+    const toNameEmail = (name: string | null | undefined, email: string): string => {
+      const e = email.trim().toLowerCase();
+      const n = name?.trim();
+      return (n && n !== e) ? `${n} <${e}>` : e;
+    };
+
+    const listToNameEmails = (rawAddrs: any, rawNames?: any): string[] => {
+      if (!rawAddrs) return [];
+      const addrs = Array.isArray(rawAddrs) ? rawAddrs : String(rawAddrs).split(/[,;]/);
+      const names = Array.isArray(rawNames) ? rawNames : [];
+      return addrs.map((v: any, i: number) => {
+        const email = toEmail(v);
+        if (!email) return '';
+        // If the address already has a name embedded, keep it; otherwise use rawNames if provided
+        if (typeof v === 'string' && v.includes('<')) return v.trim();
+        return names[i] ? toNameEmail(names[i], email) : email;
+      }).filter(Boolean);
     };
 
     const fromEmail = toEmail((msg as any).email_from_email ?? '');
-    const to = type === 'forward' ? [] : (fromEmail ? [fromEmail] : []);
+    const fromName  = (msg as any).email_from_name as string | null | undefined;
+
+    // Reply-To header takes precedence over From for the reply destination
+    const replyToRaw  = (msg as any).email_reply_to as string | null | undefined;
+    const replyTarget = replyToRaw
+      ? toNameEmail(null, toEmail(replyToRaw))
+      : (fromEmail ? toNameEmail(fromName, fromEmail) : '');
+
+    const to: string[] = type === 'forward' ? [] : (replyTarget ? [replyTarget] : []);
+
     let cc: string[] = [];
     if (type === 'reply_all') {
-      const orig = listToEmails((msg as any).email_to);
-      const origCc = listToEmails((msg as any).email_cc);
-      const seen = new Set<string>([...to, ...ownAccounts]);
-      cc = [...orig, ...origCc].filter((e) => {
+      const orig   = listToNameEmails((msg as any).email_to);
+      const origCc = listToNameEmails((msg as any).email_cc);
+      const seen   = new Set<string>([toEmail(replyTarget), ...ownAccounts]);
+      cc = [...orig, ...origCc].filter((entry) => {
+        const e = toEmail(entry);
         if (!e || seen.has(e)) return false;
         seen.add(e);
         return true;
       });
     }
-    const subj = (msg as any).email_subject ?? '';
-    const prefix = type === 'forward' ? 'Fwd: ' : 'Re: ';
+
+    const subj     = (msg as any).email_subject ?? '';
+    const prefix   = type === 'forward' ? 'Fwd: ' : 'Re: ';
     const cleanSubj = subj.replace(/^(Re:|Fwd:)\s*/i, '');
-    const subject = prefix + cleanSubj;
+    const subject  = prefix + cleanSubj;
 
     const origBody = (msg as any).email_body_html ?? msg.contenido ?? '';
-    const quoted = type === 'forward'
-      ? `<br><br><div style="border-left:3px solid #ccc;padding-left:8px;color:#666"><b>--- Mensaje reenviado ---</b><br>De: ${(msg as any).email_from_name ?? fromEmail}<br>Asunto: ${subj}<br><br>${origBody}</div>`
+    const quoted   = type === 'forward'
+      ? `<br><br><div style="border-left:3px solid #ccc;padding-left:8px;color:#666"><b>--- Mensaje reenviado ---</b><br>De: ${fromName ?? fromEmail}<br>Asunto: ${subj}<br><br>${origBody}</div>`
       : '';
 
     return {
@@ -1692,19 +1710,61 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
   };
 
   const openCompose = async (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward') => {
-    cancelSave();         // cancela saves pendientes
-    await remove();       // descarta borrador anterior para partir de direcciones frescas
-    justClosedRef.current = false; // permitir que el nuevo compose se guarde normalmente
+    cancelSave();
+    setPendingDraft(null);
+    // If a draft already exists for THIS exact reply, restore it instead of deleting
+    if (draft && draft.in_reply_to_message_id === msg.id && draft.reply_type === type) {
+      justClosedRef.current = false;
+      setComposerInitial({
+        reply_type: (draft.reply_type as any) ?? type,
+        to:  draft.email_to  ?? [],
+        cc:  draft.email_cc  ?? [],
+        bcc: draft.email_bcc ?? [],
+        subject:  draft.subject  ?? '',
+        body_html: draft.body_html ?? '',
+        in_reply_to_message_id: draft.in_reply_to_message_id,
+        isDraft: true,
+      });
+      setComposerOpen(true);
+      return;
+    }
+    // Otherwise start fresh: delete old draft and build new initial state
+    await remove();
+    justClosedRef.current = false;
     setComposerInitial(buildReply(msg, type));
     setComposerOpen(true);
   };
 
+  const restorePendingDraft = () => {
+    if (!pendingDraft) return;
+    setComposerInitial({
+      reply_type: (pendingDraft.reply_type as any) ?? 'reply',
+      to:  pendingDraft.email_to  ?? [],
+      cc:  pendingDraft.email_cc  ?? [],
+      bcc: pendingDraft.email_bcc ?? [],
+      subject:   pendingDraft.subject   ?? '',
+      body_html: pendingDraft.body_html ?? '',
+      in_reply_to_message_id: pendingDraft.in_reply_to_message_id,
+      isDraft: true,
+    });
+    setPendingDraft(null);
+    justClosedRef.current = false;
+    setComposerOpen(true);
+  };
+
+  const discardPendingDraft = async () => {
+    cancelSave();
+    await remove();
+    setPendingDraft(null);
+  };
+
   const handleSent = async () => {
     justClosedRef.current = true;
-    cancelSave(); // cancela cualquier guardado pendiente antes de borrar el borrador
+    cancelSave();
     await remove();
     setComposerOpen(false);
     setComposerInitial(null);
+    setPendingDraft(null);
     queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacionId] });
     queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
     setTimeout(() => { justClosedRef.current = false; }, 2000);
@@ -1719,7 +1779,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
     setTimeout(() => { justClosedRef.current = false; }, 2000);
   };
 
-  // Auto-scroll al fondo cuando se abre el composer (igual que Gmail)
+  // Auto-scroll al fondo cuando se abre el composer
   useEffect(() => {
     if (!composerOpen || !scrollRef.current) return;
     const el = scrollRef.current;
@@ -1742,6 +1802,21 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
             onForward={(m) => openCompose(m, 'forward')}
             scrollable={false}
           />
+
+          {/* Banner: borrador pendiente — no abre el compositor automáticamente */}
+          {pendingDraft && !composerOpen && (
+            <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm">
+              <span className="text-amber-800 font-medium">Tienes un borrador guardado para este hilo</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={restorePendingDraft}>
+                  Continuar borrador
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive" onClick={discardPendingDraft}>
+                  Descartar
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Composer embebido al fondo del hilo (se abre solo desde los botones del mensaje) */}
           {composerOpen && composerInitial && (

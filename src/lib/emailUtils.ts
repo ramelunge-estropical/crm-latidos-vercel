@@ -44,6 +44,55 @@ export function stripMimeHeaders(raw: string): string {
   return s.trim();
 }
 
+/**
+ * Convierte atributos HTML presentacionales (bgcolor, border, align, width, valign)
+ * a estilos inline equivalentes, porque Tailwind Preflight los anula.
+ * Se ejecuta DESPUÉS de DOMPurify para no corromper la sanitización.
+ */
+function convertPresentationAttrs(html: string): string {
+  if (!html || typeof document === "undefined") return html;
+  const div = document.createElement("div");
+  div.innerHTML = html;
+
+  // Tables: border="1" → border on cells; bgcolor on table/tr/td
+  div.querySelectorAll("table, thead, tbody, tfoot, tr, td, th").forEach((el) => {
+    const e = el as HTMLElement;
+
+    // bgcolor → background-color inline style
+    const bg = e.getAttribute("bgcolor");
+    if (bg && !e.style.backgroundColor) {
+      e.style.backgroundColor = bg;
+    }
+
+    // align → text-align (for td/th/tr)
+    const align = e.getAttribute("align");
+    if (align && !e.style.textAlign) {
+      e.style.textAlign = align;
+    }
+
+    // valign → vertical-align (for td/th)
+    const valign = e.getAttribute("valign");
+    if (valign && !e.style.verticalAlign) {
+      e.style.verticalAlign = valign;
+    }
+
+    // width on td/th → CSS width (if not already set)
+    if ((e.tagName === "TD" || e.tagName === "TH") && e.getAttribute("width") && !e.style.width) {
+      const w = e.getAttribute("width") ?? "";
+      e.style.width = /^\d+$/.test(w) ? `${w}px` : w;
+    }
+  });
+
+  // color attribute on font/span/td → CSS color
+  div.querySelectorAll("[color]").forEach((el) => {
+    const e = el as HTMLElement;
+    const c = e.getAttribute("color");
+    if (c && !e.style.color) e.style.color = c;
+  });
+
+  return div.innerHTML;
+}
+
 /** Sanea HTML usando DOMPurify, permite tags estándar de email.
  *  Fuerza target=_blank y rel=noopener noreferrer en todos los links.
  *  NO llama stripMimeHeaders: email_body_html ya viene decodificado del backend.
@@ -51,7 +100,6 @@ export function stripMimeHeaders(raw: string): string {
  *  porque toma charCodes >127 (ej. ñ=241) como bytes UTF-8 inválidos. */
 export function sanitizeEmailHtml(html: string): string {
   if (!html) return "";
-  const cleaned = html;
 
   // Hook: forzar apertura segura en nueva pestaña para todos los <a>
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -61,7 +109,7 @@ export function sanitizeEmailHtml(html: string): string {
     }
   });
 
-  const result = DOMPurify.sanitize(cleaned, {
+  const sanitized = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
       "a", "b", "br", "div", "em", "i", "img", "li", "ol", "p", "span",
       "strong", "table", "tbody", "td", "th", "thead", "tfoot", "tr", "u", "ul",
@@ -80,7 +128,9 @@ export function sanitizeEmailHtml(html: string): string {
   });
 
   DOMPurify.removeHook("afterSanitizeAttributes");
-  return result;
+
+  // Convert HTML presentation attrs to inline CSS so Tailwind Preflight doesn't override them
+  return convertPresentationAttrs(sanitized);
 }
 
 /** Convierte texto plano a HTML preservando saltos y autodetectando links */

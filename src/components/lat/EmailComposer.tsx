@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Bold, Italic, Underline, List, ListOrdered, Link as LinkIcon,
@@ -12,7 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { parseAddress } from "@/lib/emailUtils";
+import { RecipientInput, type RecipientTag } from "@/components/lat/RecipientInput";
 
 export interface ComposerInitial {
   reply_type: "reply" | "reply_all" | "forward" | "new";
@@ -253,13 +252,25 @@ function ColorPicker({
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Convert "Name <email>" or plain "email" string to RecipientTag
+function strToTag(s: string): RecipientTag {
+  const trimmed = s.trim();
+  const m = trimmed.match(/^"?([^"<]*)"?\s*<([^>]+)>$/);
+  const name  = m ? m[1].trim() || undefined : undefined;
+  const email = (m ? m[2] : trimmed).trim().toLowerCase();
+  return { name, email, valid: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) };
+}
+
 export function EmailComposer({ conversacionId, initial, autorNombre, onSent, onDiscard, onChange }: Props) {
   const editorRef      = useRef<HTMLDivElement>(null);
   const savedRangeRef  = useRef<Range | null>(null);
+  // isDirtyRef: prevents saving draft before user has actually made a change.
+  // Starts true when restoring a draft (it already exists in DB, any edit should update it).
+  const isDirtyRef     = useRef(initial.isDraft === true);
 
-  const [to, setTo]         = useState(initial.to.join(", "));
-  const [cc, setCc]         = useState(initial.cc.join(", "));
-  const [bcc, setBcc]       = useState(initial.bcc.join(", "));
+  const [to, setTo]         = useState<RecipientTag[]>(() => initial.to.map(strToTag));
+  const [cc, setCc]         = useState<RecipientTag[]>(() => initial.cc.map(strToTag));
+  const [bcc, setBcc]       = useState<RecipientTag[]>(() => initial.bcc.map(strToTag));
   const [showCc, setShowCc] = useState(initial.cc.length > 0 || initial.bcc.length > 0);
   const [subject, setSubject]       = useState(initial.subject);
   const [attachments, setAttachments] = useState<{ name: string; mime: string; size: number; base64: string }[]>([]);
@@ -273,10 +284,11 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
   const [imgToolbar, setImgToolbar]       = useState<{ el: HTMLImageElement; x: number; y: number } | null>(null);
 
   useEffect(() => {
-    setTo(initial.to.join(", "));
-    setCc(initial.cc.join(", "));
-    setBcc(initial.bcc.join(", "));
+    setTo(initial.to.map(strToTag));
+    setCc(initial.cc.map(strToTag));
+    setBcc(initial.bcc.map(strToTag));
     setSubject(initial.subject);
+    isDirtyRef.current = initial.isDraft === true;
     if (editorRef.current) {
       // isDraft = el borrador ya incluye la firma; no agregar de nuevo
       editorRef.current.innerHTML = (initial.body_html ?? "") + (initial.isDraft ? "" : signature);
@@ -448,6 +460,7 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
 
   // Clear highlights when user starts typing
   const handleEditorInput = useCallback(() => {
+    isDirtyRef.current = true;
     if (spellActive) { clearSpellHighlights(); setSpellActive(false); setSpellPopup(null); }
     fireChange();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -474,14 +487,22 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
 
   const removeAttachment = (idx: number) => setAttachments((p) => p.filter((_, i) => i !== idx));
 
-  const parseList = (s: string) =>
-    s.split(/[,;]/).map((x) => x.trim()).filter(Boolean).map((x) => parseAddress(x).email);
+  // Convert tags to "Name <email>" strings for storage; use .email only for sending
+  const tagsToStrings = (arr: RecipientTag[]) =>
+    arr.map(t => t.name ? `${t.name} <${t.email}>` : t.email);
+  const tagsToEmails = (arr: RecipientTag[]) =>
+    arr.map(t => t.email).filter(Boolean);
 
-  const fireChange = () => {
+  // Call onChange (→ saveDebounced in parent) only when user has made at least one change
+  const fireChange = (overrides?: { to?: RecipientTag[]; cc?: RecipientTag[]; bcc?: RecipientTag[]; subject?: string }) => {
+    if (!isDirtyRef.current) return;
     onChange?.({
       reply_type: initial.reply_type,
-      to: parseList(to), cc: parseList(cc), bcc: parseList(bcc),
-      subject, body_html: editorRef.current?.innerHTML ?? "",
+      to:  tagsToStrings(overrides?.to  ?? to),
+      cc:  tagsToStrings(overrides?.cc  ?? cc),
+      bcc: tagsToStrings(overrides?.bcc ?? bcc),
+      subject: overrides?.subject ?? subject,
+      body_html: editorRef.current?.innerHTML ?? "",
       in_reply_to_message_id: initial.in_reply_to_message_id,
       in_reply_to_email_id:   initial.in_reply_to_email_id,
       references: initial.references, thread_id: initial.thread_id,
@@ -490,15 +511,18 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
 
   const handleSend = async () => {
     setError(null);
-    const toList = parseList(to);
+    const toList = tagsToEmails(to);
     if (toList.length === 0) { toast.error("Agrega al menos un destinatario"); return; }
+    if (!to.every(t => t.valid)) {
+      if (!window.confirm("Hay direcciones inválidas en Para. ¿Enviar de todas formas?")) return;
+    }
     if (!subject.trim()) { if (!window.confirm("¿Enviar sin asunto?")) return; }
     setStatus("sending");
     try {
       const { data, error } = await (supabase as any).functions.invoke("lat-email-send", {
         body: {
           conversacion_id: conversacionId,
-          to: toList, cc: parseList(cc), bcc: parseList(bcc),
+          to: toList, cc: tagsToEmails(cc), bcc: tagsToEmails(bcc),
           subject,
           body_html:   editorRef.current?.innerHTML ?? "",
           in_reply_to: initial.in_reply_to_email_id,
@@ -547,33 +571,68 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
       </div>
 
       {/* Campos */}
-      <div className="px-4 py-2 space-y-1.5 border-b shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground w-12">Para</span>
-          <Input value={to} onChange={(e) => { setTo(e.target.value); fireChange(); }} placeholder="correo@ejemplo.com"
-            className="h-8 border-0 shadow-none focus-visible:ring-0 px-0 text-sm" />
+      <div className="px-4 py-2 space-y-1 border-b shrink-0">
+        <div className="flex items-start gap-2 min-h-[32px]">
+          <span className="text-xs font-medium text-muted-foreground w-12 pt-1.5 shrink-0">Para</span>
+          <div className="flex-1">
+            <RecipientInput
+              tags={to}
+              onChange={(newTags) => {
+                isDirtyRef.current = true;
+                setTo(newTags);
+                fireChange({ to: newTags });
+              }}
+              placeholder="correo@ejemplo.com"
+            />
+          </div>
           {!showCc && (
-            <button type="button" onClick={() => setShowCc(true)} className="text-xs text-muted-foreground hover:text-foreground">Cc/Cco</button>
+            <button type="button" onClick={() => setShowCc(true)} className="text-xs text-muted-foreground hover:text-foreground pt-1.5 shrink-0">Cc/Cco</button>
           )}
         </div>
         {showCc && (
           <>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground w-12">Cc</span>
-              <Input value={cc} onChange={(e) => { setCc(e.target.value); fireChange(); }}
-                className="h-8 border-0 shadow-none focus-visible:ring-0 px-0 text-sm" />
+            <div className="flex items-start gap-2 min-h-[32px]">
+              <span className="text-xs font-medium text-muted-foreground w-12 pt-1.5 shrink-0">Cc</span>
+              <div className="flex-1">
+                <RecipientInput
+                  tags={cc}
+                  onChange={(newTags) => {
+                    isDirtyRef.current = true;
+                    setCc(newTags);
+                    fireChange({ cc: newTags });
+                  }}
+                  placeholder="correo@ejemplo.com"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground w-12">Cco</span>
-              <Input value={bcc} onChange={(e) => { setBcc(e.target.value); fireChange(); }}
-                className="h-8 border-0 shadow-none focus-visible:ring-0 px-0 text-sm" />
+            <div className="flex items-start gap-2 min-h-[32px]">
+              <span className="text-xs font-medium text-muted-foreground w-12 pt-1.5 shrink-0">Cco</span>
+              <div className="flex-1">
+                <RecipientInput
+                  tags={bcc}
+                  onChange={(newTags) => {
+                    isDirtyRef.current = true;
+                    setBcc(newTags);
+                    fireChange({ bcc: newTags });
+                  }}
+                  placeholder="correo@ejemplo.com"
+                />
+              </div>
             </div>
           </>
         )}
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground w-12">Asunto</span>
-          <Input value={subject} onChange={(e) => { setSubject(e.target.value); fireChange(); }}
-            className="h-8 border-0 shadow-none focus-visible:ring-0 px-0 text-sm font-medium" />
+          <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">Asunto</span>
+          <input
+            value={subject}
+            onChange={(e) => {
+              isDirtyRef.current = true;
+              setSubject(e.target.value);
+              fireChange({ subject: e.target.value });
+            }}
+            placeholder="Asunto del correo"
+            className="flex-1 text-sm font-medium bg-transparent border-0 outline-none placeholder:text-muted-foreground/60 h-8"
+          />
         </div>
       </div>
 
