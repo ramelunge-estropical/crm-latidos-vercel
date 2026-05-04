@@ -1691,7 +1691,10 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
     };
   };
 
-  const openCompose = (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward') => {
+  const openCompose = async (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward') => {
+    cancelSave();         // cancela saves pendientes
+    await remove();       // descarta borrador anterior para partir de direcciones frescas
+    justClosedRef.current = false; // permitir que el nuevo compose se guarde normalmente
     setComposerInitial(buildReply(msg, type));
     setComposerOpen(true);
   };
