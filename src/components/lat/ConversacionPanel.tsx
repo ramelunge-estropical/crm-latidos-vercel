@@ -1607,15 +1607,16 @@ interface EmailPanelProps {
 }
 
 function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPanelProps) {
-  const { draft, saveDebounced, remove } = useEmailDraft(conversacionId);
+  const { draft, saveDebounced, cancelSave, remove } = useEmailDraft(conversacionId);
   const queryClient = useQueryClient();
   const [composerOpen, setComposerOpen] = useState(false);
   const [composerInitial, setComposerInitial] = useState<ComposerInitial | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const justClosedRef = useRef(false); // evita que el efecto reabra el composer tras enviar/descartar
 
-  // Si hay borrador previo, abrir composer con él
+  // Si hay borrador previo, abrir composer con él (solo en carga inicial, no tras envío)
   useEffect(() => {
-    if (draft && !composerOpen) {
+    if (draft && !composerOpen && !justClosedRef.current) {
       setComposerInitial({
         reply_type: (draft.reply_type as any) ?? 'reply',
         to: draft.email_to ?? [],
@@ -1624,6 +1625,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
         subject: draft.subject ?? '',
         body_html: draft.body_html ?? '',
         in_reply_to_message_id: draft.in_reply_to_message_id,
+        isDraft: true, // indica que no se debe añadir la firma de nuevo
       });
       setComposerOpen(true);
     }
@@ -1695,17 +1697,23 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
   };
 
   const handleSent = async () => {
+    justClosedRef.current = true;
+    cancelSave(); // cancela cualquier guardado pendiente antes de borrar el borrador
     await remove();
     setComposerOpen(false);
     setComposerInitial(null);
     queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacionId] });
     queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+    setTimeout(() => { justClosedRef.current = false; }, 2000);
   };
 
   const handleDiscard = async () => {
+    justClosedRef.current = true;
+    cancelSave();
     await remove();
     setComposerOpen(false);
     setComposerInitial(null);
+    setTimeout(() => { justClosedRef.current = false; }, 2000);
   };
 
   // Auto-scroll al fondo cuando se abre el composer (igual que Gmail)

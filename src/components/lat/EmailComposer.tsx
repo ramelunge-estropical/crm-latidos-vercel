@@ -26,6 +26,7 @@ export interface ComposerInitial {
   references?: string | null;
   thread_id?: string | null;
   signature?: string;
+  isDraft?: boolean; // true cuando se restaura desde borrador guardado (firma ya incluida)
 }
 
 interface Props {
@@ -277,7 +278,8 @@ export function EmailComposer({ conversacionId, initial, autorNombre, onSent, on
     setBcc(initial.bcc.join(", "));
     setSubject(initial.subject);
     if (editorRef.current) {
-      editorRef.current.innerHTML = (initial.body_html ?? "") + signature;
+      // isDraft = el borrador ya incluye la firma; no agregar de nuevo
+      editorRef.current.innerHTML = (initial.body_html ?? "") + (initial.isDraft ? "" : signature);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.in_reply_to_message_id, initial.reply_type]);

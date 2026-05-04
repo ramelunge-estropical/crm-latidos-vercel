@@ -68,6 +68,10 @@ export function useEmailDraft(conversacionId: string | null) {
     saveTimer.current = window.setTimeout(() => save(d), 1200);
   }, [save]);
 
+  const cancelSave = useCallback(() => {
+    if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null; }
+  }, []);
+
   const remove = useCallback(async () => {
     if (!draft?.id) return;
     await (supabase as any).from("email_drafts").delete().eq("id", draft.id);
@@ -76,5 +80,5 @@ export function useEmailDraft(conversacionId: string | null) {
 
   useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
 
-  return { draft, save, saveDebounced, remove };
+  return { draft, save, saveDebounced, cancelSave, remove };
 }

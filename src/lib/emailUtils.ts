@@ -64,14 +64,15 @@ export function sanitizeEmailHtml(html: string): string {
   const result = DOMPurify.sanitize(cleaned, {
     ALLOWED_TAGS: [
       "a", "b", "br", "div", "em", "i", "img", "li", "ol", "p", "span",
-      "strong", "table", "tbody", "td", "th", "thead", "tr", "u", "ul",
+      "strong", "table", "tbody", "td", "th", "thead", "tfoot", "tr", "u", "ul",
       "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "code",
-      "hr", "small", "sub", "sup", "font", "center",
+      "hr", "small", "sub", "sup", "font", "center", "colgroup", "col", "caption",
     ],
     ALLOWED_ATTR: [
       "href", "src", "alt", "title", "target", "rel",
-      "style", "color", "bgcolor", "width", "height", "align",
+      "style", "color", "bgcolor", "width", "height", "align", "valign",
       "border", "cellpadding", "cellspacing", "class",
+      "colspan", "rowspan", "scope",
     ],
     // cid: se resuelve en el backend antes de guardar — no necesario en frontend
     ALLOWED_URI_REGEXP: /^(?:https?|mailto|tel|data):/i,
@@ -104,8 +105,10 @@ export interface EmailAddress {
 /** Parsea "Nombre <correo@x.com>" o "correo@x.com" */
 export function parseAddress(raw: string): EmailAddress {
   if (!raw) return { email: "" };
-  const m = raw.match(/^\s*(?:"?([^"<]*)"?\s*)?<?([^>\s]+@[^>\s]+)>?\s*$/);
-  if (m) return { name: m[1]?.trim() || undefined, email: m[2].trim() };
+  // "Display Name" <email@domain.com> — solo separa nombre si hay brackets
+  const withBrackets = raw.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/);
+  if (withBrackets) return { name: withBrackets[1].trim() || undefined, email: withBrackets[2].trim() };
+  // Plain: email@domain.com (no tocar — regex anterior robaba chars del local)
   return { email: raw.trim() };
 }
 
