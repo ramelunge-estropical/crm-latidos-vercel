@@ -23,6 +23,94 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const BUCKET = "lat-adjuntos";
 
+// ── Rule evaluation ───────────────────────────────────────────────────────────
+
+function matchCondicion(cond: { campo: string; operador: string; valor: string }, fields: Record<string, string>): boolean {
+  const fieldVal = (fields[cond.campo] ?? "").toLowerCase();
+  const matchVal = (cond.valor ?? "").toLowerCase();
+  switch (cond.operador) {
+    case "contiene":    return fieldVal.includes(matchVal);
+    case "no_contiene": return !fieldVal.includes(matchVal);
+    case "es":          return fieldVal === matchVal;
+    case "empieza_con": return fieldVal.startsWith(matchVal);
+    case "termina_con": return fieldVal.endsWith(matchVal);
+    default:            return false;
+  }
+}
+
+async function applyChannelRules(convId: string, sender: string, texto: string) {
+  // Find the active WhatsApp channel
+  const { data: canal } = await supabase
+    .from("lat_canales")
+    .select("id, cola_default_id")
+    .eq("tipo", "whatsapp")
+    .eq("activo", true)
+    .limit(1)
+    .maybeSingle();
+
+  const canalId = canal?.id ?? null;
+
+  // Load active rules: canal-specific first, then global
+  const { data: allReglas } = await supabase
+    .from("lat_reglas_asignacion")
+    .select("id, prioridad, canal_id, condiciones, accion")
+    .eq("activa", true)
+    .order("prioridad", { ascending: true });
+
+  if (!allReglas?.length && !canalId) return;
+
+  const reglas = allReglas ?? [];
+  const canalRules  = reglas.filter(r => r.canal_id === canalId);
+  const globalRules = reglas.filter(r => r.canal_id === null || r.canal_id === undefined);
+  const ordered     = [...canalRules, ...globalRules];
+
+  const fields: Record<string, string> = {
+    numero_remitente: sender,
+    texto_mensaje:    texto,
+    palabras_clave:   texto,
+    mensaje_inicial:  texto,
+    canal_tipo:       "whatsapp",
+  };
+
+  const update: Record<string, unknown> = {};
+  if (canalId) update.canal_id_fk = canalId;
+
+  for (const regla of ordered) {
+    const conds: Array<{ campo: string; operador: string; valor: string }> =
+      Array.isArray(regla.condiciones) ? regla.condiciones : [];
+    const matches = conds.length === 0 || conds.every(c => matchCondicion(c, fields));
+    if (!matches) continue;
+
+    const accion: Record<string, unknown> =
+      typeof regla.accion === "object" && regla.accion ? regla.accion : {};
+    update.regla_aplicada_id = regla.id;
+
+    if (accion.tipo === "asignar_cola") {
+      if (accion.cola_id) {
+        update.cola_id = accion.cola_id;
+      } else if (accion.cola_nombre) {
+        const { data: c } = await supabase
+          .from("lat_colas").select("id").eq("nombre", accion.cola_nombre).maybeSingle();
+        if (c) update.cola_id = c.id;
+      }
+    } else if (accion.tipo === "asignar_prioridad" && accion.prioridad) {
+      update.prioridad = accion.prioridad;
+    } else if (accion.tipo === "ignorar") {
+      update.estado = "ignorada";
+    }
+    break; // first match wins
+  }
+
+  // No rule matched → use canal default queue
+  if (!update.regla_aplicada_id && canal?.cola_default_id) {
+    update.cola_id = canal.cola_default_id;
+  }
+
+  if (Object.keys(update).length > 0) {
+    await supabase.from("lat_conversaciones").update(update).eq("id", convId);
+  }
+}
+
 // ── Bot agent trigger ─────────────────────────────────────────────────────────
 
 function triggerBotAgent(convId: string, telefono: string, contenido: string) {
@@ -382,7 +470,10 @@ Deno.serve(async (req: Request) => {
         adjunto_tipo:    adjTipo,
       });
       if (insErr) console.error("lat_mensajes insert error (gupshup):", insErr);
-      else await touchConversacion(convId, contenido);
+      else {
+        await touchConversacion(convId, contenido);
+        await applyChannelRules(convId, telefono, contenido);
+      }
 
       // Trigger bot agent (only for text messages — bot can't process media)
       if (innerTyp === "text") triggerBotAgent(convId, telefono, contenido);
@@ -450,7 +541,10 @@ Deno.serve(async (req: Request) => {
               adjunto_tipo:    adjTipo,
             });
             if (insErrMeta) console.error("lat_mensajes insert error (meta):", insErrMeta);
-            else await touchConversacion(convId, contenido);
+            else {
+              await touchConversacion(convId, contenido);
+              await applyChannelRules(convId, telefono, contenido);
+            }
 
             if (msg.type === "text") triggerBotAgent(convId, telefono, contenido);
           }
@@ -485,7 +579,10 @@ Deno.serve(async (req: Request) => {
         adjunto_tipo:    adjTipo,
       });
       if (insErrWati) console.error("lat_mensajes insert error (wati):", insErrWati);
-      else await touchConversacion(convId, watiContenido);
+      else {
+        await touchConversacion(convId, watiContenido);
+        await applyChannelRules(convId, telefono, watiContenido);
+      }
       if (body.text) triggerBotAgent(convId, telefono, body.text);
       return new Response("OK", { status: 200 });
     }
