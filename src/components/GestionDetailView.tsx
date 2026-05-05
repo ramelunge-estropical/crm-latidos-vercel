@@ -18,7 +18,7 @@ import {
   User, Calendar, Tag, Upload, Send, Trash2, ArrowRight,
   Hash, CheckSquare, Plus, ChevronRight,
   Zap, UserCheck, Pencil, X, Check, Link2, Building2, Settings,
-  MoreVertical, RefreshCw, Phone, Mail, ExternalLink
+  MoreVertical, RefreshCw, Phone, Mail, ExternalLink, Layers
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -102,7 +102,10 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
     queryKey: ["gestion-detail", gestionId],
     queryFn: async () => {
       const { data, error } = await (supabase as any)
-        .from("gestiones").select("*").eq("id", gestionId).single();
+        .from("gestiones")
+        .select("*, area:areas_empresa(nombre, color), process:processes(name)")
+        .eq("id", gestionId)
+        .single();
       if (error) throw error;
       return data as any;
     },
@@ -443,6 +446,24 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                 <CheckSquare className="w-2.5 h-2.5" />{tareasDone}/{tareas.length} tareas
               </Badge>
             )}
+            {gestion.area?.nombre && (
+              <Badge
+                variant="secondary"
+                className="text-[10px] gap-1"
+                style={{
+                  backgroundColor: (gestion.area.color || "#6366f1") + "22",
+                  color: gestion.area.color || "#6366f1",
+                  borderColor: (gestion.area.color || "#6366f1") + "44",
+                }}
+              >
+                <Building2 className="w-2.5 h-2.5" />{gestion.area.nombre}
+              </Badge>
+            )}
+            {gestion.process?.name && (
+              <Badge variant="outline" className="text-[10px] gap-1 text-muted-foreground">
+                <Layers className="w-2.5 h-2.5" />{gestion.process.name}
+              </Badge>
+            )}
           </div>
 
           {/* ── Pipeline Global ────────────────────────────────────── */}
@@ -560,10 +581,16 @@ export function GestionDetailView({ open, onOpenChange, gestionId, processId }: 
                         <p>{gestion.cliente_nombre}</p>
                       </div>
                     )}
-                    {gestion.area_id && (
+                    {gestion.area?.nombre && (
                       <div>
                         <span className="text-xs text-muted-foreground">Área</span>
-                        <p>{gestion.area_nombre || "—"}</p>
+                        <p>{gestion.area.nombre}</p>
+                      </div>
+                    )}
+                    {gestion.process?.name && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Pipeline</span>
+                        <p>{gestion.process.name}</p>
                       </div>
                     )}
                   </div>
