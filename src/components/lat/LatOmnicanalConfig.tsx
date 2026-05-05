@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -38,10 +38,19 @@ interface Accion {
 
 interface Cola {
   id: string; nombre: string; descripcion: string | null; area: string | null;
-  canal_id: string | null; estrategia_asignacion: string;
-  max_conversaciones_agente: number; activa: boolean;
-  orden: number; color: string; icono: string | null;
+  canal_id: string | null; canal_saliente_id: string | null;
+  estrategia_asignacion: string; max_conversaciones_agente: number;
+  activa: boolean; orden: number; color: string; icono: string | null;
+  horario_id: string | null;
 }
+
+interface ColaMiembro {
+  id: string; cola_id: string; colaborador_id: string; rol: "agente" | "supervisor";
+  colaboradores: { id: string; nombre: string; color: string } | null;
+}
+
+interface ColaIndicador { cola_id: string; en_cola: number; en_atencion: number; }
+interface Colaborador   { id: string; nombre: string; color: string; activo: boolean; }
 
 interface Horario {
   id: string; nombre: string; zona_horaria: string;
@@ -1416,10 +1425,19 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
 
 // ─── COLAS TAB ───────────────────────────────────────────────────────────────
 
+const ESTRATEGIA_LABELS: Record<string, string> = {
+  round_robin:        "Round Robin",
+  menos_carga:        "Menos carga",
+  primero_disponible: "Primer disponible",
+  manual:             "Manual",
+};
+
 function ColasTab({ readonly }: { readonly: boolean }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Partial<Cola> | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const [draftAgentes, setDraftAgentes] = useState<Set<string>>(new Set());
+  const [draftSupervisores, setDraftSupervisores] = useState<Set<string>>(new Set());
 
   const { data: colas = [], isLoading } = useQuery<Cola[]>({
     queryKey: ["lat_colas"],
@@ -1437,6 +1455,80 @@ function ColasTab({ readonly }: { readonly: boolean }) {
     },
   });
 
+  const { data: horarios = [] } = useQuery<{ id: string; nombre: string }[]>({
+    queryKey: ["lat_horarios_names"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_horarios").select("id, nombre").order("nombre");
+      return data || [];
+    },
+  });
+
+  const { data: colaboradores = [] } = useQuery<Colaborador[]>({
+    queryKey: ["lat_colaboradores"],
+    queryFn: async () => {
+      const { data } = await db().from("colaboradores").select("id, nombre, color, activo").eq("activo", true).order("nombre");
+      return data || [];
+    },
+  });
+
+  const { data: miembros = [] } = useQuery<ColaMiembro[]>({
+    queryKey: ["lat_cola_miembros"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_cola_miembros").select("*, colaboradores(id, nombre, color)");
+      return (data || []) as ColaMiembro[];
+    },
+  });
+
+  const { data: convActivas = [] } = useQuery<{ cola_id: string; estado: string }[]>({
+    queryKey: ["lat_conv_indicadores"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_conversaciones")
+        .select("cola_id, estado")
+        .in("estado", ["en_cola", "en_atencion"])
+        .not("cola_id", "is", null);
+      return (data || []) as { cola_id: string; estado: string }[];
+    },
+    refetchInterval: 30000,
+  });
+
+  const miembrosByCola = useMemo<Record<string, ColaMiembro[]>>(() => {
+    const map: Record<string, ColaMiembro[]> = {};
+    for (const m of miembros) {
+      if (!map[m.cola_id]) map[m.cola_id] = [];
+      map[m.cola_id].push(m);
+    }
+    return map;
+  }, [miembros]);
+
+  const indicadoresByCola = useMemo<Record<string, ColaIndicador>>(() => {
+    const map: Record<string, ColaIndicador> = {};
+    for (const c of convActivas) {
+      if (!c.cola_id) continue;
+      if (!map[c.cola_id]) map[c.cola_id] = { cola_id: c.cola_id, en_cola: 0, en_atencion: 0 };
+      if (c.estado === "en_cola") map[c.cola_id].en_cola++;
+      else if (c.estado === "en_atencion") map[c.cola_id].en_atencion++;
+    }
+    return map;
+  }, [convActivas]);
+
+  const canalesById = useMemo(() => Object.fromEntries(canales.map(c => [c.id, c])), [canales]);
+  const horariosById = useMemo(() => Object.fromEntries(horarios.map(h => [h.id, h])), [horarios]);
+
+  const openEdit = (cola?: Cola) => {
+    if (cola) {
+      setIsNew(false);
+      setEditing(cola);
+      const existing = miembrosByCola[cola.id] || [];
+      setDraftAgentes(new Set(existing.filter(m => m.rol === "agente").map(m => m.colaborador_id)));
+      setDraftSupervisores(new Set(existing.filter(m => m.rol === "supervisor").map(m => m.colaborador_id)));
+    } else {
+      setIsNew(true);
+      setEditing({ activa: true, estrategia_asignacion: "round_robin", max_conversaciones_agente: 5, color: "#6366f1" });
+      setDraftAgentes(new Set());
+      setDraftSupervisores(new Set());
+    }
+  };
+
   const save = async () => {
     if (!editing || !editing.nombre?.trim()) return;
     const payload = {
@@ -1444,20 +1536,33 @@ function ColasTab({ readonly }: { readonly: boolean }) {
       descripcion: editing.descripcion || null,
       area: editing.area || null,
       canal_id: editing.canal_id || null,
+      canal_saliente_id: editing.canal_saliente_id || null,
+      horario_id: editing.horario_id || null,
       estrategia_asignacion: editing.estrategia_asignacion || "round_robin",
       max_conversaciones_agente: editing.max_conversaciones_agente || 5,
       activa: editing.activa ?? true,
       color: editing.color || "#6366f1",
       icono: editing.icono || null,
     };
+    let colaId = editing.id;
     if (isNew) {
-      await db().from("lat_colas").insert({ ...payload, orden: colas.length + 1 });
+      const { data } = await db().from("lat_colas").insert({ ...payload, orden: colas.length + 1 }).select("id").single();
+      colaId = data?.id;
       toast.success("Cola creada");
     } else {
-      await db().from("lat_colas").update(payload).eq("id", editing.id);
+      await db().from("lat_colas").update(payload).eq("id", colaId);
       toast.success("Cola actualizada");
     }
+    if (colaId) {
+      await db().from("lat_cola_miembros").delete().eq("cola_id", colaId);
+      const members = [
+        ...[...draftAgentes].map(id => ({ cola_id: colaId!, colaborador_id: id, rol: "agente" as const })),
+        ...[...draftSupervisores].map(id => ({ cola_id: colaId!, colaborador_id: id, rol: "supervisor" as const })),
+      ];
+      if (members.length > 0) await db().from("lat_cola_miembros").insert(members);
+    }
     qc.invalidateQueries({ queryKey: ["lat_colas"] });
+    qc.invalidateQueries({ queryKey: ["lat_cola_miembros"] });
     setEditing(null);
   };
 
@@ -1470,16 +1575,24 @@ function ColasTab({ readonly }: { readonly: boolean }) {
     await db().from("lat_colas").delete().eq("id", id);
     toast.success("Cola eliminada");
     qc.invalidateQueries({ queryKey: ["lat_colas"] });
+    qc.invalidateQueries({ queryKey: ["lat_cola_miembros"] });
   };
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
 
+  // ── FORM ──────────────────────────────────────────────────────────────────
   if (editing) {
     return (
-      <div className="p-6 max-w-lg space-y-4">
-        <h3 className="font-semibold text-sm">{isNew ? "Nueva cola" : "Editar cola"}</h3>
-        <div className="space-y-3">
-          <div>
+      <div className="p-6 space-y-5 max-w-2xl">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setEditing(null)} className="p-1.5 rounded hover:bg-accent transition-colors">
+            <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <h3 className="font-semibold text-sm">{isNew ? "Nueva cola" : `Editar: ${editing.nombre}`}</h3>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
             <input
               className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -1487,80 +1600,112 @@ function ColasTab({ readonly }: { readonly: boolean }) {
               onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Área</label>
-              <input
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                value={editing.area || ""}
-                onChange={e => setEditing(p => ({ ...p, area: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Color</label>
-              <div className="flex gap-2">
-                <input
-                  type="color"
-                  className="w-10 h-9 border border-border rounded-lg cursor-pointer"
-                  value={editing.color || "#6366f1"}
-                  onChange={e => setEditing(p => ({ ...p, color: e.target.value }))}
-                />
-                <input
-                  className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                  value={editing.color || "#6366f1"}
-                  onChange={e => setEditing(p => ({ ...p, color: e.target.value }))}
-                />
-              </div>
-            </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Área</label>
+            <input
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              value={editing.area || ""}
+              onChange={e => setEditing(p => ({ ...p, area: e.target.value }))}
+            />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Estrategia</label>
-              <select
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.estrategia_asignacion || "round_robin"}
-                onChange={e => setEditing(p => ({ ...p, estrategia_asignacion: e.target.value }))}
-              >
-                <option value="round_robin">Round Robin</option>
-                <option value="menos_carga">Menos Carga</option>
-                <option value="primero_disponible">Primer Disponible</option>
-                <option value="manual">Manual</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Máx. conv/agente</label>
-              <input
-                type="number" min={1} max={50}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.max_conversaciones_agente || 5}
-                onChange={e => setEditing(p => ({ ...p, max_conversaciones_agente: parseInt(e.target.value) || 5 }))}
-              />
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Color</label>
+            <div className="flex gap-2">
+              <input type="color" className="w-10 h-9 border border-border rounded-lg cursor-pointer"
+                value={editing.color || "#6366f1"}
+                onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
+              <input className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={editing.color || "#6366f1"}
+                onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
             </div>
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Canal</label>
-            <select
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+            <label className="text-xs text-muted-foreground mb-1 block">Canal entrante</label>
+            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
               value={editing.canal_id || ""}
-              onChange={e => setEditing(p => ({ ...p, canal_id: e.target.value || null }))}
-            >
+              onChange={e => setEditing(p => ({ ...p, canal_id: e.target.value || null }))}>
               <option value="">Sin canal</option>
-              {canales.map(c => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
-              ))}
+              {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </div>
           <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Canal saliente</label>
+            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editing.canal_saliente_id || ""}
+              onChange={e => setEditing(p => ({ ...p, canal_saliente_id: e.target.value || null }))}>
+              <option value="">Sin canal</option>
+              {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Estrategia</label>
+            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editing.estrategia_asignacion || "round_robin"}
+              onChange={e => setEditing(p => ({ ...p, estrategia_asignacion: e.target.value }))}>
+              {Object.entries(ESTRATEGIA_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Máx. conv/agente</label>
+            <input type="number" min={1} max={50}
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editing.max_conversaciones_agente || 5}
+              onChange={e => setEditing(p => ({ ...p, max_conversaciones_agente: parseInt(e.target.value) || 5 }))} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Horario</label>
+            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editing.horario_id || ""}
+              onChange={e => setEditing(p => ({ ...p, horario_id: e.target.value || null }))}>
+              <option value="">Sin horario</option>
+              {horarios.map(h => <option key={h.id} value={h.id}>{h.nombre}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
-            <textarea
-              rows={2}
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
+            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
               value={editing.descripcion || ""}
-              onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))}
-            />
+              onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))} />
           </div>
         </div>
-        <div className="flex gap-2">
+
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-2">Agentes asignados</p>
+          <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
+            {colaboradores.map(col => (
+              <label key={col.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent/30 cursor-pointer text-xs">
+                <input type="checkbox" checked={draftAgentes.has(col.id)}
+                  onChange={e => setDraftAgentes(prev => {
+                    const next = new Set(prev);
+                    e.target.checked ? next.add(col.id) : next.delete(col.id);
+                    return next;
+                  })} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                {col.nombre}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-2">Supervisores asignados</p>
+          <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto pr-1">
+            {colaboradores.map(col => (
+              <label key={col.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent/30 cursor-pointer text-xs">
+                <input type="checkbox" checked={draftSupervisores.has(col.id)}
+                  onChange={e => setDraftSupervisores(prev => {
+                    const next = new Set(prev);
+                    e.target.checked ? next.add(col.id) : next.delete(col.id);
+                    return next;
+                  })} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                {col.nombre}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-1">
           <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
           <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
         </div>
@@ -1568,49 +1713,134 @@ function ColasTab({ readonly }: { readonly: boolean }) {
     );
   }
 
+  // ── LIST ──────────────────────────────────────────────────────────────────
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">{colas.length} colas configuradas</p>
         {!readonly && (
-          <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNew(true); setEditing({ activa: true, estrategia_asignacion: "round_robin", max_conversaciones_agente: 5, color: "#6366f1" }); }}>
+          <Button size="sm" className="gap-1.5 h-8" onClick={() => openEdit()}>
             <Plus className="w-3.5 h-3.5" />Nueva cola
           </Button>
         )}
       </div>
-      <div className="space-y-2">
-        {colas.map(cola => (
-          <div key={cola.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 transition-colors group">
-            <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />
-            <div className="flex-1 min-w-0">
-              {cola.area && <span className="text-[10px] text-muted-foreground">{cola.area}</span>}
-            </div>
-            <Badge variant="outline" className="text-[10px] hidden sm:inline-flex shrink-0">
-              {cola.estrategia_asignacion.replace("_", " ")}
-            </Badge>
-            <span className="text-[10px] text-muted-foreground shrink-0">máx {cola.max_conversaciones_agente}</span>
-            {!readonly && (
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => toggle(cola)}
-                  className="p-1.5 rounded hover:bg-accent transition-colors"
-                  title={cola.activa ? "Desactivar" : "Activar"}
-                >
-                  {cola.activa
-                    ? <ToggleRight className="w-4 h-4 text-emerald-500" />
-                    : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
-                </button>
-                <button onClick={() => { setIsNew(false); setEditing(cola); }} className="p-1.5 rounded hover:bg-accent transition-colors">
-                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
-                <button onClick={() => remove(cola.id)} className="p-1.5 rounded hover:bg-destructive/10 transition-colors">
-                  <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
-                </button>
+      <div className="space-y-3">
+        {colas.map(cola => {
+          const miembrosCola = miembrosByCola[cola.id] || [];
+          const agentes = miembrosCola.filter(m => m.rol === "agente");
+          const supervisores = miembrosCola.filter(m => m.rol === "supervisor");
+          const ind = indicadoresByCola[cola.id];
+          const enCola = ind?.en_cola ?? 0;
+          const enAtencion = ind?.en_atencion ?? 0;
+          const maxCapacidad = cola.max_conversaciones_agente * Math.max(agentes.length, 1);
+          const desborde = enCola > maxCapacidad;
+          const canalEnt = cola.canal_id ? canalesById[cola.canal_id] : null;
+          const canalSal = cola.canal_saliente_id ? canalesById[cola.canal_saliente_id] : null;
+          const horario = cola.horario_id ? horariosById[cola.horario_id] : null;
+          const CanalEntIcon = canalEnt ? (TIPO_ICONS[canalEnt.tipo] || Globe) : null;
+          const CanalSalIcon = canalSal ? (TIPO_ICONS[canalSal.tipo] || Globe) : null;
+          return (
+            <div key={cola.id} className="rounded-xl border border-border bg-card overflow-hidden">
+              {/* identity + status + actions */}
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
+                <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />
+                {cola.area && <span className="text-[10px] text-muted-foreground">{cola.area}</span>}
+                <div className="flex-1" />
+                {desborde && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-600 border border-red-200">
+                    <AlertCircle className="w-3 h-3" />Desborde
+                  </span>
+                )}
+                {!cola.activa && <Badge variant="secondary" className="text-[10px]">Inactiva</Badge>}
+                {!readonly && (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => toggle(cola)} className="p-1.5 rounded hover:bg-accent transition-colors" title={cola.activa ? "Desactivar" : "Activar"}>
+                      {cola.activa ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
+                    </button>
+                    <button onClick={() => openEdit(cola)} className="p-1.5 rounded hover:bg-accent transition-colors">
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                    <button onClick={() => remove(cola.id)} className="p-1.5 rounded hover:bg-destructive/10 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-            {!cola.activa && <Badge variant="secondary" className="text-[10px] shrink-0">Inactiva</Badge>}
-          </div>
-        ))}
+              {/* canales + horario */}
+              <div className="flex items-center gap-4 px-4 py-2 border-b border-border/50 text-[11px] text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1">
+                  {CanalEntIcon && <CanalEntIcon className="w-3 h-3" />}
+                  <span className="font-medium text-foreground/70">Entrante:</span>
+                  {canalEnt ? canalEnt.nombre : <span className="italic">sin canal</span>}
+                </span>
+                <span className="text-border">·</span>
+                <span className="flex items-center gap-1">
+                  {CanalSalIcon && <CanalSalIcon className="w-3 h-3" />}
+                  <span className="font-medium text-foreground/70">Saliente:</span>
+                  {canalSal ? canalSal.nombre : <span className="italic">sin canal</span>}
+                </span>
+                {horario && (
+                  <>
+                    <span className="text-border">·</span>
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{horario.nombre}</span>
+                  </>
+                )}
+              </div>
+              {/* config tags */}
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-border/50 flex-wrap">
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary/5 text-primary border border-primary/20">
+                  {ESTRATEGIA_LABELS[cola.estrategia_asignacion] ?? cola.estrategia_asignacion}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-muted text-muted-foreground border border-border">
+                  Máx {cola.max_conversaciones_agente} conv/agente
+                </span>
+              </div>
+              {/* people */}
+              <div className="flex items-start gap-4 px-4 py-2 border-b border-border/50 text-[11px] flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-muted-foreground font-medium">Agentes</span>
+                  {agentes.length === 0
+                    ? <span className="italic text-muted-foreground/60">sin asignar</span>
+                    : agentes.map(m => m.colaboradores && (
+                        <span key={m.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-border"
+                          style={{ backgroundColor: m.colaboradores.color + "22", color: m.colaboradores.color }}>
+                          {m.colaboradores.nombre}
+                        </span>
+                      ))
+                  }
+                </div>
+                {supervisores.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-muted-foreground font-medium">Supervisores</span>
+                    {supervisores.map(m => m.colaboradores && (
+                      <span key={m.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-amber-200 bg-amber-50 text-amber-700">
+                        {m.colaboradores.nombre}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* indicators */}
+              <div className="flex items-center gap-4 px-4 py-2 text-[11px]">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span className="text-muted-foreground">En cola:</span>
+                  <span className="font-medium">{enCola}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-muted-foreground">En atención:</span>
+                  <span className="font-medium">{enAtencion}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3 h-3 text-muted-foreground" />
+                  <span className="text-muted-foreground">Asesores:</span>
+                  <span className="font-medium">{agentes.length}</span>
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
