@@ -6,7 +6,7 @@ import {
   Check, X, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
   AlertCircle, Zap, DollarSign, Star, HelpCircle, Bus, Plane,
   FileText, Users, Briefcase, BarChart3, Bot, Activity, MessageSquare,
-  Mail, Wifi, WifiOff, ChevronRight,
+  Mail, Wifi, WifiOff, ChevronRight, RefreshCw, LogOut, ExternalLink, ChevronLeft,
 } from "lucide-react";
 import { LatBotConfig } from "./LatBotConfig";
 import { Button } from "@/components/ui/button";
@@ -219,21 +219,75 @@ function VistaGeneralTab() {
   );
 }
 
-// ─── CANALES TAB (con Troncales integrado) ────────────────────────────────────
+// ─── CANALES TAB ─────────────────────────────────────────────────────────────
 
-function CanalesTab({ readonly }: { readonly: boolean }) {
+interface CanalConTroncal extends Canal {
+  lat_troncales?: { nombre: string; proveedor: string; numero: string | null } | null;
+}
+
+interface GmailBotCfg {
+  id: string;
+  activo: boolean;
+  nombre: string | null;
+  gmail_email: string | null;
+  gmail_refresh_token: string | null;
+  gmail_token_expiry: string | null;
+  updated_at: string | null;
+}
+
+type CanalEditTab = "detalles" | "reglas" | "conexion";
+type EditMode = { kind: "canal"; id: string | null } | { kind: "gmail" } | null;
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+async function fetchGmailOAuthUrl(): Promise<string | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-gmail-oauth-url`, {
+      headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
+    });
+    const json = await res.json();
+    return json.url ?? null;
+  } catch { return null; }
+}
+
+function ConnStatus({ activo, hasToken }: { activo: boolean; hasToken?: boolean }) {
+  const connected = activo && (hasToken === undefined || hasToken);
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${connected ? "text-emerald-600" : activo ? "text-amber-600" : "text-muted-foreground"}`}>
+      {connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+      {connected ? "Conectado" : activo ? "Sin token" : "Inactivo"}
+    </span>
+  );
+}
+
+function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavigateReglas?: () => void }) {
   const qc = useQueryClient();
-  const [editingCanal, setEditingCanal] = useState<Partial<Canal> | null>(null);
+  const [editMode, setEditMode] = useState<EditMode>(null);
+  const [canalDraft, setCanalDraft] = useState<Partial<CanalConTroncal>>({});
   const [isNewCanal, setIsNewCanal] = useState(false);
+  const [canalTab, setCanalTab] = useState<CanalEditTab>("detalles");
   const [editingTroncal, setEditingTroncal] = useState<Partial<Troncal> | null>(null);
   const [isNewTroncal, setIsNewTroncal] = useState(false);
   const [showTroncales, setShowTroncales] = useState(false);
+  const [connectingGmail, setConnectingGmail] = useState(false);
+  const [disconnectingGmail, setDisconnectingGmail] = useState(false);
 
-  const { data: canales = [], isLoading } = useQuery<Canal[]>({
+  const { data: canales = [], isLoading } = useQuery<CanalConTroncal[]>({
     queryKey: ["lat_canales"],
     queryFn: async () => {
       const { data } = await db().from("lat_canales").select("*, lat_troncales(nombre, proveedor, numero)").order("nombre");
       return data || [];
+    },
+  });
+
+  const { data: gmailCfg } = useQuery<GmailBotCfg | null>({
+    queryKey: ["lat_bot_config", "email"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_bot_config")
+        .select("id, activo, nombre, gmail_email, gmail_refresh_token, gmail_token_expiry, updated_at")
+        .eq("canal", "email").maybeSingle();
+      return data ?? null;
     },
   });
 
@@ -245,25 +299,60 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     },
   });
 
+  const { data: reglas = [] } = useQuery<Regla[]>({
+    queryKey: ["lat_reglas"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_reglas_asignacion").select("*").order("prioridad");
+      return data || [];
+    },
+  });
+
+  // ── Canal CRUD ────────────────────────────────────────────────────────────────
+
+  const openNewCanal = () => {
+    setIsNewCanal(true);
+    setCanalDraft({ activo: true, tipo: "whatsapp" });
+    setCanalTab("detalles");
+    setEditMode({ kind: "canal", id: null });
+  };
+
+  const openEditCanal = (canal: CanalConTroncal) => {
+    setIsNewCanal(false);
+    setCanalDraft(canal);
+    setCanalTab("detalles");
+    setEditMode({ kind: "canal", id: canal.id });
+  };
+
+  const openEditGmail = () => {
+    setCanalTab("detalles");
+    setEditMode({ kind: "gmail" });
+  };
+
+  const closeEdit = () => {
+    setEditMode(null);
+    setCanalDraft({});
+    setIsNewCanal(false);
+  };
+
   const saveCanal = async () => {
-    if (!editingCanal || !editingCanal.nombre?.trim()) return;
+    if (!canalDraft.nombre?.trim()) return;
     const payload = {
-      nombre: editingCanal.nombre,
-      tipo: editingCanal.tipo || "whatsapp",
-      troncal_id: editingCanal.troncal_id || null,
-      numero_origen: editingCanal.numero_origen || null,
-      descripcion: editingCanal.descripcion || null,
-      activo: editingCanal.activo ?? true,
+      nombre: canalDraft.nombre,
+      tipo: canalDraft.tipo || "whatsapp",
+      troncal_id: canalDraft.troncal_id || null,
+      numero_origen: canalDraft.numero_origen || null,
+      descripcion: canalDraft.descripcion || null,
+      activo: canalDraft.activo ?? true,
     };
     if (isNewCanal) {
       await db().from("lat_canales").insert(payload);
       toast.success("Canal creado");
     } else {
-      await db().from("lat_canales").update(payload).eq("id", editingCanal.id);
+      await db().from("lat_canales").update(payload).eq("id", canalDraft.id);
       toast.success("Canal actualizado");
     }
     qc.invalidateQueries({ queryKey: ["lat_canales"] });
-    setEditingCanal(null);
+    closeEdit();
   };
 
   const removeCanal = async (id: string) => {
@@ -271,6 +360,16 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     toast.success("Canal eliminado");
     qc.invalidateQueries({ queryKey: ["lat_canales"] });
   };
+
+  const toggleCanalActivo = async () => {
+    const newActivo = !canalDraft.activo;
+    await db().from("lat_canales").update({ activo: newActivo }).eq("id", canalDraft.id);
+    setCanalDraft(p => ({ ...p, activo: newActivo }));
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+    toast.success(newActivo ? "Canal activado" : "Canal desactivado");
+  };
+
+  // ── Troncal CRUD ──────────────────────────────────────────────────────────────
 
   const saveTroncal = async () => {
     if (!editingTroncal || !editingTroncal.nombre?.trim()) return;
@@ -300,81 +399,42 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     qc.invalidateQueries({ queryKey: ["lat_troncales"] });
   };
 
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
+  // ── Gmail actions ─────────────────────────────────────────────────────────────
 
-  if (editingCanal) {
-    return (
-      <div className="p-6 max-w-lg space-y-5">
-        <h3 className="font-semibold text-sm">{isNewCanal ? "Nuevo canal" : "Editar canal"}</h3>
+  const handleGmailConnect = async () => {
+    setConnectingGmail(true);
+    const url = await fetchGmailOAuthUrl();
+    setConnectingGmail(false);
+    if (url) {
+      window.open(url, "_blank");
+    } else {
+      toast.error("No se pudo obtener el URL de autorización de Gmail");
+    }
+  };
 
-        {/* Identificación */}
-        <div className="space-y-3">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Identificación</p>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={editingCanal.nombre || ""} onChange={e => setEditingCanal(p => ({ ...p, nombre: e.target.value }))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editingCanal.tipo || "whatsapp"} onChange={e => setEditingCanal(p => ({ ...p, tipo: e.target.value }))}>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="instagram">Instagram</option>
-                <option value="facebook">Facebook</option>
-                <option value="email">Email</option>
-                <option value="web">Web Chat</option>
-                <option value="interno">Interno</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
-              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                placeholder="+591..." value={editingCanal.numero_origen || ""} onChange={e => setEditingCanal(p => ({ ...p, numero_origen: e.target.value }))} />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
-            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
-              value={editingCanal.descripcion || ""} onChange={e => setEditingCanal(p => ({ ...p, descripcion: e.target.value }))} />
-          </div>
-        </div>
+  const handleGmailDisconnect = async () => {
+    if (!gmailCfg) return;
+    setDisconnectingGmail(true);
+    await db().from("lat_bot_config").update({
+      gmail_access_token: null,
+      gmail_refresh_token: null,
+      gmail_token_expiry: null,
+      activo: false,
+      updated_at: new Date().toISOString(),
+    }).eq("id", gmailCfg.id);
+    qc.invalidateQueries({ queryKey: ["lat_bot_config", "email"] });
+    setDisconnectingGmail(false);
+    toast.success("Sesión de Gmail cerrada");
+  };
 
-        {/* Conexión / Proveedor */}
-        <div className="space-y-3">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Conexión / Proveedor</p>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Proveedor de conexión</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editingCanal.troncal_id || ""} onChange={e => setEditingCanal(p => ({ ...p, troncal_id: e.target.value || null }))}>
-              <option value="">Sin proveedor asignado</option>
-              {troncales.map(t => (
-                <option key={t.id} value={t.id}>{t.nombre} — {t.proveedor}{t.numero ? ` · ${t.numero}` : ""}</option>
-              ))}
-            </select>
-          </div>
-          {troncales.length === 0 && (
-            <p className="text-[10px] text-muted-foreground">
-              No hay proveedores configurados. Agregalos en la sección "Proveedores" más abajo.
-            </p>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <Button size="sm" onClick={saveCanal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditingCanal(null)}><X className="w-3.5 h-3.5" /></Button>
-        </div>
-      </div>
-    );
-  }
+  // ── Troncal form ──────────────────────────────────────────────────────────────
 
   if (editingTroncal) {
     return (
       <div className="p-6 max-w-lg space-y-4">
         <div className="flex items-center gap-2">
-          <button onClick={() => setEditingTroncal(null)} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
+          <button onClick={() => setEditingTroncal(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground">
+            <ChevronLeft className="w-4 h-4" />
           </button>
           <h3 className="font-semibold text-sm">{isNewTroncal ? "Nuevo proveedor" : "Editar proveedor"}</h3>
         </div>
@@ -426,6 +486,348 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     );
   }
 
+  // ── Canal / Gmail edit view ───────────────────────────────────────────────────
+
+  if (editMode !== null) {
+    const isGmail = editMode.kind === "gmail";
+    const currentTroncal = troncales.find(t => t.id === canalDraft.troncal_id);
+    const tokenExpiry = gmailCfg?.gmail_token_expiry ? new Date(gmailCfg.gmail_token_expiry) : null;
+    const isTokenExpired = tokenExpiry ? tokenExpiry < new Date() : false;
+    const webhookUrl = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/wpp-webhook` : null;
+
+    const editHeader = (
+      <>
+        <div className="flex items-center gap-3 px-6 pt-5 pb-0 shrink-0">
+          <button onClick={closeEdit} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${isGmail ? TIPO_COLORS["email"] : TIPO_COLORS[canalDraft.tipo || "whatsapp"] || "bg-muted text-muted-foreground border-border"}`}>
+              {isGmail ? "email" : canalDraft.tipo || "whatsapp"}
+            </span>
+            <span className="text-sm font-semibold truncate">
+              {isGmail
+                ? (gmailCfg?.nombre || gmailCfg?.gmail_email || "Gmail")
+                : (canalDraft.nombre || (isNewCanal ? "Nuevo canal" : "Canal"))}
+            </span>
+          </div>
+          <div className="shrink-0">
+            {isGmail
+              ? <ConnStatus activo={gmailCfg?.activo ?? false} hasToken={!!gmailCfg?.gmail_refresh_token} />
+              : <ConnStatus activo={canalDraft.activo ?? false} />}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 px-6 pt-3 pb-0 border-b border-border shrink-0">
+          {(["detalles", "reglas", "conexion"] as CanalEditTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setCanalTab(t)}
+              className={[
+                "px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors",
+                canalTab === t
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50",
+              ].join(" ")}
+            >
+              {t === "detalles" ? "Detalles" : t === "reglas" ? "Reglas" : "Conexión"}
+            </button>
+          ))}
+        </div>
+      </>
+    );
+
+    const renderTabContent = () => {
+      // ── Detalles ────────────────────────────────────────────────────────────
+      if (canalTab === "detalles") {
+        if (isGmail) {
+          return (
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Cuenta</p>
+                <div className="p-4 rounded-xl border border-border bg-card space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Correo</span>
+                    <span className="text-xs font-medium">{gmailCfg?.gmail_email ?? "No disponible"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Estado del token</span>
+                    {gmailCfg?.gmail_refresh_token
+                      ? <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isTokenExpired ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}>
+                          {isTokenExpired ? "Expirado" : "Válido"}
+                        </span>
+                      : <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600">Sin token</span>
+                    }
+                  </div>
+                  {tokenExpiry && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Vence</span>
+                      <span className="text-xs font-medium">{tokenExpiry.toLocaleString("es-BO")}</span>
+                    </div>
+                  )}
+                  {gmailCfg?.updated_at && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Última actualización</span>
+                      <span className="text-xs font-medium">{new Date(gmailCfg.updated_at).toLocaleString("es-BO")}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Tipo</p>
+                <div className="p-4 rounded-xl border border-border bg-card space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Canal</span>
+                    <span className="text-xs font-medium">Gmail / Google Workspace</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Proveedor</span>
+                    <span className="text-xs font-medium">Google</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+        // Regular canal
+        return (
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Identificación</p>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+                <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={canalDraft.nombre || ""} onChange={e => setCanalDraft(p => ({ ...p, nombre: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
+                  <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                    value={canalDraft.tipo || "whatsapp"} onChange={e => setCanalDraft(p => ({ ...p, tipo: e.target.value }))}>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="instagram">Instagram</option>
+                    <option value="facebook">Facebook</option>
+                    <option value="email">Email</option>
+                    <option value="web">Web Chat</option>
+                    <option value="interno">Interno</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
+                  <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                    placeholder="+591..." value={canalDraft.numero_origen || ""} onChange={e => setCanalDraft(p => ({ ...p, numero_origen: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
+                <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
+                  value={canalDraft.descripcion || ""} onChange={e => setCanalDraft(p => ({ ...p, descripcion: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Proveedor de conexión</p>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={canalDraft.troncal_id || ""} onChange={e => setCanalDraft(p => ({ ...p, troncal_id: e.target.value || null }))}>
+                <option value="">Sin proveedor asignado</option>
+                {troncales.map(t => (
+                  <option key={t.id} value={t.id}>{t.nombre} — {t.proveedor}{t.numero ? ` · ${t.numero}` : ""}</option>
+                ))}
+              </select>
+              {currentTroncal && (
+                <div className="p-3 rounded-xl border border-border bg-card space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Proveedor</span>
+                    <span className="text-xs font-medium">{currentTroncal.proveedor}</span>
+                  </div>
+                  {currentTroncal.numero && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Número</span>
+                      <span className="text-xs font-medium">{currentTroncal.numero}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Estado del proveedor</span>
+                    <ConnStatus activo={currentTroncal.activo} />
+                  </div>
+                </div>
+              )}
+            </div>
+            {!readonly && (
+              <div className="flex gap-2 pt-2">
+                <Button size="sm" onClick={saveCanal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
+                <Button size="sm" variant="ghost" onClick={closeEdit}><X className="w-3.5 h-3.5" /></Button>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // ── Reglas ──────────────────────────────────────────────────────────────
+      if (canalTab === "reglas") {
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">{reglas.length} reglas de asignación configuradas</p>
+              {onNavigateReglas && (
+                <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={onNavigateReglas}>
+                  Gestionar reglas <ExternalLink className="w-3 h-3" />
+                </Button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {reglas.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6 border border-dashed border-border rounded-xl">
+                  No hay reglas configuradas
+                </p>
+              ) : reglas.map(r => (
+                <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card">
+                  <div className={`w-2 h-2 rounded-full shrink-0 ${r.activa ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{r.nombre}</p>
+                    <p className="text-[10px] text-muted-foreground">Prioridad {r.prioridad}</p>
+                  </div>
+                  <Badge variant={r.activa ? "default" : "secondary"} className="text-[10px] shrink-0">
+                    {r.activa ? "Activa" : "Inactiva"}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      // ── Conexión ────────────────────────────────────────────────────────────
+      if (isGmail) {
+        return (
+          <div className="space-y-5">
+            <div className="p-4 rounded-xl border border-border bg-card space-y-2">
+              <p className="text-xs font-semibold">Estado de la conexión</p>
+              <div className="flex items-center gap-2">
+                <ConnStatus activo={gmailCfg?.activo ?? false} hasToken={!!gmailCfg?.gmail_refresh_token} />
+                {gmailCfg?.gmail_email && (
+                  <span className="text-xs text-muted-foreground">· {gmailCfg.gmail_email}</span>
+                )}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Acciones</p>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                onClick={handleGmailConnect}
+                disabled={connectingGmail || readonly}
+              >
+                <RefreshCw className={`w-4 h-4 ${connectingGmail ? "animate-spin" : ""}`} />
+                {connectingGmail ? "Obteniendo URL..." : "Reconectar cuenta de Gmail"}
+              </Button>
+              {gmailCfg?.gmail_refresh_token && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2 text-destructive hover:text-destructive border-destructive/30 hover:border-destructive"
+                  onClick={handleGmailDisconnect}
+                  disabled={disconnectingGmail || readonly}
+                >
+                  <LogOut className={`w-4 h-4 ${disconnectingGmail ? "animate-pulse" : ""}`} />
+                  {disconnectingGmail ? "Cerrando sesión..." : "Cerrar sesión de Gmail"}
+                </Button>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                Al reconectar se abrirá la ventana de autorización de Google. Al cerrar sesión se eliminan los tokens de acceso.
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      // WhatsApp / otros
+      return (
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Estado del canal</p>
+            <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card">
+              <div>
+                <p className="text-sm font-medium">{canalDraft.activo ? "Canal activo" : "Canal inactivo"}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {canalDraft.activo ? "Recibiendo y enviando mensajes" : "No recibe ni envía mensajes"}
+                </p>
+              </div>
+              {!readonly && (
+                <button
+                  onClick={toggleCanalActivo}
+                  className={`shrink-0 transition-colors ${canalDraft.activo ? "text-emerald-500 hover:text-emerald-700" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {canalDraft.activo ? <ToggleRight className="w-7 h-7" /> : <ToggleLeft className="w-7 h-7" />}
+                </button>
+              )}
+            </div>
+          </div>
+          {canalDraft.tipo === "whatsapp" && webhookUrl && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Webhook de entrada</p>
+              <div className="p-4 rounded-xl border border-border bg-card space-y-2">
+                <p className="text-xs text-muted-foreground">URL a configurar en el panel de Gupshup:</p>
+                <div className="flex items-center gap-2">
+                  <code className="text-[10px] bg-muted px-2 py-1.5 rounded-md font-mono break-all flex-1">{webhookUrl}</code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success("URL copiada"); }}
+                    className="shrink-0 p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                    title="Copiar"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Proveedor asignado</p>
+            {currentTroncal ? (
+              <div className="p-4 rounded-xl border border-border bg-card space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Nombre</span>
+                  <span className="text-xs font-medium">{currentTroncal.nombre}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Proveedor</span>
+                  <span className="text-xs font-medium capitalize">{currentTroncal.proveedor}</span>
+                </div>
+                {currentTroncal.numero && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Número</span>
+                    <span className="text-xs font-medium">{currentTroncal.numero}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Estado del proveedor</span>
+                  <ConnStatus activo={currentTroncal.activo} />
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl border border-dashed border-border text-center">
+                <p className="text-xs text-muted-foreground">Sin proveedor asignado. Configúralo en la pestaña Detalles.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="flex flex-col h-full">
+        {editHeader}
+        <div className="flex-1 overflow-auto p-6 max-w-lg">
+          {renderTabContent()}
+        </div>
+      </div>
+    );
+  }
+
+  // ── List view ─────────────────────────────────────────────────────────────────
+
+  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
+
+  const totalActivos = canales.filter(c => c.activo).length + (gmailCfg?.activo ? 1 : 0);
+  const total = canales.length + (gmailCfg ? 1 : 0);
+
   return (
     <div className="p-6 space-y-6">
       {/* Canales */}
@@ -433,16 +835,44 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold">Canales de comunicación</p>
-            <p className="text-[10px] text-muted-foreground">{canales.length} canales · {canales.filter(c => c.activo).length} activos</p>
+            <p className="text-[10px] text-muted-foreground">{total} canales · {totalActivos} activos</p>
           </div>
           {!readonly && (
-            <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNewCanal(true); setEditingCanal({ activo: true, tipo: "whatsapp" }); }}>
+            <Button size="sm" className="gap-1.5 h-8" onClick={openNewCanal}>
               <Plus className="w-3.5 h-3.5" />Nuevo canal
             </Button>
           )}
         </div>
         <div className="space-y-2">
-          {canales.map((canal: any) => {
+          {/* Gmail row */}
+          {gmailCfg && (
+            <div className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
+              <div className={`px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1.5 ${TIPO_COLORS["email"]}`}>
+                <Mail className="w-3 h-3" />
+                email
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{gmailCfg.nombre || gmailCfg.gmail_email || "Gmail"}</p>
+                <p className="text-[10px] text-muted-foreground truncate">
+                  Google · {gmailCfg.gmail_email ?? "No disponible"}
+                  {gmailCfg.updated_at ? ` · Últ. sync ${new Date(gmailCfg.updated_at).toLocaleDateString("es-BO")}` : ""}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <ConnStatus activo={gmailCfg.activo} hasToken={!!gmailCfg.gmail_refresh_token} />
+              </div>
+              {!readonly && (
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                  <button onClick={openEditGmail} className="p-1.5 rounded hover:bg-accent">
+                    <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* WhatsApp / other channels */}
+          {canales.map((canal: CanalConTroncal) => {
             const TipoIcon = TIPO_ICONS[canal.tipo] || Globe;
             return (
               <div key={canal.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
@@ -461,14 +891,11 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {canal.activo
-                    ? <Wifi className="w-3.5 h-3.5 text-emerald-500" />
-                    : <WifiOff className="w-3.5 h-3.5 text-muted-foreground" />
-                  }
+                  <ConnStatus activo={canal.activo} />
                 </div>
                 {!readonly && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                    <button onClick={() => { setIsNewCanal(false); setEditingCanal(canal); }} className="p-1.5 rounded hover:bg-accent">
+                    <button onClick={() => openEditCanal(canal)} className="p-1.5 rounded hover:bg-accent">
                       <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                     </button>
                     <button onClick={() => removeCanal(canal.id)} className="p-1.5 rounded hover:bg-destructive/10">
@@ -1250,7 +1677,7 @@ export function LatOmnicanalConfig({ readonly = false }: Props) {
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {tab === "overview"   && <VistaGeneralTab />}
-        {tab === "canales"    && <CanalesTab    readonly={readonly} />}
+        {tab === "canales"    && <CanalesTab    readonly={readonly} onNavigateReglas={() => setTab("reglas")} />}
         {tab === "colas"      && <ColasTab      readonly={readonly} />}
         {tab === "reglas"     && <ReglasTab     readonly={readonly} />}
         {tab === "horarios"   && <HorariosTab   readonly={readonly} />}
