@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -953,11 +953,11 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
           const tokenBadge = gmailCfg?.gmail_refresh_token
             ? <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isTokenExpired ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}>{isTokenExpired ? "Expirado" : "Válido"}</span>
             : <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600">Sin token</span>;
-          const rows: [string, React.ReactNode][] = [
+          const rows: [string, ReactNode][] = [
             ["Correo", gmailCfg?.gmail_email ?? "—"],
             ["Estado del token", tokenBadge],
-            ...(tokenExpiry ? [["Vence", tokenExpiry.toLocaleString("es-BO")] as [string, React.ReactNode]] : []),
-            ...(gmailCfg?.updated_at ? [["Última sync", new Date(gmailCfg.updated_at).toLocaleString("es-BO")] as [string, React.ReactNode]] : []),
+            ...(tokenExpiry ? [["Vence", tokenExpiry.toLocaleString("es-BO")] as [string, ReactNode]] : []),
+            ...(gmailCfg?.updated_at ? [["Última sync", new Date(gmailCfg.updated_at).toLocaleString("es-BO")] as [string, ReactNode]] : []),
             ["Tipo de canal", "Gmail / Google Workspace"],
             ["Proveedor", "Google"],
           ];
