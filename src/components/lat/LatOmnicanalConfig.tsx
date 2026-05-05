@@ -705,8 +705,17 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
   };
 
   const openEditGmail = async () => {
-    const { data } = await db().from("lat_canales")
+    let { data } = await db().from("lat_canales")
       .select("id, cola_default_id").eq("tipo", "email").maybeSingle();
+    if (!data && gmailCfg) {
+      const { data: created } = await db().from("lat_canales").insert({
+        nombre: gmailCfg.nombre || gmailCfg.gmail_email || "Gmail",
+        tipo: "email",
+        numero_origen: gmailCfg.gmail_email,
+        activo: gmailCfg.activo ?? true,
+      }).select("id, cola_default_id").single();
+      data = created;
+    }
     setGmailCanalId(data?.id ?? null);
     setGmailColaDraft(data?.cola_default_id ?? null);
     setCanalTab("detalles");
