@@ -74,21 +74,23 @@ const DIAS_LABELS: Record<string, string> = {
 };
 
 const TIPO_COLORS: Record<string, string> = {
-  whatsapp: "bg-green-500/10 text-green-600 border-green-200",
+  whatsapp:  "bg-green-500/10 text-green-600 border-green-200",
   instagram: "bg-purple-500/10 text-purple-600 border-purple-200",
-  facebook: "bg-blue-500/10 text-blue-600 border-blue-200",
-  email: "bg-amber-500/10 text-amber-600 border-amber-200",
-  web: "bg-cyan-500/10 text-cyan-600 border-cyan-200",
-  interno: "bg-slate-500/10 text-slate-600 border-slate-200",
+  facebook:  "bg-blue-500/10 text-blue-600 border-blue-200",
+  email:     "bg-amber-500/10 text-amber-600 border-amber-200",
+  web:       "bg-cyan-500/10 text-cyan-600 border-cyan-200",
+  telefonia: "bg-rose-500/10 text-rose-600 border-rose-200",
+  interno:   "bg-slate-500/10 text-slate-600 border-slate-200",
 };
 
 const TIPO_ICONS: Record<string, React.ElementType> = {
-  whatsapp: MessageSquare,
+  whatsapp:  MessageSquare,
   instagram: Globe,
-  facebook: Globe,
-  email: Mail,
-  web: Globe,
-  interno: Layers,
+  facebook:  Globe,
+  email:     Mail,
+  web:       Globe,
+  telefonia: Phone,
+  interno:   Layers,
 };
 
 // ─── Constantes de reglas ─────────────────────────────────────────────────────
@@ -97,6 +99,7 @@ const CAMPOS_WA = [
   { value: "numero_remitente", label: "Número remitente" },
   { value: "texto_mensaje",    label: "Texto del mensaje" },
   { value: "palabras_clave",   label: "Palabras clave" },
+  { value: "mensaje_inicial",  label: "Mensaje inicial contiene" },
   { value: "etiqueta_origen",  label: "Etiqueta / campaña / origen" },
 ];
 
@@ -106,6 +109,7 @@ const CAMPOS_EMAIL = [
   { value: "alias_destinatario", label: "Alias destinatario" },
   { value: "asunto",             label: "Asunto" },
   { value: "cuerpo",             label: "Cuerpo del correo" },
+  { value: "mensaje_inicial",    label: "Mensaje inicial contiene" },
   { value: "nombre_adjunto",     label: "Nombre del archivo adjunto" },
 ];
 
@@ -1002,6 +1006,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
                 <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
                   value={canalDraft.tipo || "whatsapp"} onChange={e => setCanalDraft(p => ({ ...p, tipo: e.target.value }))}>
                   <option value="whatsapp">WhatsApp</option>
+                  <option value="telefonia">Telefonía</option>
                   <option value="instagram">Instagram</option>
                   <option value="facebook">Facebook</option>
                   <option value="email">Email</option>
@@ -1253,6 +1258,17 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
               <p className="text-[10px] text-muted-foreground">{gmailCfg ? "Ya configurado — ver detalles" : "Conectar cuenta Google"}</p>
             </div>
           </button>
+          <button
+            onClick={() => { setNewCanalType(null); openNewCanal("telefonia"); }}
+            className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-border hover:border-rose-400 hover:bg-rose-500/5 transition-colors text-left">
+            <div className="w-9 h-9 rounded-lg bg-rose-500/10 flex items-center justify-center">
+              <Phone className="w-4 h-4 text-rose-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Telefonía</p>
+              <p className="text-[10px] text-muted-foreground">Línea fija o celular</p>
+            </div>
+          </button>
           {(["Instagram", "Facebook", "SMS", "Web Chat"] as const).map(tipo => (
             <div key={tipo} className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-dashed border-border opacity-50 cursor-not-allowed text-left">
               <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
@@ -1358,83 +1374,6 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
         </div>
       </div>
 
-      {/* Separator */}
-      <div className="border-t border-border" />
-
-      {/* Proveedores / Troncales */}
-      <div className="space-y-3">
-        <button
-          className="flex items-center justify-between w-full group"
-          onClick={() => setShowTroncales(v => !v)}
-        >
-          <div>
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-              Proveedores de conexión
-            </p>
-            <p className="text-[10px] text-muted-foreground text-left">{troncales.length} proveedores · credenciales y webhooks</p>
-          </div>
-          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showTroncales ? "rotate-180" : ""}`} />
-        </button>
-
-        {showTroncales && (
-          <div className="space-y-3">
-            {!readonly && (
-              <div className="flex justify-end">
-                <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => { setIsNewTroncal(true); setEditingTroncal({ activo: true, tipo: "whatsapp", proveedor: "gupshup" }); }}>
-                  <Plus className="w-3.5 h-3.5" />Nuevo proveedor
-                </Button>
-              </div>
-            )}
-            <div className="space-y-2">
-              {troncales.map(t => (
-                <div key={t.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Phone className="w-3.5 h-3.5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{t.nombre}</p>
-                    <p className="text-[10px] text-muted-foreground">{t.proveedor} · {t.tipo}{t.numero ? ` · ${t.numero}` : ""}</p>
-                  </div>
-                  <Badge variant={t.activo ? "default" : "secondary"} className="text-[10px] shrink-0">
-                    {t.activo ? "Activo" : "Inactivo"}
-                  </Badge>
-                  {!readonly && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                      <button onClick={() => { setIsNewTroncal(false); setEditingTroncal(t); }} className="p-1.5 rounded hover:bg-accent">
-                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                      <button onClick={() => removeTroncal(t.id)} className="p-1.5 rounded hover:bg-destructive/10">
-                        <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {troncales.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-4">No hay proveedores configurados</p>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Separator */}
-      <div className="border-t border-border" />
-
-      {/* Reglas globales */}
-      <div className="space-y-3">
-        <div>
-          <p className="text-sm font-semibold flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5 text-muted-foreground" />
-            Reglas globales
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            Se evalúan en todos los canales cuando ninguna regla de canal coincide.
-          </p>
-        </div>
-        <CanalReglasPanel canalId={null} colas={colas} readonly={readonly} />
-      </div>
     </div>
   );
 }
