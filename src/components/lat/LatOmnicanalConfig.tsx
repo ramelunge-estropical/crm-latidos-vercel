@@ -25,6 +25,15 @@ interface Troncal {
 interface Canal {
   id: string; troncal_id: string | null; nombre: string; tipo: string;
   numero_origen: string | null; activo: boolean; descripcion: string | null;
+  cola_default_id: string | null;
+}
+
+interface Accion {
+  tipo: "asignar_cola" | "asignar_bot" | "ignorar" | "asignar_prioridad" | "etiquetar";
+  cola_id?: string | null;
+  cola_nombre?: string;
+  prioridad?: string;
+  etiqueta?: string;
 }
 
 interface Cola {
@@ -46,7 +55,8 @@ interface Condicion {
 interface Regla {
   id: string; nombre: string; descripcion: string | null;
   activa: boolean; prioridad: number;
-  condiciones: Condicion[]; accion: { tipo: string; cola_nombre: string };
+  canal_id: string | null;
+  condiciones: Condicion[]; accion: Accion;
 }
 
 // ─── Icon map ─────────────────────────────────────────────────────────────────
@@ -80,6 +90,46 @@ const TIPO_ICONS: Record<string, React.ElementType> = {
   web: Globe,
   interno: Layers,
 };
+
+// ─── Constantes de reglas ─────────────────────────────────────────────────────
+
+const CAMPOS_WA = [
+  { value: "numero_remitente", label: "Número remitente" },
+  { value: "texto_mensaje",    label: "Texto del mensaje" },
+  { value: "palabras_clave",   label: "Palabras clave" },
+];
+
+const CAMPOS_EMAIL = [
+  { value: "remitente",          label: "Remitente" },
+  { value: "destinatario",       label: "Destinatario" },
+  { value: "alias_destinatario", label: "Alias destinatario" },
+  { value: "asunto",             label: "Asunto" },
+  { value: "cuerpo",             label: "Cuerpo del correo" },
+  { value: "nombre_adjunto",     label: "Nombre del archivo adjunto" },
+];
+
+const CAMPOS_COMUNES = [
+  { value: "mensaje_inicial", label: "Mensaje inicial" },
+  { value: "canal_tipo",      label: "Canal tipo" },
+  { value: "hora_ingreso",    label: "Hora de ingreso" },
+  { value: "cliente_area",    label: "Área del cliente" },
+];
+
+const OPERADORES = [
+  { value: "contiene",     label: "contiene" },
+  { value: "no_contiene",  label: "no contiene" },
+  { value: "es",           label: "es igual a" },
+  { value: "empieza_con",  label: "empieza con" },
+  { value: "termina_con",  label: "termina con" },
+];
+
+const TIPOS_ACCION = [
+  { value: "asignar_cola",      label: "Derivar a cola" },
+  { value: "asignar_bot",       label: "Derivar a bot / Agente IA" },
+  { value: "ignorar",           label: "No sincronizar / ignorar" },
+  { value: "asignar_prioridad", label: "Asignar prioridad" },
+  { value: "etiquetar",         label: "Etiquetar comunicación" },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -219,6 +269,288 @@ function VistaGeneralTab() {
   );
 }
 
+// ─── CANAL REGLAS PANEL ───────────────────────────────────────────────────────
+
+function CanalReglasPanel({
+  canalId, canalTipo, colas, readonly,
+}: {
+  canalId: string; canalTipo: string; colas: Cola[]; readonly: boolean;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState<Partial<Regla> | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const isEmail = canalTipo === "email";
+  const CAMPOS = isEmail ? CAMPOS_EMAIL : CAMPOS_WA;
+
+  const { data: reglas = [], isLoading } = useQuery<Regla[]>({
+    queryKey: ["lat_reglas_canal", canalId],
+    queryFn: async () => {
+      const { data } = await db().from("lat_reglas_asignacion")
+        .select("*").eq("canal_id", canalId).order("prioridad");
+      return (data || []).map((r: any) => ({
+        ...r,
+        condiciones: Array.isArray(r.condiciones) ? r.condiciones : [],
+        accion: typeof r.accion === "object" ? r.accion : { tipo: "asignar_cola" },
+      }));
+    },
+    enabled: !!canalId,
+  });
+
+  const save = async () => {
+    if (!editing?.nombre?.trim()) return;
+    const payload = {
+      nombre: editing.nombre,
+      descripcion: editing.descripcion || null,
+      activa: editing.activa ?? true,
+      prioridad: editing.prioridad ?? 50,
+      canal_id: canalId,
+      condiciones: editing.condiciones || [],
+      accion: editing.accion || { tipo: "asignar_cola" },
+    };
+    if (isNew) {
+      await db().from("lat_reglas_asignacion").insert(payload);
+      toast.success("Regla creada");
+    } else {
+      await db().from("lat_reglas_asignacion").update(payload).eq("id", editing.id);
+      toast.success("Regla actualizada");
+    }
+    qc.invalidateQueries({ queryKey: ["lat_reglas_canal", canalId] });
+    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
+    setEditing(null);
+  };
+
+  const remove = async (id: string) => {
+    await db().from("lat_reglas_asignacion").delete().eq("id", id);
+    toast.success("Regla eliminada");
+    qc.invalidateQueries({ queryKey: ["lat_reglas_canal", canalId] });
+    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
+  };
+
+  const toggle = async (r: Regla) => {
+    await db().from("lat_reglas_asignacion").update({ activa: !r.activa }).eq("id", r.id);
+    qc.invalidateQueries({ queryKey: ["lat_reglas_canal", canalId] });
+  };
+
+  const addCondicion = () => {
+    const defaultCampo = CAMPOS[0]?.value ?? "texto_mensaje";
+    setEditing(p => ({
+      ...p,
+      condiciones: [...(p?.condiciones || []), { campo: defaultCampo, operador: "contiene", valor: "" }],
+    }));
+  };
+
+  const removeCondicion = (idx: number) => {
+    setEditing(p => ({ ...p, condiciones: (p?.condiciones || []).filter((_, i) => i !== idx) }));
+  };
+
+  const updateCondicion = (idx: number, key: keyof Condicion, val: string) => {
+    setEditing(p => ({
+      ...p,
+      condiciones: (p?.condiciones || []).map((c, i) => i === idx ? { ...c, [key]: val } : c),
+    }));
+  };
+
+  if (isLoading) return <div className="text-xs text-muted-foreground py-6 text-center">Cargando reglas...</div>;
+
+  // ── Form view ───────────────────────────────────────────────────────────────
+  if (editing) {
+    const accion: Accion = (editing.accion as Accion) || { tipo: "asignar_cola" };
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setEditing(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <h4 className="text-sm font-semibold">{isNew ? "Nueva regla" : "Editar regla"}</h4>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Prioridad</label>
+            <input type="number" min={1} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editing.prioridad ?? 50} onChange={e => setEditing(p => ({ ...p, prioridad: parseInt(e.target.value) || 50 }))} />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium">Condiciones <span className="text-muted-foreground font-normal">(todas deben cumplirse)</span></label>
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
+              <Plus className="w-3 h-3" />Agregar
+            </Button>
+          </div>
+          {(editing.condiciones || []).length === 0 && (
+            <p className="text-xs text-muted-foreground p-3 rounded-lg border border-dashed border-border text-center">
+              Sin condiciones — se aplica a todas las comunicaciones del canal (regla por defecto)
+            </p>
+          )}
+          {(editing.condiciones || []).map((cond, idx) => (
+            <div key={idx} className="flex items-center gap-2 mb-2">
+              <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none flex-1 min-w-0"
+                value={cond.campo} onChange={e => updateCondicion(idx, "campo", e.target.value)}>
+                {CAMPOS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+              <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none shrink-0"
+                value={cond.operador} onChange={e => updateCondicion(idx, "operador", e.target.value)}>
+                {OPERADORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <input className="flex-1 border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none min-w-0"
+                placeholder="valor..." value={cond.valor} onChange={e => updateCondicion(idx, "valor", e.target.value)} />
+              <button onClick={() => removeCondicion(idx)} className="p-1.5 rounded hover:bg-destructive/10 shrink-0">
+                <X className="w-3.5 h-3.5 text-destructive/70" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium block">Acción</label>
+          <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+            value={accion.tipo || "asignar_cola"}
+            onChange={e => setEditing(p => ({ ...p, accion: { ...p?.accion, tipo: e.target.value as Accion["tipo"] } }))}>
+            {TIPOS_ACCION.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+          </select>
+          {(!accion.tipo || accion.tipo === "asignar_cola") && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Cola destino</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={accion.cola_id || ""}
+                onChange={e => {
+                  const c = colas.find(c => c.id === e.target.value);
+                  setEditing(p => ({ ...p, accion: { ...p?.accion, tipo: "asignar_cola", cola_id: e.target.value || null, cola_nombre: c?.nombre || "" } }));
+                }}>
+                <option value="">Seleccionar cola...</option>
+                {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+          )}
+          {accion.tipo === "asignar_prioridad" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Nivel de prioridad</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={accion.prioridad || "alta"}
+                onChange={e => setEditing(p => ({ ...p, accion: { ...p?.accion, prioridad: e.target.value } }))}>
+                <option value="urgente">Urgente</option>
+                <option value="alta">Alta</option>
+                <option value="media">Media</option>
+                <option value="baja">Baja</option>
+              </select>
+            </div>
+          )}
+          {accion.tipo === "etiquetar" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Etiqueta</label>
+              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                placeholder="ej. vip, urgente..." value={accion.etiqueta || ""}
+                onChange={e => setEditing(p => ({ ...p, accion: { ...p?.accion, etiqueta: e.target.value } }))} />
+            </div>
+          )}
+          {accion.tipo === "ignorar" && (
+            <p className="text-xs text-amber-600 bg-amber-500/10 border border-amber-200 rounded-lg p-3">
+              Las comunicaciones que coincidan no se sincronizarán ni aparecerán en LAT.
+            </p>
+          )}
+          {accion.tipo === "asignar_bot" && (
+            <p className="text-xs text-blue-600 bg-blue-500/10 border border-blue-200 rounded-lg p-3">
+              Las comunicaciones que coincidan se derivarán al Agente IA configurado para este canal.
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── List view ───────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {reglas.length} regla{reglas.length !== 1 ? "s" : ""} · evaluadas en orden de prioridad
+        </p>
+        {!readonly && (
+          <Button size="sm" className="gap-1.5 h-8"
+            onClick={() => { setIsNew(true); setEditing({ activa: true, prioridad: 50, canal_id: canalId, condiciones: [], accion: { tipo: "asignar_cola" } }); }}>
+            <Plus className="w-3.5 h-3.5" />Nueva regla
+          </Button>
+        )}
+      </div>
+      {reglas.length === 0 && (
+        <div className="text-xs text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">
+          No hay reglas para este canal.{!readonly && " Crea la primera regla para controlar cómo se asignan las comunicaciones."}
+        </div>
+      )}
+      <div className="space-y-2">
+        {reglas.map(r => {
+          const cola = colas.find(c => c.id === r.accion?.cola_id || c.nombre === r.accion?.cola_nombre);
+          const accionLabel = TIPOS_ACCION.find(a => a.value === r.accion?.tipo)?.label ?? "Acción";
+          return (
+            <div key={r.id} className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-3.5 hover:bg-accent/20 cursor-pointer"
+                onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{r.prioridad}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{r.nombre}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {r.condiciones.length > 0 ? `${r.condiciones.length} condición${r.condiciones.length > 1 ? "es" : ""}` : "Regla por defecto"}
+                    {" → "}{r.accion?.tipo === "asignar_cola" && cola ? cola.nombre : accionLabel}
+                  </p>
+                </div>
+                {r.accion?.tipo === "asignar_cola" && cola
+                  ? <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />
+                  : <Badge variant="outline" className={`text-[10px] shrink-0 ${r.accion?.tipo === "ignorar" ? "border-amber-300 text-amber-600" : r.accion?.tipo === "asignar_bot" ? "border-blue-300 text-blue-600" : ""}`}>{accionLabel}</Badge>
+                }
+                {!r.activa && <Badge variant="secondary" className="text-[10px] shrink-0">Inactiva</Badge>}
+                {expanded === r.id ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+              </div>
+              {expanded === r.id && (
+                <div className="border-t border-border px-4 py-3 bg-accent/10 space-y-2">
+                  {r.condiciones.length === 0 && <p className="text-xs text-muted-foreground italic">Sin condiciones — se aplica a cualquier comunicación del canal</p>}
+                  {r.condiciones.map((c, i) => {
+                    const campoLabel = [...CAMPOS_WA, ...CAMPOS_EMAIL, ...CAMPOS_COMUNES].find(f => f.value === c.campo)?.label ?? c.campo;
+                    const opLabel = OPERADORES.find(o => o.value === c.operador)?.label ?? c.operador;
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <span className="px-2 py-0.5 rounded bg-muted font-mono">{campoLabel}</span>
+                        <span className="text-muted-foreground">{opLabel}</span>
+                        <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-mono">{c.valor}</span>
+                      </div>
+                    );
+                  })}
+                  {!readonly && (
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => toggle(r)}>
+                        {r.activa ? <ToggleRight className="w-3.5 h-3.5 text-emerald-500" /> : <ToggleLeft className="w-3.5 h-3.5 text-muted-foreground" />}
+                        {r.activa ? "Desactivar" : "Activar"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => { setIsNew(false); setEditing(r); }}>
+                        <Pencil className="w-3.5 h-3.5" />Editar
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => remove(r.id)}>
+                        <Trash2 className="w-3.5 h-3.5" />Eliminar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── CANALES TAB ─────────────────────────────────────────────────────────────
 
 interface CanalConTroncal extends Canal {
@@ -272,6 +604,9 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
   const [showTroncales, setShowTroncales] = useState(false);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [disconnectingGmail, setDisconnectingGmail] = useState(false);
+  const [newCanalType, setNewCanalType] = useState<string | null>(null);
+  const [gmailCanalId, setGmailCanalId] = useState<string | null>(null);
+  const [gmailColaDraft, setGmailColaDraft] = useState<string | null>(null);
 
   const { data: canales = [], isLoading } = useQuery<CanalConTroncal[]>({
     queryKey: ["lat_canales"],
@@ -299,20 +634,21 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
     },
   });
 
-  const { data: reglas = [] } = useQuery<Regla[]>({
-    queryKey: ["lat_reglas"],
+  const { data: colas = [] } = useQuery<Cola[]>({
+    queryKey: ["lat_colas"],
     queryFn: async () => {
-      const { data } = await db().from("lat_reglas_asignacion").select("*").order("prioridad");
+      const { data } = await db().from("lat_colas").select("*").order("orden");
       return data || [];
     },
   });
 
   // ── Canal CRUD ────────────────────────────────────────────────────────────────
 
-  const openNewCanal = () => {
+  const openNewCanal = (tipo = "whatsapp") => {
     setIsNewCanal(true);
-    setCanalDraft({ activo: true, tipo: "whatsapp" });
+    setCanalDraft({ activo: true, tipo });
     setCanalTab("detalles");
+    setNewCanalType(null);
     setEditMode({ kind: "canal", id: null });
   };
 
@@ -323,9 +659,37 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
     setEditMode({ kind: "canal", id: canal.id });
   };
 
-  const openEditGmail = () => {
+  const openEditGmail = async () => {
+    const { data } = await db().from("lat_canales")
+      .select("id, cola_default_id").eq("tipo", "email").maybeSingle();
+    setGmailCanalId(data?.id ?? null);
+    setGmailColaDraft(data?.cola_default_id ?? null);
     setCanalTab("detalles");
     setEditMode({ kind: "gmail" });
+  };
+
+  const saveGmailColaDefault = async (colaId: string | null) => {
+    if (gmailCanalId) {
+      await db().from("lat_canales").update({ cola_default_id: colaId }).eq("id", gmailCanalId);
+    } else if (gmailCfg) {
+      const { data } = await db().from("lat_canales").insert({
+        nombre: gmailCfg.gmail_email || gmailCfg.nombre || "Gmail",
+        tipo: "email",
+        numero_origen: gmailCfg.gmail_email,
+        activo: gmailCfg.activo,
+        cola_default_id: colaId,
+      }).select("id").single();
+      if (data) setGmailCanalId(data.id);
+    }
+    setGmailColaDraft(colaId);
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+    toast.success("Cola por defecto guardada");
+  };
+
+  const quickToggleCanal = async (canal: CanalConTroncal) => {
+    await db().from("lat_canales").update({ activo: !canal.activo }).eq("id", canal.id);
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+    toast.success(canal.activo ? "Canal desactivado" : "Canal activado");
   };
 
   const closeEdit = () => {
@@ -343,6 +707,7 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
       numero_origen: canalDraft.numero_origen || null,
       descripcion: canalDraft.descripcion || null,
       activo: canalDraft.activo ?? true,
+      cola_default_id: canalDraft.cola_default_id || null,
     };
     if (isNewCanal) {
       await db().from("lat_canales").insert(payload);
@@ -585,6 +950,21 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
                   </div>
                 </div>
               </div>
+              <div className="space-y-2">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Asignación por defecto</p>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={gmailColaDraft || ""}
+                  onChange={e => setGmailColaDraft(e.target.value || null)}>
+                  <option value="">Sin cola por defecto</option>
+                  {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+                <p className="text-[10px] text-muted-foreground">Cola de destino cuando ninguna regla coincida con el correo entrante.</p>
+                {!readonly && (
+                  <Button size="sm" className="gap-1.5 w-full" onClick={() => saveGmailColaDefault(gmailColaDraft)}>
+                    <Check className="w-3.5 h-3.5" />Guardar cola por defecto
+                  </Button>
+                )}
+              </div>
             </div>
           );
         }
@@ -651,6 +1031,19 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
                 </div>
               )}
             </div>
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Asignación por defecto</p>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Cola por defecto</label>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={canalDraft.cola_default_id || ""}
+                  onChange={e => setCanalDraft(p => ({ ...p, cola_default_id: e.target.value || null }))}>
+                  <option value="">Sin cola por defecto</option>
+                  {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-1">Cola de destino cuando ninguna regla coincida con la comunicación entrante.</p>
+              </div>
+            </div>
             {!readonly && (
               <div className="flex gap-2 pt-2">
                 <Button size="sm" onClick={saveCanal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
@@ -663,36 +1056,23 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
 
       // ── Reglas ──────────────────────────────────────────────────────────────
       if (canalTab === "reglas") {
-        return (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">{reglas.length} reglas de asignación configuradas</p>
-              {onNavigateReglas && (
-                <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={onNavigateReglas}>
-                  Gestionar reglas <ExternalLink className="w-3 h-3" />
-                </Button>
-              )}
-            </div>
-            <div className="space-y-2">
-              {reglas.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-6 border border-dashed border-border rounded-xl">
-                  No hay reglas configuradas
-                </p>
-              ) : reglas.map(r => (
-                <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card">
-                  <div className={`w-2 h-2 rounded-full shrink-0 ${r.activa ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate">{r.nombre}</p>
-                    <p className="text-[10px] text-muted-foreground">Prioridad {r.prioridad}</p>
-                  </div>
-                  <Badge variant={r.activa ? "default" : "secondary"} className="text-[10px] shrink-0">
-                    {r.activa ? "Activa" : "Inactiva"}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
+        if (isNewCanal) {
+          return (
+            <p className="text-xs text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">
+              Guarda el canal primero para configurar sus reglas.
+            </p>
+          );
+        }
+        const canalIdForRules = isGmail ? gmailCanalId : (canalDraft.id ?? null);
+        const canalTipoForRules = isGmail ? "email" : (canalDraft.tipo || "whatsapp");
+        if (!canalIdForRules) {
+          return (
+            <p className="text-xs text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">
+              {isGmail ? "Abre Detalles y guarda la cola por defecto para activar las reglas de este canal." : "No se pudo determinar el ID del canal."}
+            </p>
+          );
+        }
+        return <CanalReglasPanel canalId={canalIdForRules} canalTipo={canalTipoForRules} colas={colas} readonly={readonly} />;
       }
 
       // ── Conexión ────────────────────────────────────────────────────────────
@@ -828,6 +1208,58 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
   const totalActivos = canales.filter(c => c.activo).length + (gmailCfg?.activo ? 1 : 0);
   const total = canales.length + (gmailCfg ? 1 : 0);
 
+  // ── Type selector overlay ──────────────────────────────────────────────────
+  if (newCanalType === "select") {
+    return (
+      <div className="p-6 space-y-5 max-w-lg">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setNewCanalType(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div>
+            <p className="text-sm font-semibold">Nuevo canal</p>
+            <p className="text-[10px] text-muted-foreground">Elige el tipo de canal a configurar</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => openNewCanal("whatsapp")}
+            className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-border hover:border-green-400 hover:bg-green-500/5 transition-colors text-left">
+            <div className="w-9 h-9 rounded-lg bg-green-500/10 flex items-center justify-center">
+              <MessageSquare className="w-4 h-4 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">WhatsApp</p>
+              <p className="text-[10px] text-muted-foreground">Vía Gupshup, Meta o WATI</p>
+            </div>
+          </button>
+          <button
+            onClick={gmailCfg ? () => { setNewCanalType(null); openEditGmail(); } : handleGmailConnect}
+            className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-border hover:border-amber-400 hover:bg-amber-500/5 transition-colors text-left">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center">
+              <Mail className="w-4 h-4 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Gmail / Email</p>
+              <p className="text-[10px] text-muted-foreground">{gmailCfg ? "Ya configurado — ver detalles" : "Conectar cuenta Google"}</p>
+            </div>
+          </button>
+          {(["Instagram", "Facebook", "SMS", "Web Chat"] as const).map(tipo => (
+            <div key={tipo} className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-dashed border-border opacity-50 cursor-not-allowed text-left">
+              <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
+                <Globe className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{tipo}</p>
+                <p className="text-[10px] text-muted-foreground">Próximamente</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Canales */}
@@ -838,7 +1270,7 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
             <p className="text-[10px] text-muted-foreground">{total} canales · {totalActivos} activos</p>
           </div>
           {!readonly && (
-            <Button size="sm" className="gap-1.5 h-8" onClick={openNewCanal}>
+            <Button size="sm" className="gap-1.5 h-8" onClick={() => setNewCanalType("select")}>
               <Plus className="w-3.5 h-3.5" />Nuevo canal
             </Button>
           )}
@@ -863,6 +1295,11 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
               </div>
               {!readonly && (
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                  {!gmailCfg.gmail_refresh_token && (
+                    <button onClick={handleGmailConnect} className="p-1.5 rounded hover:bg-accent" title="Conectar Gmail">
+                      <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                  )}
                   <button onClick={openEditGmail} className="p-1.5 rounded hover:bg-accent">
                     <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
@@ -895,6 +1332,9 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
                 </div>
                 {!readonly && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                    <button onClick={() => quickToggleCanal(canal)} className="p-1.5 rounded hover:bg-accent" title={canal.activo ? "Desactivar" : "Activar"}>
+                      {canal.activo ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
+                    </button>
                     <button onClick={() => openEditCanal(canal)} className="p-1.5 rounded hover:bg-accent">
                       <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                     </button>
@@ -1177,20 +1617,6 @@ function ColasTab({ readonly }: { readonly: boolean }) {
 
 // ─── REGLAS TAB ───────────────────────────────────────────────────────────────
 
-const CAMPOS = [
-  { value: "mensaje_inicial", label: "Mensaje inicial" },
-  { value: "canal_tipo", label: "Canal tipo" },
-  { value: "hora_ingreso", label: "Hora de ingreso" },
-  { value: "cliente_area", label: "Área del cliente" },
-];
-
-const OPERADORES = [
-  { value: "contiene", label: "contiene" },
-  { value: "no_contiene", label: "no contiene" },
-  { value: "es", label: "es igual a" },
-  { value: "empieza_con", label: "empieza con" },
-];
-
 function ReglasTab({ readonly }: { readonly: boolean }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Partial<Regla> | null>(null);
@@ -1306,7 +1732,7 @@ function ReglasTab({ readonly }: { readonly: boolean }) {
               <div key={idx} className="flex items-center gap-2 mb-2">
                 <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
                   value={cond.campo} onChange={e => updateCondicion(idx, "campo", e.target.value)}>
-                  {CAMPOS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  {CAMPOS_COMUNES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
                 <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
                   value={cond.operador} onChange={e => updateCondicion(idx, "operador", e.target.value)}>
