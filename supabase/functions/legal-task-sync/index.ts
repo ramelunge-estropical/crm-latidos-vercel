@@ -8,6 +8,9 @@
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  *   LEGAL_API_KEY    → api_key del sistema Legal en integraciones.sistemas
+ *
+ * Si integraciones.sistemas.process_id_default está configurado para "legal",
+ * los tasks entrantes crean una gestión (tarjeta kanban). Si no, crean una activity.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -23,6 +26,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key",
 };
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -37,9 +47,7 @@ Deno.serve(async (req) => {
       const { activity_id, titulo, descripcion, estado, prioridad, fecha_vencimiento, colaborador_id } = body;
 
       if (!activity_id || !titulo) {
-        return new Response(JSON.stringify({ error: "activity_id y titulo son requeridos" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return jsonResponse({ error: "activity_id y titulo son requeridos" }, 400);
       }
 
       // Verificar que no esté ya sincronizada
@@ -53,9 +61,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (existing) {
-        return new Response(JSON.stringify({ message: "Tarea ya sincronizada", id: existing.id }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return jsonResponse({ message: "Tarea ya sincronizada", id: existing.id });
       }
 
       // Obtener webhook URL de Hub Legal
@@ -108,25 +114,19 @@ Deno.serve(async (req) => {
         .select()
         .single();
 
-      return new Response(JSON.stringify({ success: !error_msg, sync, warning: error_msg }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ success: !error_msg, sync, warning: error_msg });
     }
 
     // ── Legal → CRM (webhook inbound) ───────────────────────────────────────
     const apiKey = req.headers.get("x-api-key");
     if (apiKey !== LEGAL_API_KEY) {
-      return new Response(JSON.stringify({ error: "API key inválida" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "API key inválida" }, 401);
     }
 
     const { titulo, descripcion, estado, prioridad, fecha_vencimiento, origen_id, colaborador_email } = body;
 
     if (!titulo || !origen_id) {
-      return new Response(JSON.stringify({ error: "titulo y origen_id son requeridos" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "titulo y origen_id son requeridos" }, 400);
     }
 
     // Buscar colaborador por email si se provee
@@ -150,26 +150,53 @@ Deno.serve(async (req) => {
       .single();
 
     if (existing) {
-      return new Response(JSON.stringify({ message: "Ya procesada", crm_id: existing.destino_id }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ message: "Ya procesada", crm_id: existing.destino_id });
     }
 
-    // Crear activity en CRM
-    const { data: activity } = await supabase
-      .from("activities")
-      .insert({
-        titulo,
-        descripcion: descripcion ?? "",
-        tipo: "tarea",
-        estado: estado ?? "pendiente",
-        prioridad: prioridad ?? "media",
-        due_date: fecha_vencimiento ?? null,
-        assigned_to_id: colaborador_id,
-        created_by: colaborador_id,
-      })
-      .select()
+    // Leer config del sistema legal (si tiene process_id_default → crear gestión)
+    const { data: sistemaLegal } = await supabase
+      .schema("integraciones")
+      .from("sistemas")
+      .select("process_id_default, stage_id_default")
+      .eq("nombre", "legal")
       .single();
+
+    let crm_id: string | null = null;
+
+    if (sistemaLegal?.process_id_default && sistemaLegal?.stage_id_default) {
+      // ── Crear gestión (tarjeta kanban) ──────────────────────────────────
+      const { data: gestion } = await supabase
+        .from("gestiones")
+        .insert({
+          title: titulo,
+          description: descripcion ?? null,
+          process_id: sistemaLegal.process_id_default,
+          stage_id: sistemaLegal.stage_id_default,
+          due_date: fecha_vencimiento ?? null,
+          responsable_id: colaborador_id,
+          type: "operativa",
+          canal_origen: "legal",
+        })
+        .select("id")
+        .single();
+      crm_id = gestion?.id ?? null;
+    } else {
+      // ── Crear activity (tarea en agenda) ────────────────────────────────
+      const { data: activity } = await supabase
+        .from("activities")
+        .insert({
+          title: titulo,
+          description: descripcion ?? null,
+          activity_type: "tarea",
+          completed: estado === "completado" || estado === "done" ? true : false,
+          scheduled_at: fecha_vencimiento ? new Date(fecha_vencimiento).toISOString() : null,
+          assigned_to_id: colaborador_id,
+          created_by: colaborador_id,
+        })
+        .select("id")
+        .single();
+      crm_id = activity?.id ?? null;
+    }
 
     // Registrar sincronización
     await supabase
@@ -179,7 +206,7 @@ Deno.serve(async (req) => {
         origen: "legal",
         origen_id,
         destino: "crm",
-        destino_id: activity?.id ?? null,
+        destino_id: crm_id,
         titulo,
         descripcion,
         estado,
@@ -188,13 +215,9 @@ Deno.serve(async (req) => {
         colaborador_id,
       });
 
-    return new Response(JSON.stringify({ success: true, crm_id: activity?.id }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ success: true, crm_id });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: String(err) }, 500);
   }
 });
