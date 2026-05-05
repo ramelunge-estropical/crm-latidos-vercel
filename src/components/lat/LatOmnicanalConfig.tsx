@@ -97,6 +97,7 @@ const CAMPOS_WA = [
   { value: "numero_remitente", label: "Número remitente" },
   { value: "texto_mensaje",    label: "Texto del mensaje" },
   { value: "palabras_clave",   label: "Palabras clave" },
+  { value: "etiqueta_origen",  label: "Etiqueta / campaña / origen" },
 ];
 
 const CAMPOS_EMAIL = [
@@ -381,13 +382,29 @@ function CanalReglasPanel({
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-medium">Condiciones <span className="text-muted-foreground font-normal">(todas deben cumplirse)</span></label>
-            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
-              <Plus className="w-3 h-3" />Agregar
-            </Button>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-border"
+                  checked={(editing.condiciones || []).length === 0}
+                  onChange={e => {
+                    if (e.target.checked) setEditing(p => ({ ...p, condiciones: [] }));
+                    else addCondicion();
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">Regla por defecto</span>
+              </label>
+              {(editing.condiciones || []).length > 0 && (
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
+                  <Plus className="w-3 h-3" />Agregar
+                </Button>
+              )}
+            </div>
           </div>
           {(editing.condiciones || []).length === 0 && (
-            <p className="text-xs text-muted-foreground p-3 rounded-lg border border-dashed border-border text-center">
-              Sin condiciones — se aplica a todas las comunicaciones del canal (regla por defecto)
+            <p className="text-xs text-amber-700 bg-amber-500/10 border border-amber-200 p-3 rounded-lg">
+              Sin condiciones — se aplica como fallback cuando ninguna otra regla coincide
             </p>
           )}
           {(editing.condiciones || []).map((cond, idx) => (
