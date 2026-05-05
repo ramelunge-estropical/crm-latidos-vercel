@@ -25,7 +25,7 @@ interface Troncal {
 interface Canal {
   id: string; troncal_id: string | null; nombre: string; tipo: string;
   numero_origen: string | null; activo: boolean; descripcion: string | null;
-  cola_default_id: string | null;
+  cola_default_id: string | null; bot_default_id: string | null;
 }
 
 interface Accion {
@@ -276,20 +276,33 @@ function VistaGeneralTab() {
 
 // ─── CANAL REGLAS PANEL ───────────────────────────────────────────────────────
 
+interface BotCfg { id: string; nombre: string | null; canal: string | null; }
+
 function CanalReglasPanel({
   canalId, canalTipo = "whatsapp", colas, readonly,
-  colaDefaultId, onSaveColaDefault,
+  fallbackTipo, fallbackId, onSaveFallback,
 }: {
   canalId: string | null; canalTipo?: string; colas: Cola[]; readonly: boolean;
-  colaDefaultId?: string | null;
-  onSaveColaDefault?: (id: string | null) => Promise<void>;
+  fallbackTipo?: "cola" | "bot" | null;
+  fallbackId?: string | null;
+  onSaveFallback?: (tipo: "cola" | "bot" | null, id: string | null) => Promise<void>;
 }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Partial<Regla> | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [colaDraft, setColaDraft] = useState<string | null>(colaDefaultId ?? null);
-  const [savingCola, setSavingCola] = useState(false);
+  const [fallbackDraft, setFallbackDraft] = useState<string>(
+    fallbackTipo && fallbackId ? `${fallbackTipo}:${fallbackId}` : ""
+  );
+  const [savingFallback, setSavingFallback] = useState(false);
+
+  const { data: botsIA = [] } = useQuery<BotCfg[]>({
+    queryKey: ["lat_bot_config_list"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_bot_config").select("id, nombre, canal").eq("activo", true);
+      return data || [];
+    },
+  });
 
   const isGlobalMode = canalId === null;
   const isEmail = canalTipo === "email";
@@ -404,11 +417,9 @@ function CanalReglasPanel({
                 />
                 <span className="text-xs text-muted-foreground">Regla por defecto</span>
               </label>
-              {(editing.condiciones || []).length > 0 && (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
-                  <Plus className="w-3 h-3" />Agregar
-                </Button>
-              )}
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
+                <Plus className="w-3 h-3" />Agregar condición
+              </Button>
             </div>
           </div>
           {(editing.condiciones || []).length === 0 && (
@@ -500,24 +511,33 @@ function CanalReglasPanel({
   // ── List view ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
-      {onSaveColaDefault && !isGlobalMode && (
+      {onSaveFallback && !isGlobalMode && (
         <div className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card">
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium">Cola fallback</p>
-            <p className="text-[10px] text-muted-foreground">Se aplica cuando ninguna regla coincide</p>
+            <p className="text-xs font-medium">Fallback</p>
+            <p className="text-[10px] text-muted-foreground">Destino cuando ninguna regla coincide</p>
           </div>
           <select
-            className="border border-border rounded-lg px-2.5 py-1.5 text-xs bg-background focus:outline-none min-w-0 flex-shrink-0 max-w-[180px]"
-            value={colaDraft || ""}
-            onChange={e => setColaDraft(e.target.value || null)}
+            className="border border-border rounded-lg px-2.5 py-1.5 text-xs bg-background focus:outline-none min-w-0 flex-shrink-0 max-w-[200px]"
+            value={fallbackDraft}
+            onChange={e => setFallbackDraft(e.target.value)}
             disabled={readonly}
           >
             <option value="">Sin fallback</option>
-            {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            {colas.length > 0 && <option disabled value="__sep_cola">── Colas ──</option>}
+            {colas.map(c => <option key={c.id} value={`cola:${c.id}`}>{c.nombre}</option>)}
+            {botsIA.length > 0 && <option disabled value="__sep_bot">── Agentes IA ──</option>}
+            {botsIA.map(b => <option key={b.id} value={`bot:${b.id}`}>{b.nombre || `Bot ${b.canal || b.id.slice(0, 6)}`}</option>)}
           </select>
           {!readonly && (
-            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1" disabled={savingCola}
-              onClick={async () => { setSavingCola(true); await onSaveColaDefault(colaDraft); setSavingCola(false); toast.success("Cola fallback guardada"); }}>
+            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1" disabled={savingFallback}
+              onClick={async () => {
+                setSavingFallback(true);
+                const [tipo, id] = fallbackDraft ? fallbackDraft.split(":") as ["cola"|"bot", string] : [null, null];
+                await onSaveFallback(tipo ?? null, id ?? null);
+                setSavingFallback(false);
+                toast.success("Fallback guardado");
+              }}>
               <Check className="w-3 h-3" />
             </Button>
           )}
@@ -655,7 +675,8 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
   const [disconnectingGmail, setDisconnectingGmail] = useState(false);
   const [newCanalType, setNewCanalType] = useState<string | null>(null);
   const [gmailCanalId, setGmailCanalId] = useState<string | null>(null);
-  const [gmailColaDraft, setGmailColaDraft] = useState<string | null>(null);
+  const [gmailFallbackTipo, setGmailFallbackTipo] = useState<"cola"|"bot"|null>(null);
+  const [gmailFallbackId, setGmailFallbackId] = useState<string | null>(null);
 
   const { data: canales = [], isLoading } = useQuery<CanalConTroncal[]>({
     queryKey: ["lat_canales"],
@@ -710,38 +731,44 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
 
   const openEditGmail = async () => {
     let { data } = await db().from("lat_canales")
-      .select("id, cola_default_id").eq("tipo", "email").maybeSingle();
+      .select("id, cola_default_id, bot_default_id").eq("tipo", "email").maybeSingle();
     if (!data && gmailCfg) {
       const { data: created } = await db().from("lat_canales").insert({
         nombre: gmailCfg.nombre || gmailCfg.gmail_email || "Gmail",
         tipo: "email",
         numero_origen: gmailCfg.gmail_email,
         activo: gmailCfg.activo ?? true,
-      }).select("id, cola_default_id").single();
+      }).select("id, cola_default_id, bot_default_id").single();
       data = created;
     }
     setGmailCanalId(data?.id ?? null);
-    setGmailColaDraft(data?.cola_default_id ?? null);
+    if (data?.bot_default_id) { setGmailFallbackTipo("bot"); setGmailFallbackId(data.bot_default_id); }
+    else if (data?.cola_default_id) { setGmailFallbackTipo("cola"); setGmailFallbackId(data.cola_default_id); }
+    else { setGmailFallbackTipo(null); setGmailFallbackId(null); }
     setCanalTab("detalles");
     setEditMode({ kind: "gmail" });
   };
 
-  const saveGmailColaDefault = async (colaId: string | null) => {
+  const saveGmailFallback = async (tipo: "cola" | "bot" | null, id: string | null) => {
+    const patch = {
+      cola_default_id: tipo === "cola" ? id : null,
+      bot_default_id:  tipo === "bot"  ? id : null,
+    };
     if (gmailCanalId) {
-      await db().from("lat_canales").update({ cola_default_id: colaId }).eq("id", gmailCanalId);
+      await db().from("lat_canales").update(patch).eq("id", gmailCanalId);
     } else if (gmailCfg) {
       const { data } = await db().from("lat_canales").insert({
         nombre: gmailCfg.gmail_email || gmailCfg.nombre || "Gmail",
         tipo: "email",
         numero_origen: gmailCfg.gmail_email,
         activo: gmailCfg.activo,
-        cola_default_id: colaId,
+        ...patch,
       }).select("id").single();
       if (data) setGmailCanalId(data.id);
     }
-    setGmailColaDraft(colaId);
+    setGmailFallbackTipo(tipo);
+    setGmailFallbackId(id);
     qc.invalidateQueries({ queryKey: ["lat_canales"] });
-    toast.success("Cola por defecto guardada");
   };
 
   const quickToggleCanal = async (canal: CanalConTroncal) => {
@@ -1070,12 +1097,20 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
             </p>
           );
         }
-        const colaDefaultForRules = isGmail ? gmailColaDraft : (canalDraft.cola_default_id ?? null);
-        const saveColaDefaultForRules = isGmail
-          ? saveGmailColaDefault
-          : async (id: string | null) => {
-              await db().from("lat_canales").update({ cola_default_id: id }).eq("id", canalDraft.id);
-              setCanalDraft(p => ({ ...p, cola_default_id: id }));
+        const fbTipo = isGmail ? gmailFallbackTipo : (canalDraft.bot_default_id ? "bot" : canalDraft.cola_default_id ? "cola" : null);
+        const fbId   = isGmail ? gmailFallbackId   : (canalDraft.bot_default_id ?? canalDraft.cola_default_id ?? null);
+        const saveFallback = isGmail
+          ? saveGmailFallback
+          : async (tipo: "cola" | "bot" | null, id: string | null) => {
+              await db().from("lat_canales").update({
+                cola_default_id: tipo === "cola" ? id : null,
+                bot_default_id:  tipo === "bot"  ? id : null,
+              }).eq("id", canalDraft.id);
+              setCanalDraft(p => ({
+                ...p,
+                cola_default_id: tipo === "cola" ? id : null,
+                bot_default_id:  tipo === "bot"  ? id : null,
+              }));
             };
         return (
           <CanalReglasPanel
@@ -1083,8 +1118,9 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
             canalTipo={canalTipoForRules}
             colas={colas}
             readonly={readonly}
-            colaDefaultId={colaDefaultForRules}
-            onSaveColaDefault={saveColaDefaultForRules}
+            fallbackTipo={fbTipo as "cola"|"bot"|null}
+            fallbackId={fbId}
+            onSaveFallback={saveFallback}
           />
         );
       }
