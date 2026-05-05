@@ -6,7 +6,7 @@ import {
   Check, X, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
   AlertCircle, Zap, DollarSign, Star, HelpCircle, Bus, Plane,
   FileText, Users, Briefcase, BarChart3, Bot, Activity, MessageSquare,
-  Mail, Wifi, WifiOff, ChevronRight, RefreshCw, LogOut, ExternalLink, ChevronLeft,
+  Mail, Wifi, WifiOff, ChevronRight, RefreshCw, LogOut, ChevronLeft,
 } from "lucide-react";
 import { LatBotConfig } from "./LatBotConfig";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "canales" | "colas" | "reglas" | "horarios" | "agentes-ia";
+type Tab = "overview" | "canales" | "colas" | "horarios" | "agentes-ia";
 
 interface Troncal {
   id: string; nombre: string; proveedor: string; tipo: string;
@@ -272,30 +272,30 @@ function VistaGeneralTab() {
 // ─── CANAL REGLAS PANEL ───────────────────────────────────────────────────────
 
 function CanalReglasPanel({
-  canalId, canalTipo, colas, readonly,
+  canalId, canalTipo = "whatsapp", colas, readonly,
 }: {
-  canalId: string; canalTipo: string; colas: Cola[]; readonly: boolean;
+  canalId: string | null; canalTipo?: string; colas: Cola[]; readonly: boolean;
 }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Partial<Regla> | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const isGlobalMode = canalId === null;
   const isEmail = canalTipo === "email";
-  const CAMPOS = isEmail ? CAMPOS_EMAIL : CAMPOS_WA;
+  const CAMPOS = isGlobalMode ? CAMPOS_COMUNES : isEmail ? CAMPOS_EMAIL : CAMPOS_WA;
 
   const { data: reglas = [], isLoading } = useQuery<Regla[]>({
-    queryKey: ["lat_reglas_canal", canalId],
+    queryKey: ["lat_reglas_canal", canalId ?? "global"],
     queryFn: async () => {
-      const { data } = await db().from("lat_reglas_asignacion")
-        .select("*").eq("canal_id", canalId).order("prioridad");
+      const q = db().from("lat_reglas_asignacion").select("*").order("prioridad");
+      const { data } = isGlobalMode ? await q.is("canal_id", null) : await q.eq("canal_id", canalId);
       return (data || []).map((r: any) => ({
         ...r,
         condiciones: Array.isArray(r.condiciones) ? r.condiciones : [],
         accion: typeof r.accion === "object" ? r.accion : { tipo: "asignar_cola" },
       }));
     },
-    enabled: !!canalId,
   });
 
   const save = async () => {
@@ -593,7 +593,7 @@ function ConnStatus({ activo, hasToken }: { activo: boolean; hasToken?: boolean 
   );
 }
 
-function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavigateReglas?: () => void }) {
+function CanalesTab({ readonly }: { readonly: boolean }) {
   const qc = useQueryClient();
   const [editMode, setEditMode] = useState<EditMode>(null);
   const [canalDraft, setCanalDraft] = useState<Partial<CanalConTroncal>>({});
@@ -1409,6 +1409,23 @@ function CanalesTab({ readonly, onNavigateReglas }: { readonly: boolean; onNavig
           </div>
         )}
       </div>
+
+      {/* Separator */}
+      <div className="border-t border-border" />
+
+      {/* Reglas globales */}
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-muted-foreground" />
+            Reglas globales
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Se evalúan en todos los canales cuando ninguna regla de canal coincide.
+          </p>
+        </div>
+        <CanalReglasPanel canalId={null} colas={colas} readonly={readonly} />
+      </div>
     </div>
   );
 }
@@ -1610,228 +1627,6 @@ function ColasTab({ readonly }: { readonly: boolean }) {
             {!cola.activa && <Badge variant="secondary" className="text-[10px] shrink-0">Inactiva</Badge>}
           </div>
         ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── REGLAS TAB ───────────────────────────────────────────────────────────────
-
-function ReglasTab({ readonly }: { readonly: boolean }) {
-  const qc = useQueryClient();
-  const [editing, setEditing] = useState<Partial<Regla> | null>(null);
-  const [isNew, setIsNew] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  const { data: reglas = [], isLoading } = useQuery<Regla[]>({
-    queryKey: ["lat_reglas"],
-    queryFn: async () => {
-      const { data } = await db().from("lat_reglas_asignacion").select("*").order("prioridad");
-      return (data || []).map((r: any) => ({
-        ...r,
-        condiciones: Array.isArray(r.condiciones) ? r.condiciones : [],
-        accion: typeof r.accion === "object" ? r.accion : {},
-      }));
-    },
-  });
-
-  const { data: colas = [] } = useQuery<Cola[]>({
-    queryKey: ["lat_colas"],
-    queryFn: async () => {
-      const { data } = await db().from("lat_colas").select("id, nombre, color, icono").order("orden");
-      return data || [];
-    },
-  });
-
-  const save = async () => {
-    if (!editing || !editing.nombre?.trim()) return;
-    const payload = {
-      nombre: editing.nombre,
-      descripcion: editing.descripcion || null,
-      activa: editing.activa ?? true,
-      prioridad: editing.prioridad ?? 50,
-      condiciones: editing.condiciones || [],
-      accion: editing.accion || { tipo: "asignar_cola", cola_nombre: "" },
-    };
-    if (isNew) {
-      await db().from("lat_reglas_asignacion").insert(payload);
-      toast.success("Regla creada");
-    } else {
-      await db().from("lat_reglas_asignacion").update(payload).eq("id", editing.id);
-      toast.success("Regla actualizada");
-    }
-    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
-    setEditing(null);
-  };
-
-  const remove = async (id: string) => {
-    await db().from("lat_reglas_asignacion").delete().eq("id", id);
-    toast.success("Regla eliminada");
-    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
-  };
-
-  const toggle = async (r: Regla) => {
-    await db().from("lat_reglas_asignacion").update({ activa: !r.activa }).eq("id", r.id);
-    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
-  };
-
-  const addCondicion = () => {
-    setEditing(p => ({
-      ...p,
-      condiciones: [...(p?.condiciones || []), { campo: "mensaje_inicial", operador: "contiene", valor: "" }]
-    }));
-  };
-
-  const removeCondicion = (idx: number) => {
-    setEditing(p => ({
-      ...p,
-      condiciones: (p?.condiciones || []).filter((_, i) => i !== idx)
-    }));
-  };
-
-  const updateCondicion = (idx: number, key: keyof Condicion, val: string) => {
-    setEditing(p => ({
-      ...p,
-      condiciones: (p?.condiciones || []).map((c, i) => i === idx ? { ...c, [key]: val } : c)
-    }));
-  };
-
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
-
-  if (editing) {
-    return (
-      <div className="p-6 max-w-2xl space-y-4">
-        <h3 className="font-semibold text-sm">{isNew ? "Nueva regla" : "Editar regla"}</h3>
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
-              <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Prioridad (menor = antes)</label>
-              <input type="number" min={1} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.prioridad ?? 50} onChange={e => setEditing(p => ({ ...p, prioridad: parseInt(e.target.value) || 50 }))} />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium">Condiciones <span className="text-muted-foreground font-normal">(todas deben cumplirse)</span></label>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
-                <Plus className="w-3 h-3" />Agregar
-              </Button>
-            </div>
-            {(editing.condiciones || []).length === 0 && (
-              <div className="text-xs text-muted-foreground p-3 rounded-lg border border-dashed border-border text-center">
-                Sin condiciones — la regla se aplica a todas las conversaciones (regla por defecto)
-              </div>
-            )}
-            {(editing.condiciones || []).map((cond, idx) => (
-              <div key={idx} className="flex items-center gap-2 mb-2">
-                <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
-                  value={cond.campo} onChange={e => updateCondicion(idx, "campo", e.target.value)}>
-                  {CAMPOS_COMUNES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-                <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
-                  value={cond.operador} onChange={e => updateCondicion(idx, "operador", e.target.value)}>
-                  {OPERADORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <input className="flex-1 border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
-                  placeholder="valor..." value={cond.valor} onChange={e => updateCondicion(idx, "valor", e.target.value)} />
-                <button onClick={() => removeCondicion(idx)} className="p-1 rounded hover:bg-destructive/10">
-                  <X className="w-3.5 h-3.5 text-destructive/70" />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div>
-            <label className="text-xs font-medium mb-2 block">Acción — asignar a cola</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.accion?.cola_nombre || ""}
-              onChange={e => setEditing(p => ({ ...p, accion: { tipo: "asignar_cola", cola_nombre: e.target.value } }))}>
-              <option value="">Seleccionar cola...</option>
-              {colas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{reglas.length} reglas · se evalúan en orden de prioridad</p>
-        {!readonly && (
-          <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNew(true); setEditing({ activa: true, prioridad: 50, condiciones: [], accion: { tipo: "asignar_cola", cola_nombre: "" } }); }}>
-            <Plus className="w-3.5 h-3.5" />Nueva regla
-          </Button>
-        )}
-      </div>
-      <div className="space-y-2">
-        {reglas.map(r => {
-          const cola = colas.find(c => c.nombre === r.accion?.cola_nombre);
-          return (
-            <div key={r.id} className="rounded-xl border border-border bg-card overflow-hidden">
-              <div
-                className="flex items-center gap-3 p-3.5 hover:bg-accent/20 cursor-pointer"
-                onClick={() => setExpanded(expanded === r.id ? null : r.id)}
-              >
-                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
-                  {r.prioridad}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{r.nombre}</p>
-                  {r.condiciones.length > 0 ? (
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      {r.condiciones.length} condición(es) → {r.accion?.cola_nombre || "?"}
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-muted-foreground">Regla por defecto → {r.accion?.cola_nombre || "?"}</p>
-                  )}
-                </div>
-                {cola && <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />}
-                {!r.activa && <Badge variant="secondary" className="text-[10px]">Inactiva</Badge>}
-                {expanded === r.id ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
-              </div>
-              {expanded === r.id && (
-                <div className="border-t border-border px-4 py-3 bg-accent/10 space-y-2">
-                  {r.condiciones.length === 0 && (
-                    <p className="text-xs text-muted-foreground italic">Sin condiciones — se aplica a cualquier conversación</p>
-                  )}
-                  {r.condiciones.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="px-2 py-0.5 rounded bg-muted font-mono">{c.campo}</span>
-                      <span className="text-muted-foreground">{c.operador}</span>
-                      <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-mono">{c.valor}</span>
-                    </div>
-                  ))}
-                  {!readonly && (
-                    <div className="flex gap-2 pt-1">
-                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => toggle(r)}>
-                        {r.activa ? <ToggleRight className="w-3.5 h-3.5 text-emerald-500" /> : <ToggleLeft className="w-3.5 h-3.5 text-muted-foreground" />}
-                        {r.activa ? "Desactivar" : "Activar"}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => { setIsNew(false); setEditing(r); }}>
-                        <Pencil className="w-3.5 h-3.5" />Editar
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => remove(r.id)}>
-                        <Trash2 className="w-3.5 h-3.5" />Eliminar
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
       </div>
     </div>
   );
@@ -2063,7 +1858,6 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "overview",   label: "Vista General", icon: Activity },
   { id: "canales",    label: "Canales",        icon: Globe },
   { id: "colas",      label: "Colas",          icon: Layers },
-  { id: "reglas",     label: "Reglas",         icon: Zap },
   { id: "horarios",   label: "Horarios",       icon: Clock },
   { id: "agentes-ia", label: "Agentes IA",     icon: Bot },
 ];
@@ -2103,9 +1897,8 @@ export function LatOmnicanalConfig({ readonly = false }: Props) {
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {tab === "overview"   && <VistaGeneralTab />}
-        {tab === "canales"    && <CanalesTab    readonly={readonly} onNavigateReglas={() => setTab("reglas")} />}
+        {tab === "canales"    && <CanalesTab    readonly={readonly} />}
         {tab === "colas"      && <ColasTab      readonly={readonly} />}
-        {tab === "reglas"     && <ReglasTab     readonly={readonly} />}
         {tab === "horarios"   && <HorariosTab   readonly={readonly} />}
         {tab === "agentes-ia" && <AgentesIATab  readonly={readonly} />}
       </div>
