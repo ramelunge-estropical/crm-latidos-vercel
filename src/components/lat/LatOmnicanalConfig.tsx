@@ -274,13 +274,18 @@ function VistaGeneralTab() {
 
 function CanalReglasPanel({
   canalId, canalTipo = "whatsapp", colas, readonly,
+  colaDefaultId, onSaveColaDefault,
 }: {
   canalId: string | null; canalTipo?: string; colas: Cola[]; readonly: boolean;
+  colaDefaultId?: string | null;
+  onSaveColaDefault?: (id: string | null) => Promise<void>;
 }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Partial<Regla> | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [colaDraft, setColaDraft] = useState<string | null>(colaDefaultId ?? null);
+  const [savingCola, setSavingCola] = useState(false);
 
   const isGlobalMode = canalId === null;
   const isEmail = canalTipo === "email";
@@ -491,6 +496,29 @@ function CanalReglasPanel({
   // ── List view ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+      {onSaveColaDefault && !isGlobalMode && (
+        <div className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium">Cola fallback</p>
+            <p className="text-[10px] text-muted-foreground">Se aplica cuando ninguna regla coincide</p>
+          </div>
+          <select
+            className="border border-border rounded-lg px-2.5 py-1.5 text-xs bg-background focus:outline-none min-w-0 flex-shrink-0 max-w-[180px]"
+            value={colaDraft || ""}
+            onChange={e => setColaDraft(e.target.value || null)}
+            disabled={readonly}
+          >
+            <option value="">Sin fallback</option>
+            {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </select>
+          {!readonly && (
+            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1" disabled={savingCola}
+              onClick={async () => { setSavingCola(true); await onSaveColaDefault(colaDraft); setSavingCola(false); toast.success("Cola fallback guardada"); }}>
+              <Check className="w-3 h-3" />
+            </Button>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           {reglas.length} regla{reglas.length !== 1 ? "s" : ""} · evaluadas en orden de prioridad
@@ -922,147 +950,86 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
       // ── Detalles ────────────────────────────────────────────────────────────
       if (canalTab === "detalles") {
         if (isGmail) {
+          const tokenBadge = gmailCfg?.gmail_refresh_token
+            ? <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isTokenExpired ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}>{isTokenExpired ? "Expirado" : "Válido"}</span>
+            : <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600">Sin token</span>;
+          const rows: [string, React.ReactNode][] = [
+            ["Correo", gmailCfg?.gmail_email ?? "—"],
+            ["Estado del token", tokenBadge],
+            ...(tokenExpiry ? [["Vence", tokenExpiry.toLocaleString("es-BO")] as [string, React.ReactNode]] : []),
+            ...(gmailCfg?.updated_at ? [["Última sync", new Date(gmailCfg.updated_at).toLocaleString("es-BO")] as [string, React.ReactNode]] : []),
+            ["Tipo de canal", "Gmail / Google Workspace"],
+            ["Proveedor", "Google"],
+          ];
+          const mid = Math.ceil(rows.length / 2);
           return (
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Cuenta</p>
-                <div className="p-4 rounded-xl border border-border bg-card space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Correo</span>
-                    <span className="text-xs font-medium">{gmailCfg?.gmail_email ?? "No disponible"}</span>
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="grid grid-cols-2 divide-x divide-border">
+                {[rows.slice(0, mid), rows.slice(mid)].map((col, ci) => (
+                  <div key={ci} className="p-4 space-y-3">
+                    {col.map(([label, value]) => (
+                      <div key={label}>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
+                        <p className="text-xs font-medium">{value}</p>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Estado del token</span>
-                    {gmailCfg?.gmail_refresh_token
-                      ? <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isTokenExpired ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}>
-                          {isTokenExpired ? "Expirado" : "Válido"}
-                        </span>
-                      : <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600">Sin token</span>
-                    }
-                  </div>
-                  {tokenExpiry && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Vence</span>
-                      <span className="text-xs font-medium">{tokenExpiry.toLocaleString("es-BO")}</span>
-                    </div>
-                  )}
-                  {gmailCfg?.updated_at && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Última actualización</span>
-                      <span className="text-xs font-medium">{new Date(gmailCfg.updated_at).toLocaleString("es-BO")}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Tipo</p>
-                <div className="p-4 rounded-xl border border-border bg-card space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Canal</span>
-                    <span className="text-xs font-medium">Gmail / Google Workspace</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Proveedor</span>
-                    <span className="text-xs font-medium">Google</span>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Asignación por defecto</p>
-                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                  value={gmailColaDraft || ""}
-                  onChange={e => setGmailColaDraft(e.target.value || null)}>
-                  <option value="">Sin cola por defecto</option>
-                  {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
-                <p className="text-[10px] text-muted-foreground">Cola de destino cuando ninguna regla coincida con el correo entrante.</p>
-                {!readonly && (
-                  <Button size="sm" className="gap-1.5 w-full" onClick={() => saveGmailColaDefault(gmailColaDraft)}>
-                    <Check className="w-3.5 h-3.5" />Guardar cola por defecto
-                  </Button>
-                )}
+                ))}
               </div>
             </div>
           );
         }
         // Regular canal
         return (
-          <div className="space-y-5">
-            <div className="space-y-3">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Identificación</p>
-              <div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
                 <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
                 <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
                   value={canalDraft.nombre || ""} onChange={e => setCanalDraft(p => ({ ...p, nombre: e.target.value }))} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
-                  <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                    value={canalDraft.tipo || "whatsapp"} onChange={e => setCanalDraft(p => ({ ...p, tipo: e.target.value }))}>
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="instagram">Instagram</option>
-                    <option value="facebook">Facebook</option>
-                    <option value="email">Email</option>
-                    <option value="web">Web Chat</option>
-                    <option value="interno">Interno</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
-                  <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                    placeholder="+591..." value={canalDraft.numero_origen || ""} onChange={e => setCanalDraft(p => ({ ...p, numero_origen: e.target.value }))} />
-                </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={canalDraft.tipo || "whatsapp"} onChange={e => setCanalDraft(p => ({ ...p, tipo: e.target.value }))}>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="facebook">Facebook</option>
+                  <option value="email">Email</option>
+                  <option value="web">Web Chat</option>
+                  <option value="interno">Interno</option>
+                </select>
               </div>
               <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
+                <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  placeholder="+591..." value={canalDraft.numero_origen || ""} onChange={e => setCanalDraft(p => ({ ...p, numero_origen: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground mb-1 block">Proveedor de conexión</label>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={canalDraft.troncal_id || ""} onChange={e => setCanalDraft(p => ({ ...p, troncal_id: e.target.value || null }))}>
+                  <option value="">Sin proveedor asignado</option>
+                  {troncales.map(t => (
+                    <option key={t.id} value={t.id}>{t.nombre} — {t.proveedor}{t.numero ? ` · ${t.numero}` : ""}</option>
+                  ))}
+                </select>
+              </div>
+              {currentTroncal && (
+                <div className="col-span-2 grid grid-cols-3 gap-2 p-3 rounded-xl border border-border bg-card/50">
+                  <div><p className="text-[10px] text-muted-foreground">Proveedor</p><p className="text-xs font-medium">{currentTroncal.proveedor}</p></div>
+                  {currentTroncal.numero && <div><p className="text-[10px] text-muted-foreground">Número</p><p className="text-xs font-medium">{currentTroncal.numero}</p></div>}
+                  <div><p className="text-[10px] text-muted-foreground">Estado</p><ConnStatus activo={currentTroncal.activo} /></div>
+                </div>
+              )}
+              <div className="col-span-2">
                 <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
                 <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
                   value={canalDraft.descripcion || ""} onChange={e => setCanalDraft(p => ({ ...p, descripcion: e.target.value }))} />
               </div>
             </div>
-            <div className="space-y-3">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Proveedor de conexión</p>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={canalDraft.troncal_id || ""} onChange={e => setCanalDraft(p => ({ ...p, troncal_id: e.target.value || null }))}>
-                <option value="">Sin proveedor asignado</option>
-                {troncales.map(t => (
-                  <option key={t.id} value={t.id}>{t.nombre} — {t.proveedor}{t.numero ? ` · ${t.numero}` : ""}</option>
-                ))}
-              </select>
-              {currentTroncal && (
-                <div className="p-3 rounded-xl border border-border bg-card space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Proveedor</span>
-                    <span className="text-xs font-medium">{currentTroncal.proveedor}</span>
-                  </div>
-                  {currentTroncal.numero && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Número</span>
-                      <span className="text-xs font-medium">{currentTroncal.numero}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Estado del proveedor</span>
-                    <ConnStatus activo={currentTroncal.activo} />
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="space-y-3">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Asignación por defecto</p>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Cola por defecto</label>
-                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                  value={canalDraft.cola_default_id || ""}
-                  onChange={e => setCanalDraft(p => ({ ...p, cola_default_id: e.target.value || null }))}>
-                  <option value="">Sin cola por defecto</option>
-                  {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                </select>
-                <p className="text-[10px] text-muted-foreground mt-1">Cola de destino cuando ninguna regla coincida con la comunicación entrante.</p>
-              </div>
-            </div>
             {!readonly && (
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2">
                 <Button size="sm" onClick={saveCanal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
                 <Button size="sm" variant="ghost" onClick={closeEdit}><X className="w-3.5 h-3.5" /></Button>
               </div>
@@ -1085,11 +1052,27 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
         if (!canalIdForRules) {
           return (
             <p className="text-xs text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">
-              {isGmail ? "Abre Detalles y guarda la cola por defecto para activar las reglas de este canal." : "No se pudo determinar el ID del canal."}
+              {isGmail ? "No se encontró el canal Gmail. Abre Detalles para inicializarlo." : "No se pudo determinar el ID del canal."}
             </p>
           );
         }
-        return <CanalReglasPanel canalId={canalIdForRules} canalTipo={canalTipoForRules} colas={colas} readonly={readonly} />;
+        const colaDefaultForRules = isGmail ? gmailColaDraft : (canalDraft.cola_default_id ?? null);
+        const saveColaDefaultForRules = isGmail
+          ? saveGmailColaDefault
+          : async (id: string | null) => {
+              await db().from("lat_canales").update({ cola_default_id: id }).eq("id", canalDraft.id);
+              setCanalDraft(p => ({ ...p, cola_default_id: id }));
+            };
+        return (
+          <CanalReglasPanel
+            canalId={canalIdForRules}
+            canalTipo={canalTipoForRules}
+            colas={colas}
+            readonly={readonly}
+            colaDefaultId={colaDefaultForRules}
+            onSaveColaDefault={saveColaDefaultForRules}
+          />
+        );
       }
 
       // ── Conexión ────────────────────────────────────────────────────────────
@@ -1211,7 +1194,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     return (
       <div className="flex flex-col h-full">
         {editHeader}
-        <div className="flex-1 overflow-auto p-6 max-w-lg">
+        <div className="flex-1 overflow-auto p-6">
           {renderTabContent()}
         </div>
       </div>
