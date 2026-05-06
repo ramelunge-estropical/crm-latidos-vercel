@@ -6,7 +6,7 @@ import {
   Check, X, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
   AlertCircle, Zap, DollarSign, Star, HelpCircle, Bus, Plane,
   FileText, Users, Briefcase, BarChart3, Bot, Activity, MessageSquare,
-  Mail, Wifi, WifiOff, ChevronRight, RefreshCw, LogOut, ChevronLeft,
+  Mail, Wifi, WifiOff, ChevronRight, RefreshCw, LogOut, ChevronLeft, Search,
 } from "lucide-react";
 import { LatBotConfig } from "./LatBotConfig";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,21 @@ interface Cola {
   estrategia_asignacion: string; max_conversaciones_agente: number;
   activa: boolean; orden: number; color: string; icono: string | null;
   horario_id: string | null;
+  tiempo_reserva_comunicacion: number; tiempo_reserva_mensajes: number;
+  tiempo_redistribucion: number; redistribuir_ausentes: boolean;
+  auto_tipificacion_ausentes: boolean;
+  desborde_activo: boolean; desborde_cola_id: string | null;
+  desborde_tiempo_espera: number; desborde_condiciones: string[];
+  desborde_registrar: boolean;
+  // Owner e intervención
+  owner_auto_asignar: boolean;
+  owner_nivel: "por_cliente" | "por_conversacion";
+  owner_last_user_activo: boolean;
+  owner_last_user_dias: number;
+  supervisor_puede_intervenir: boolean;
+  supervisor_puede_transferir: boolean;
+  permite_reasignacion_manual: boolean;
+  owner_registrar_trazabilidad: boolean;
 }
 
 interface ColaMiembro {
@@ -1427,10 +1442,119 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
 
 const ESTRATEGIA_LABELS: Record<string, string> = {
   round_robin:        "Round Robin",
-  menos_carga:        "Menos carga",
-  primero_disponible: "Primer disponible",
-  manual:             "Manual",
+  menos_carga:        "Menor carga",
+  prioridad_usuario:  "Prioridad por usuario",
+  ultimo_asesor:      "Last user / Último asesor",
+  owner_asignado:     "Owner asignado",
+  manual_supervisor:  "Manual por supervisor",
+  bot_primero:        "Bot / Agente IA antes de asesor",
 };
+
+const DESBORDE_CONDICIONES = [
+  { value: "sin_asesores",     label: "Cola sin asesores disponibles" },
+  { value: "tiempo_espera",    label: "Tiempo máximo de espera superado" },
+  { value: "capacidad_maxima", label: "Capacidad máxima alcanzada" },
+  { value: "fuera_horario",    label: "Fuera de horario" },
+  { value: "prioridad_alta",   label: "Prioridad alta" },
+];
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest pb-1.5 border-b border-border/50">
+      {children}
+    </p>
+  );
+}
+
+function UserMenuSelector({
+  colaboradores, selected, onChangeSelected, placeholder, badgeClass,
+}: {
+  colaboradores: Colaborador[];
+  selected: Set<string>;
+  onChangeSelected: (next: Set<string>) => void;
+  placeholder: string;
+  badgeClass: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filtered = colaboradores.filter(c =>
+    c.nombre.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const toggle = (id: string, checked: boolean) => {
+    const n = new Set(selected);
+    checked ? n.add(id) : n.delete(id);
+    onChangeSelected(n);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className="w-full flex items-start justify-between border border-border rounded-lg px-3 py-2 text-sm bg-background hover:bg-accent/20 text-left min-h-[38px]"
+      >
+        <span className="flex flex-wrap gap-1 flex-1 mr-2">
+          {selected.size === 0
+            ? <span className="text-muted-foreground/60 text-xs self-center">{placeholder}</span>
+            : [...selected].map(id => {
+                const col = colaboradores.find(c => c.id === id);
+                return col ? (
+                  <span key={id} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border ${badgeClass}`}>
+                    {col.nombre}
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); toggle(id, false); }}
+                      className="leading-none hover:opacity-60"
+                    >×</button>
+                  </span>
+                ) : null;
+              })
+          }
+        </span>
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+      </button>
+      {open && (
+        <div className="absolute z-20 top-full left-0 right-0 mt-1 border border-border rounded-lg bg-background shadow-lg">
+          <div className="p-2 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+              <input
+                autoFocus
+                className="w-full pl-6 pr-2 py-1 text-xs border border-border rounded bg-muted focus:outline-none"
+                placeholder="Buscar..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto max-h-48">
+            {filtered.map(col => (
+              <label key={col.id} className="flex items-center gap-2 px-3 py-2 hover:bg-accent/30 cursor-pointer text-xs">
+                <input
+                  type="checkbox"
+                  checked={selected.has(col.id)}
+                  onChange={e => toggle(col.id, e.target.checked)}
+                />
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                  style={{ backgroundColor: col.color }}
+                >
+                  {col.nombre.slice(0, 2).toUpperCase()}
+                </span>
+                <span className="flex-1 truncate">{col.nombre}</span>
+              </label>
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-3">Sin resultados</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ColasTab({ readonly }: { readonly: boolean }) {
   const qc = useQueryClient();
@@ -1450,7 +1574,7 @@ function ColasTab({ readonly }: { readonly: boolean }) {
   const { data: canales = [] } = useQuery<Canal[]>({
     queryKey: ["lat_canales"],
     queryFn: async () => {
-      const { data } = await db().from("lat_canales").select("id, nombre, tipo").order("nombre");
+      const { data } = await db().from("lat_canales").select("id, nombre, tipo, activo").order("nombre");
       return data || [];
     },
   });
@@ -1523,14 +1647,83 @@ function ColasTab({ readonly }: { readonly: boolean }) {
       setDraftSupervisores(new Set(existing.filter(m => m.rol === "supervisor").map(m => m.colaborador_id)));
     } else {
       setIsNew(true);
-      setEditing({ activa: true, estrategia_asignacion: "round_robin", max_conversaciones_agente: 5, color: "#6366f1" });
+      setEditing({
+        activa: true, estrategia_asignacion: "round_robin", max_conversaciones_agente: 5, color: "#6366f1",
+        tiempo_reserva_comunicacion: 0, tiempo_reserva_mensajes: 0, tiempo_redistribucion: 0,
+        redistribuir_ausentes: false, auto_tipificacion_ausentes: false,
+        desborde_activo: false, desborde_cola_id: null, desborde_tiempo_espera: 5,
+        desborde_condiciones: [], desborde_registrar: true,
+        owner_auto_asignar: false, owner_nivel: "por_conversacion",
+        owner_last_user_activo: false, owner_last_user_dias: 30,
+        supervisor_puede_intervenir: true, supervisor_puede_transferir: true,
+        permite_reasignacion_manual: true, owner_registrar_trazabilidad: true,
+      });
       setDraftAgentes(new Set());
       setDraftSupervisores(new Set());
     }
   };
 
   const save = async () => {
-    if (!editing || !editing.nombre?.trim()) return;
+    if (!editing) return;
+
+    // ── Validaciones ────────────────────────────────────────────────────────
+    if (!editing.nombre?.trim()) {
+      toast.error("El nombre de la cola es obligatorio");
+      return;
+    }
+    const maxConv = editing.max_conversaciones_agente ?? 0;
+    if (!Number.isInteger(maxConv) || maxConv < 1) {
+      toast.error("La capacidad máxima por usuario debe ser un número entero mayor a cero");
+      return;
+    }
+    const tiempos = [
+      { campo: "Reserva de comunicación", valor: editing.tiempo_reserva_comunicacion },
+      { campo: "Reserva de mensajes", valor: editing.tiempo_reserva_mensajes },
+      { campo: "Tiempo de redistribución", valor: editing.tiempo_redistribucion },
+    ];
+    for (const t of tiempos) {
+      if (t.valor !== undefined && t.valor !== null && (!Number.isInteger(t.valor) || t.valor < 0)) {
+        toast.error(`${t.campo}: debe ser un número entero en minutos (≥ 0)`);
+        return;
+      }
+    }
+    if (editing.desborde_activo) {
+      if (!editing.desborde_cola_id) {
+        toast.error("Desborde activo: debe seleccionar una cola destino");
+        return;
+      }
+      if (editing.desborde_cola_id === editing.id) {
+        toast.error("La cola de desborde no puede ser la misma cola");
+        return;
+      }
+      const tiempoDesborde = editing.desborde_tiempo_espera ?? 0;
+      if (!Number.isInteger(tiempoDesborde) || tiempoDesborde < 1) {
+        toast.error("El tiempo de espera antes de desborde debe ser mayor a cero");
+        return;
+      }
+    }
+    const tieneBotDestino = editing.estrategia_asignacion === "bot_primero";
+    if (editing.activa && draftAgentes.size === 0 && !tieneBotDestino) {
+      toast.error("No se puede activar la cola sin usuarios asignados (a menos que use Bot / Agente IA como estrategia)");
+      return;
+    }
+    const canalActivosIds = new Set(canales.filter(c => c.activo).map(c => c.id));
+    if (editing.canal_id && !canalActivosIds.has(editing.canal_id)) {
+      toast.error("El canal entrante seleccionado está inactivo");
+      return;
+    }
+    if (editing.canal_saliente_id && !canalActivosIds.has(editing.canal_saliente_id)) {
+      toast.error("El canal saliente seleccionado está inactivo");
+      return;
+    }
+    if (editing.owner_last_user_activo) {
+      const dias = editing.owner_last_user_dias ?? 0;
+      if (!Number.isInteger(dias) || dias < 1) {
+        toast.error("Los días de vigencia del last user deben ser un número entero mayor a cero");
+        return;
+      }
+    }
+    // ── Payload ─────────────────────────────────────────────────────────────
     const payload = {
       nombre: editing.nombre,
       descripcion: editing.descripcion || null,
@@ -1539,10 +1732,28 @@ function ColasTab({ readonly }: { readonly: boolean }) {
       canal_saliente_id: editing.canal_saliente_id || null,
       horario_id: editing.horario_id || null,
       estrategia_asignacion: editing.estrategia_asignacion || "round_robin",
-      max_conversaciones_agente: editing.max_conversaciones_agente || 5,
+      max_conversaciones_agente: maxConv,
       activa: editing.activa ?? true,
       color: editing.color || "#6366f1",
       icono: editing.icono || null,
+      tiempo_reserva_comunicacion: editing.tiempo_reserva_comunicacion ?? 0,
+      tiempo_reserva_mensajes: editing.tiempo_reserva_mensajes ?? 0,
+      tiempo_redistribucion: editing.tiempo_redistribucion ?? 0,
+      redistribuir_ausentes: editing.redistribuir_ausentes ?? false,
+      auto_tipificacion_ausentes: editing.auto_tipificacion_ausentes ?? false,
+      desborde_activo: editing.desborde_activo ?? false,
+      desborde_cola_id: editing.desborde_activo ? (editing.desborde_cola_id || null) : null,
+      desborde_tiempo_espera: editing.desborde_tiempo_espera ?? 5,
+      desborde_condiciones: editing.desborde_condiciones ?? [],
+      desborde_registrar: editing.desborde_registrar ?? true,
+      owner_auto_asignar: editing.owner_auto_asignar ?? false,
+      owner_nivel: editing.owner_nivel ?? "por_conversacion",
+      owner_last_user_activo: editing.owner_last_user_activo ?? false,
+      owner_last_user_dias: editing.owner_last_user_activo ? (editing.owner_last_user_dias ?? 30) : 30,
+      supervisor_puede_intervenir: editing.supervisor_puede_intervenir ?? true,
+      supervisor_puede_transferir: editing.supervisor_puede_transferir ?? true,
+      permite_reasignacion_manual: editing.permite_reasignacion_manual ?? true,
+      owner_registrar_trazabilidad: editing.owner_registrar_trazabilidad ?? true,
     };
     let colaId = editing.id;
     if (isNew) {
@@ -1582,8 +1793,9 @@ function ColasTab({ readonly }: { readonly: boolean }) {
 
   // ── FORM ──────────────────────────────────────────────────────────────────
   if (editing) {
+    const inp = "w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30";
     return (
-      <div className="p-6 space-y-5 max-w-2xl">
+      <div className="p-6 space-y-6 max-w-3xl overflow-y-auto">
         <div className="flex items-center gap-3">
           <button onClick={() => setEditing(null)} className="p-1.5 rounded hover:bg-accent transition-colors">
             <ChevronLeft className="w-4 h-4 text-muted-foreground" />
@@ -1591,115 +1803,281 @@ function ColasTab({ readonly }: { readonly: boolean }) {
           <h3 className="font-semibold text-sm">{isNew ? "Nueva cola" : `Editar: ${editing.nombre}`}</h3>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-            <input
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={editing.nombre || ""}
-              onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Área</label>
-            <input
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={editing.area || ""}
-              onChange={e => setEditing(p => ({ ...p, area: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Color</label>
-            <div className="flex gap-2">
-              <input type="color" className="w-10 h-9 border border-border rounded-lg cursor-pointer"
-                value={editing.color || "#6366f1"}
-                onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
-              <input className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.color || "#6366f1"}
-                onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
+        {/* ── Datos básicos */}
+        <div className="space-y-3">
+          <SectionTitle>Datos básicos</SectionTitle>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+              <input className={inp} value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Área</label>
+              <input className={inp} value={editing.area || ""} onChange={e => setEditing(p => ({ ...p, area: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Color</label>
+              <div className="flex gap-2">
+                <input type="color" className="w-10 h-9 border border-border rounded-lg cursor-pointer"
+                  value={editing.color || "#6366f1"} onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
+                <input className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={editing.color || "#6366f1"} onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
+              <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
+                value={editing.descripcion || ""} onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))} />
             </div>
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Canal entrante</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.canal_id || ""}
-              onChange={e => setEditing(p => ({ ...p, canal_id: e.target.value || null }))}>
-              <option value="">Sin canal</option>
-              {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Canal saliente</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.canal_saliente_id || ""}
-              onChange={e => setEditing(p => ({ ...p, canal_saliente_id: e.target.value || null }))}>
-              <option value="">Sin canal</option>
-              {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Estrategia</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.estrategia_asignacion || "round_robin"}
-              onChange={e => setEditing(p => ({ ...p, estrategia_asignacion: e.target.value }))}>
-              {Object.entries(ESTRATEGIA_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Máx. conv/agente</label>
-            <input type="number" min={1} max={50}
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.max_conversaciones_agente || 5}
-              onChange={e => setEditing(p => ({ ...p, max_conversaciones_agente: parseInt(e.target.value) || 5 }))} />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Horario</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.horario_id || ""}
-              onChange={e => setEditing(p => ({ ...p, horario_id: e.target.value || null }))}>
-              <option value="">Sin horario</option>
-              {horarios.map(h => <option key={h.id} value={h.id}>{h.nombre}</option>)}
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
-            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
-              value={editing.descripcion || ""}
-              onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))} />
+        </div>
+
+        {/* ── Canales */}
+        <div className="space-y-3">
+          <SectionTitle>Canales</SectionTitle>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Canal entrante</label>
+              <select className={inp} value={editing.canal_id || ""}
+                onChange={e => setEditing(p => ({ ...p, canal_id: e.target.value || null }))}>
+                <option value="">Sin canal</option>
+                {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Canal saliente</label>
+              <select className={inp} value={editing.canal_saliente_id || ""}
+                onChange={e => setEditing(p => ({ ...p, canal_saliente_id: e.target.value || null }))}>
+                <option value="">Sin canal</option>
+                {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
           </div>
         </div>
 
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">Agentes asignados</p>
-          <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
-            {colaboradores.map(col => (
-              <label key={col.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent/30 cursor-pointer text-xs">
-                <input type="checkbox" checked={draftAgentes.has(col.id)}
-                  onChange={e => setDraftAgentes(prev => {
-                    const next = new Set(prev);
-                    e.target.checked ? next.add(col.id) : next.delete(col.id);
-                    return next;
-                  })} />
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
-                {col.nombre}
+        {/* ── Usuarios asignados */}
+        <div className="space-y-3">
+          <SectionTitle>Usuarios asignados</SectionTitle>
+          <UserMenuSelector
+            colaboradores={colaboradores}
+            selected={draftAgentes}
+            onChangeSelected={setDraftAgentes}
+            placeholder="Seleccionar agentes..."
+            badgeClass="bg-primary/10 text-primary border-primary/20"
+          />
+        </div>
+
+        {/* ── Supervisores */}
+        <div className="space-y-3">
+          <SectionTitle>Supervisores</SectionTitle>
+          <UserMenuSelector
+            colaboradores={colaboradores}
+            selected={draftSupervisores}
+            onChangeSelected={setDraftSupervisores}
+            placeholder="Seleccionar supervisores..."
+            badgeClass="bg-amber-50 text-amber-700 border-amber-200"
+          />
+        </div>
+
+        {/* ── Horario */}
+        <div className="space-y-3">
+          <SectionTitle>Horario</SectionTitle>
+          <select className={inp} value={editing.horario_id || ""}
+            onChange={e => setEditing(p => ({ ...p, horario_id: e.target.value || null }))}>
+            <option value="">Sin horario</option>
+            {horarios.map(h => <option key={h.id} value={h.id}>{h.nombre}</option>)}
+          </select>
+        </div>
+
+        {/* ── Estrategia de asignación */}
+        <div className="space-y-3">
+          <SectionTitle>Estrategia de asignación</SectionTitle>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Estrategia</label>
+              <select className={inp} value={editing.estrategia_asignacion || "round_robin"}
+                onChange={e => setEditing(p => ({ ...p, estrategia_asignacion: e.target.value }))}>
+                {Object.entries(ESTRATEGIA_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Máx. conv por usuario</label>
+              <input type="number" min={1} max={50} className={inp}
+                value={editing.max_conversaciones_agente || 5}
+                onChange={e => setEditing(p => ({ ...p, max_conversaciones_agente: parseInt(e.target.value) || 5 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Reserva de comunicación (min)</label>
+              <input type="number" min={0} className={inp}
+                value={editing.tiempo_reserva_comunicacion ?? 0}
+                onChange={e => setEditing(p => ({ ...p, tiempo_reserva_comunicacion: parseInt(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Reserva de mensajes (min)</label>
+              <input type="number" min={0} className={inp}
+                value={editing.tiempo_reserva_mensajes ?? 0}
+                onChange={e => setEditing(p => ({ ...p, tiempo_reserva_mensajes: parseInt(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Redistribución si ausente (min)</label>
+              <input type="number" min={0} className={inp}
+                value={editing.tiempo_redistribucion ?? 0}
+                onChange={e => setEditing(p => ({ ...p, tiempo_redistribucion: parseInt(e.target.value) || 0 }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={editing.redistribuir_ausentes ?? false}
+                onChange={e => setEditing(p => ({ ...p, redistribuir_ausentes: e.target.checked }))} />
+              <span className="text-xs leading-relaxed">
+                <span className="font-medium block">Redistribuir ausentes</span>
+                <span className="text-muted-foreground">Reasignar conv. de usuarios ausentes automáticamente</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={editing.auto_tipificacion_ausentes ?? false}
+                onChange={e => setEditing(p => ({ ...p, auto_tipificacion_ausentes: e.target.checked }))} />
+              <span className="text-xs leading-relaxed">
+                <span className="font-medium block">Notificación por ausencia</span>
+                <span className="text-muted-foreground">Notificar / auto-tipificar cuando llegue mensaje a usuario ausente</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* ── Desborde */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <SectionTitle>Desborde</SectionTitle>
+            <label className="flex items-center gap-2 cursor-pointer ml-2 pb-1.5">
+              <input type="checkbox" checked={editing.desborde_activo ?? false}
+                onChange={e => setEditing(p => ({ ...p, desborde_activo: e.target.checked }))} />
+              <span className={`text-xs font-medium ${editing.desborde_activo ? "text-orange-600" : "text-muted-foreground"}`}>
+                {editing.desborde_activo ? "Activo" : "Inactivo"}
+              </span>
+            </label>
+          </div>
+          {editing.desborde_activo && (
+            <div className="space-y-3 pl-3 border-l-2 border-orange-300/60">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Cola destino de desborde</label>
+                  <select className={inp} value={editing.desborde_cola_id || ""}
+                    onChange={e => setEditing(p => ({ ...p, desborde_cola_id: e.target.value || null }))}>
+                    <option value="">Sin cola destino</option>
+                    {colas.filter(c => c.id !== editing.id).map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Tiempo de espera antes de desborde (min)</label>
+                  <input type="number" min={1} className={inp}
+                    value={editing.desborde_tiempo_espera ?? 5}
+                    onChange={e => setEditing(p => ({ ...p, desborde_tiempo_espera: parseInt(e.target.value) || 5 }))} />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Condiciones que activan el desborde</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {DESBORDE_CONDICIONES.map(cond => (
+                    <label key={cond.value} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer text-xs">
+                      <input type="checkbox"
+                        checked={(editing.desborde_condiciones ?? []).includes(cond.value)}
+                        onChange={e => setEditing(p => {
+                          const curr = p.desborde_condiciones ?? [];
+                          return { ...p, desborde_condiciones: e.target.checked ? [...curr, cond.value] : curr.filter(v => v !== cond.value) };
+                        })} />
+                      {cond.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs">
+                <input type="checkbox" checked={editing.desborde_registrar ?? true}
+                  onChange={e => setEditing(p => ({ ...p, desborde_registrar: e.target.checked }))} />
+                <span>Registrar en la comunicación si fue desbordada y desde qué cola</span>
               </label>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
 
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">Supervisores asignados</p>
-          <div className="grid grid-cols-2 gap-1.5 max-h-32 overflow-y-auto pr-1">
-            {colaboradores.map(col => (
-              <label key={col.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent/30 cursor-pointer text-xs">
-                <input type="checkbox" checked={draftSupervisores.has(col.id)}
-                  onChange={e => setDraftSupervisores(prev => {
-                    const next = new Set(prev);
-                    e.target.checked ? next.add(col.id) : next.delete(col.id);
-                    return next;
-                  })} />
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
-                {col.nombre}
+        {/* ── Owner e intervención */}
+        <div className="space-y-3">
+          <SectionTitle>Owner e intervención</SectionTitle>
+
+          {/* Asignación automática de owner */}
+          <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+            <input type="checkbox" className="mt-0.5" checked={editing.owner_auto_asignar ?? false}
+              onChange={e => setEditing(p => ({ ...p, owner_auto_asignar: e.target.checked }))} />
+            <span className="text-xs leading-relaxed">
+              <span className="font-medium block">Asignación automática de owner</span>
+              <span className="text-muted-foreground">El primer asesor que atiende la comunicación queda como owner</span>
+            </span>
+          </label>
+
+          {/* Nivel de owner */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Mantener owner por</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["por_conversacion", "por_cliente"] as const).map(nivel => (
+                <label key={nivel} className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer text-xs transition-colors ${
+                  (editing.owner_nivel ?? "por_conversacion") === nivel
+                    ? "border-primary/40 bg-primary/5"
+                    : "border-border hover:bg-accent/20"
+                }`}>
+                  <input type="radio" name="owner_nivel" className="mt-0.5"
+                    checked={(editing.owner_nivel ?? "por_conversacion") === nivel}
+                    onChange={() => setEditing(p => ({ ...p, owner_nivel: nivel }))} />
+                  <span>
+                    <span className="font-medium block">{nivel === "por_conversacion" ? "Por conversación" : "Por cliente"}</span>
+                    <span className="text-muted-foreground">
+                      {nivel === "por_conversacion"
+                        ? "Cada conversación puede tener un owner distinto"
+                        : "El owner del cliente se mantiene en todas sus conversaciones"}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Last user */}
+          <div className="space-y-2">
+            <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={editing.owner_last_user_activo ?? false}
+                onChange={e => setEditing(p => ({ ...p, owner_last_user_activo: e.target.checked }))} />
+              <span className="text-xs leading-relaxed">
+                <span className="font-medium block">Regla de last user</span>
+                <span className="text-muted-foreground">Asignar automáticamente al último asesor que atendió al cliente</span>
+              </span>
+            </label>
+            {editing.owner_last_user_activo && (
+              <div className="pl-3 border-l-2 border-primary/30">
+                <label className="text-xs text-muted-foreground mb-1 block">Vigencia del last user (días)</label>
+                <input type="number" min={1} className={inp}
+                  value={editing.owner_last_user_dias ?? 30}
+                  onChange={e => setEditing(p => ({ ...p, owner_last_user_dias: parseInt(e.target.value) || 30 }))} />
+              </div>
+            )}
+          </div>
+
+          {/* Intervención y reasignación */}
+          <div className="grid grid-cols-1 gap-2">
+            {([
+              { key: "supervisor_puede_intervenir",  label: "Permitir intervención de supervisor",   desc: "El supervisor puede unirse o tomar el control de una conversación activa" },
+              { key: "supervisor_puede_transferir",  label: "Permitir transferencia entre asesores", desc: "Los asesores pueden transferir conversaciones a otro asesor de la cola" },
+              { key: "permite_reasignacion_manual",  label: "Permitir reasignación manual",          desc: "Un supervisor o administrador puede cambiar el asesor asignado manualmente" },
+              { key: "owner_registrar_trazabilidad", label: "Registrar trazabilidad de owner",       desc: "Guarda owner original, owner actual y usuario que intervino o reasignó" },
+            ] as const).map(({ key, label, desc }) => (
+              <label key={key} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+                <input type="checkbox" className="mt-0.5"
+                  checked={(editing as any)[key] ?? true}
+                  onChange={e => setEditing(p => ({ ...p, [key]: e.target.checked }))} />
+                <span className="text-xs leading-relaxed">
+                  <span className="font-medium block">{label}</span>
+                  <span className="text-muted-foreground">{desc}</span>
+                </span>
               </label>
             ))}
           </div>
@@ -1794,6 +2172,26 @@ function ColasTab({ readonly }: { readonly: boolean }) {
                 <span className="px-2 py-0.5 rounded-full text-[10px] bg-muted text-muted-foreground border border-border">
                   Máx {cola.max_conversaciones_agente} conv/agente
                 </span>
+                {cola.owner_auto_asignar && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-violet-500/10 text-violet-600 border border-violet-200">
+                    Owner auto
+                  </span>
+                )}
+                {cola.owner_last_user_activo && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-sky-500/10 text-sky-600 border border-sky-200">
+                    Last user {cola.owner_last_user_dias}d
+                  </span>
+                )}
+                {cola.owner_nivel === "por_cliente" && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-teal-500/10 text-teal-600 border border-teal-200">
+                    Owner por cliente
+                  </span>
+                )}
+                {!cola.supervisor_puede_intervenir && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-500/10 text-red-600 border border-red-200">
+                    Sin intervención
+                  </span>
+                )}
               </div>
               {/* people */}
               <div className="flex items-start gap-4 px-4 py-2 border-b border-border/50 text-[11px] flex-wrap">
