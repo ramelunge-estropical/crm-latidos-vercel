@@ -41,6 +41,23 @@ export interface LatConversacion {
   cola_area_nombre?: string | null;
   cola_id?: string | null;
   troncal_id?: string | null;
+  // Canal y regla de enrutamiento
+  canal_id_fk?: string | null;
+  canal_entrante_id?: string | null;
+  regla_aplicada_id?: string | null;
+  // Asignación pipeline
+  estado_asignacion?: string | null;
+  motivo_no_asignada?: string | null;
+  agente_disponibilidad_snap?: string | null;
+  owner_original_id?: string | null;
+  owner_actual_id?: string | null;
+  desborde_aplicado?: boolean;
+  cola_desborde_id?: string | null;
+  // Timestamps de transición
+  ts_regla_aplicada?: string | null;
+  ts_cola_asignada?: string | null;
+  ts_agente_asignado?: string | null;
+  ts_desborde?: string | null;
   // IA fields
   intencion_detectada?: string | null;
   urgencia_detectada?: string | null;

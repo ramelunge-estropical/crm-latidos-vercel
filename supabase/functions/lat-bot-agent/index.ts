@@ -308,6 +308,21 @@ async function saveMensajeSistema(convId: string, contenido: string) {
   });
 }
 
+// ─── Assign engine trigger ────────────────────────────────────────────────────
+
+function triggerAssignEngine(convId: string) {
+  const url = `${SUPABASE_URL}/functions/v1/lat-assign-engine`;
+  const promise = fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${SERVICE_KEY}`,
+      "Content-Type":  "application/json",
+    },
+    body: JSON.stringify({ conversacion_id: convId }),
+  }).catch(err => console.error("[bot] assign-engine trigger error:", err));
+  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
+}
+
 // ─── Gupshup send ─────────────────────────────────────────────────────────────
 
 async function sendWhatsApp(telefono: string, texto: string, convId: string) {
@@ -448,15 +463,18 @@ Deno.serve(async (req: Request) => {
     if (turno >= (botCfg?.max_turnos ?? MAX_TURNS)) {
       const cola = await getColaByNombre("Frontdesk Vacacional");
       await updateConversacion(conversacion_id, {
-        bot_estado: "handed_off",
-        cola_id:    cola?.id ?? null,
-        estado:     "en_cola",
+        bot_estado:        "handed_off",
+        cola_id:           cola?.id ?? null,
+        estado:            "en_cola",
+        estado_asignacion: "en_cola",
+        ts_cola_asignada:  new Date().toISOString(),
       });
       await sendWhatsApp(
         conv.telefono ?? telefono,
         "Ya te estoy conectando con uno de nuestros asesores, que van a poder ayudarte mejor. ¡Gracias por tu paciencia! 🙏",
         conversacion_id,
       );
+      if (cola?.id) triggerAssignEngine(conversacion_id);
       return new Response("max turns handed off", { status: 200 });
     }
 
@@ -633,11 +651,13 @@ Deno.serve(async (req: Request) => {
       const finalCtx = { ...newCtx, fase: "finalizado" };
 
       await updateConversacion(conversacion_id, {
-        bot_estado:   "handed_off",
-        bot_contexto: finalCtx,
-        bot_turnos:   turno + 1,
-        cola_id:      cola?.id ?? null,
-        estado:       "en_cola",
+        bot_estado:        "handed_off",
+        bot_contexto:      finalCtx,
+        bot_turnos:        turno + 1,
+        cola_id:           cola?.id ?? null,
+        estado:            "en_cola",
+        estado_asignacion: "en_cola",
+        ts_cola_asignada:  new Date().toISOString(),
       });
 
       // Auto-create gestión with full context
@@ -646,6 +666,9 @@ Deno.serve(async (req: Request) => {
 
       const msg = handoffMsg || "Ya te comunico con un asesor especializado. ¡Gracias por contactarnos! 🌍";
       await sendWhatsApp(telefDest, msg, conversacion_id);
+
+      // Trigger assign engine to pick available agent from the queue
+      if (cola?.id) triggerAssignEngine(conversacion_id);
     } else {
       // 10. Update context
       await updateConversacion(conversacion_id, {
