@@ -1135,6 +1135,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
                 cola_default_id: tipo === "cola" ? id : null,
                 bot_default_id:  tipo === "bot"  ? id : null,
               }));
+              qc.invalidateQueries({ queryKey: ["lat_canales"] });
             };
         return (
           <CanalReglasPanel
