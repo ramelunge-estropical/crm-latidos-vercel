@@ -82,6 +82,25 @@ const Index = () => {
         window.history.replaceState({}, "", "/");
       }
 
+      // Si hay sesión Google activa, re-sincronizar siempre el colaboradorId
+      // para reparar sessions corrompidas por el selector de MisGestiones
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession?.user?.email) {
+        const { data: colab } = await (supabase as any)
+          .from("colaboradores")
+          .select("id, activo")
+          .ilike("email", existingSession.user.email)
+          .single();
+        if (colab && colab.activo !== false) {
+          const expiry = Date.now() + 8 * 60 * 60 * 1000;
+          localStorage.setItem("mis_gestiones_colaborador", colab.id);
+          localStorage.setItem("crm_session_expiry", String(expiry));
+          setIsLoggedIn(true);
+          setAuthReady(true);
+          return;
+        }
+      }
+
       const colabId  = localStorage.getItem("mis_gestiones_colaborador");
       const expiry   = localStorage.getItem("crm_session_expiry");
       const valid    = colabId && expiry && Date.now() < parseInt(expiry);

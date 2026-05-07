@@ -79,9 +79,7 @@ export function MisGestionesView() {
   // Default al primer colaborador activo si no hay sesión activa en localStorage
   useEffect(() => {
     if (!colaboradorId && colaboradores.length > 0) {
-      const first = colaboradores[0];
-      setColaboradorId(first.id);
-      localStorage.setItem("mis_gestiones_colaborador", first.id);
+      setColaboradorId(colaboradores[0].id);
     }
   }, [colaboradores, colaboradorId]);
 
@@ -147,7 +145,6 @@ export function MisGestionesView() {
 
   const handleSelectColab = (id: string) => {
     setColaboradorId(id);
-    localStorage.setItem("mis_gestiones_colaborador", id);
   };
 
   const handleMarkDone = async (gestionId: string) => {

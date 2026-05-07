@@ -464,16 +464,16 @@ export function useReasignarConversacion() {
 }
 
 // ── useLatBandeja ─────────────────────────────────────────────────────────────
-// Bandeja de conversaciones con filtro por rol del usuario logueado.
-// Colaborador → solo sus conversaciones asignadas.
-// Supervisor/Admin → todas las conversaciones activas.
+// Bandeja INDIVIDUAL del usuario logueado.
+// Todos los roles (colaborador, supervisor, admin) ven únicamente sus propias
+// conversaciones: responsable_id = colaboradorId del usuario autenticado.
+// Para la vista global de la cola, los supervisores usan el Dashboard.
 
 export function useLatBandeja(
   colaboradorId: string,
   rol: string,
 ) {
   const queryClient = useQueryClient();
-  const isSupervisor = rol === "admin" || rol === "supervisor";
 
   const { data, isLoading, error } = useQuery<LatConversacion[]>({
     queryKey: ["lat_bandeja", colaboradorId, rol],
@@ -490,23 +490,14 @@ export function useLatBandeja(
           return mockConvs.map(adaptMockConv);
         }
 
-        // Modo real: filtrar según rol
-        let query = (supabase as any)
+        // Bandeja individual: siempre filtra por el responsable autenticado
+        const { data: rows, error } = await (supabase as any)
           .from("lat_conversaciones")
-          .select("*");
+          .select("*")
+          .eq("responsable_id", colaboradorId)
+          .not("estado_asignacion", "in", "(cerrada,ignorada)")
+          .order("ultima_interaccion", { ascending: false });
 
-        if (!isSupervisor) {
-          // Colaborador: solo conversaciones asignadas a él, excluye cerradas/ignoradas
-          query = query
-            .eq("responsable_id", colaboradorId)
-            .not("estado_asignacion", "in", "(cerrada,ignorada)");
-        } else {
-          // Supervisor/Admin: todas las activas
-          query = query
-            .not("estado_asignacion", "in", "(cerrada,ignorada)");
-        }
-
-        const { data: rows, error } = await query.order("ultima_interaccion", { ascending: false });
         if (error) throw error;
         return (rows as LatConversacion[]).map(r => ({ ...r, _source: "db" as const }));
       } catch {

@@ -74,27 +74,17 @@ export function LatBandejaView() {
   }, []);
 
   // ── Filtros de conversaciones ──────────────────────────────────────────────
+  // El hook ya devuelve SOLO las conversaciones del usuario autenticado.
+  // Aquí aplicamos únicamente los filtros de UI (canal, estado, búsqueda, etc.).
   const filteredConvs = useMemo(() => {
     let result = [...todasConversaciones];
 
-    // ── Filtro principal por rol ─────────────────────────────────────────────
-    // Colaborador solo ve sus conversaciones asignadas (excepto en modo mock/demo).
-    if (!isSupervisor && !isMockMode && colaboradorId) {
-      result = result.filter(c =>
-        c.responsable_id === colaboradorId &&
-        c.estado_asignacion !== 'cerrada' &&
-        c.estado_asignacion !== 'ignorada',
-      );
-    }
-
-    // ── Filtros de UI ────────────────────────────────────────────────────────
     if (focusFilter === 'foco') {
       result = result.filter(c => c.en_foco !== false && c.estado !== 'liberado');
     }
     if (filtroCanal  !== 'todos') result = result.filter(c => c.canal   === filtroCanal);
     if (filtroEstado !== 'todos') result = result.filter(c => c.estado  === filtroEstado);
 
-    // Filtros desde Dashboard
     if (stageFilter !== 'todos') {
       result = result.filter(c => getFunnelStage(c) === stageFilter);
     }
@@ -126,51 +116,26 @@ export function LatBandejaView() {
     });
     return result;
   }, [
-    todasConversaciones, isSupervisor, isMockMode, colaboradorId,
-    filtroCanal, filtroEstado, busqueda, focusFilter,
+    todasConversaciones, filtroCanal, filtroEstado, busqueda, focusFilter,
     stageFilter, flagFilter,
   ]);
 
-  // Contadores para la toolbar
-  const totalEnFoco = useMemo(() => {
-    let base = isSupervisor || isMockMode
-      ? todasConversaciones
-      : todasConversaciones.filter(c =>
-          c.responsable_id === colaboradorId &&
-          c.estado_asignacion !== 'cerrada' &&
-          c.estado_asignacion !== 'ignorada',
-        );
-    return base.filter(c => c.en_foco !== false && c.estado !== 'liberado').length;
-  }, [todasConversaciones, isSupervisor, isMockMode, colaboradorId]);
-
-  const totalLiberados = useMemo(() => {
-    let base = isSupervisor || isMockMode
-      ? todasConversaciones
-      : todasConversaciones.filter(c =>
-          c.responsable_id === colaboradorId &&
-          c.estado_asignacion !== 'cerrada' &&
-          c.estado_asignacion !== 'ignorada',
-        );
-    return base.length - base.filter(c => c.en_foco !== false && c.estado !== 'liberado').length;
-  }, [todasConversaciones, isSupervisor, isMockMode, colaboradorId]);
-
-  // Contadores para el badge supervisor
-  const enColaCount = useMemo(
-    () => isSupervisor
-      ? todasConversaciones.filter(c => c.estado_asignacion === 'en_cola').length
-      : 0,
-    [todasConversaciones, isSupervisor],
+  // Contadores para la toolbar — basados en la bandeja personal del usuario
+  const totalEnFoco = useMemo(
+    () => todasConversaciones.filter(c => c.en_foco !== false && c.estado !== 'liberado').length,
+    [todasConversaciones],
   );
-  const sinAsignarCount = useMemo(
-    () => isSupervisor
-      ? todasConversaciones.filter(c =>
-          !c.responsable_id &&
-          c.estado_asignacion !== 'cerrada' &&
-          c.estado_asignacion !== 'ignorada',
-        ).length
-      : 0,
-    [todasConversaciones, isSupervisor],
+
+  const totalLiberados = useMemo(
+    () => todasConversaciones.length -
+          todasConversaciones.filter(c => c.en_foco !== false && c.estado !== 'liberado').length,
+    [todasConversaciones],
   );
+
+  // Contadores supervisor: siempre 0 — la bandeja es personal.
+  // Los supervisores usan el Dashboard para ver la cola global.
+  const enColaCount    = 0;
+  const sinAsignarCount = 0;
 
   const selectedConv = todasConversaciones.find(c => c.id === selectedConvId) ?? null;
 
