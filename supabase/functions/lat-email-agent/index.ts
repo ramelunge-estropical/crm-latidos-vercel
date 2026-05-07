@@ -674,7 +674,7 @@ async function findOrCreateConvEmail(email: string, nombre: string | null, subje
 async function getBotConfig() {
   const { data } = await supabase
     .from("lat_bot_config")
-    .select("activo, auto_reply, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
+    .select("activo, auto_reply, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id, gmail_refresh_token")
     .eq("canal", "email")
     .maybeSingle();
   return data as any;
@@ -1071,9 +1071,11 @@ Deno.serve(async (req: Request) => {
 
   try {
     const cfg = await getBotConfig();
-    if (!cfg || cfg.activo === false) {
-      console.log("[email-agent] Email bot desactivado");
-      return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
+    // gmail_refresh_token es necesario para conectarse a Gmail — sin él no hay nada que hacer.
+    // cfg.activo controla solo si el bot IA responde automáticamente, no la ingesta de emails.
+    if (!cfg?.gmail_refresh_token) {
+      console.log("[email-agent] Gmail no configurado — ejecute el flujo OAuth primero");
+      return new Response(JSON.stringify({ ok: true, skipped: "gmail not configured" }), { status: 200 });
     }
 
     const emails = await fetchUnreadEmailsGmail();

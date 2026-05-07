@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.lat-routing-engine]
 verify_jwt = false
+
+[functions.lat-email-agent]
+verify_jwt = false
