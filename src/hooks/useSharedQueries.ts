@@ -192,11 +192,55 @@ export function useCurrentUserRol() {
     enabled: !!colaboradorId,
     staleTime: STALE_5MIN,
   });
+  const rol = data?.rol || "colaborador";
   return {
-    rol:     data?.rol || "colaborador",
-    user:    data,
-    isAdmin: data?.rol === "admin",
+    rol,
+    user:         data,
+    isAdmin:      rol === "admin",
+    isSupervisor: rol === "supervisor" || rol === "admin",
+    colaboradorId,
   };
+}
+
+// useLatColasDelColaborador — colas donde el colaborador es miembro activo
+export function useLatColasDelColaborador(colaboradorId: string) {
+  return useQuery<{ cola_id: string; rol: string; cola_nombre: string | null }[]>({
+    queryKey: ["lat-colas-colaborador", colaboradorId],
+    enabled:  !!colaboradorId,
+    queryFn:  async () => {
+      const { data, error } = await (supabase as any)
+        .from("lat_cola_miembros")
+        .select("cola_id, rol, lat_colas(nombre)")
+        .eq("colaborador_id", colaboradorId)
+        .eq("activo", true);
+      if (error) return [];
+      return (data ?? []).map((r: any) => ({
+        cola_id:    r.cola_id,
+        rol:        r.rol,
+        cola_nombre: r.lat_colas?.nombre ?? null,
+      }));
+    },
+    staleTime: STALE_5MIN,
+  });
+}
+
+// useColaboradorPresencia — estado de presencia del colaborador logueado
+export function useColaboradorPresencia(colaboradorId: string) {
+  return useQuery<{ conectado: boolean; estado: string } | null>({
+    queryKey: ["colaborador-presencia", colaboradorId],
+    enabled:  !!colaboradorId,
+    queryFn:  async () => {
+      const { data, error } = await (supabase as any)
+        .from("colaborador_presencia")
+        .select("conectado, estado")
+        .eq("colaborador_id", colaboradorId)
+        .single();
+      if (error) return null;
+      return data as { conectado: boolean; estado: string };
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
 }
 
 export function useSubAreasEmpresa() {

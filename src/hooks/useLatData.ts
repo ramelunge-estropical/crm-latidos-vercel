@@ -65,8 +65,33 @@ export interface LatConversacion {
   sentimiento_detectado?: string | null;
   resumen_ia?: string | null;
   cola_sugerida_id?: string | null;
+  // Routing result (Phase 3)
+  routing_status?: string | null;
+  routing_reason?: string | null;
+  channel_type?: string | null;
   // Source flag
   _source?: "db" | "mock";
+}
+
+// ── Tipos Trazabilidad ────────────────────────────────────────────────────────
+
+export interface LatTrazabilidadEvento {
+  id: string;
+  conversacion_id: string;
+  tipo_evento: string;
+  canal_id: string | null;
+  regla_id: string | null;
+  cola_id: string | null;
+  cola_desborde_id: string | null;
+  owner_original_id: string | null;
+  owner_nuevo_id: string | null;
+  intervencion: boolean;
+  motivo: string | null;
+  detalle: Record<string, any> | null;
+  channel_type: string | null;
+  routing_status: string | null;
+  routing_reason: string | null;
+  created_at: string;
 }
 
 export interface LatMensaje {
@@ -379,4 +404,136 @@ export function useSendMensaje() {
   }, [queryClient]);
 
   return { send, loading };
+}
+
+// ── useLatTrazabilidad ────────────────────────────────────────────────────────
+// Historial de eventos de routing para una conversación.
+
+export function useLatTrazabilidad(conversacionId: string | null) {
+  return useQuery<LatTrazabilidadEvento[]>({
+    queryKey: ["lat_trazabilidad", conversacionId],
+    enabled: !!conversacionId,
+    queryFn: async () => {
+      if (!conversacionId) return [];
+      const { data, error } = await (supabase as any)
+        .from("lat_trazabilidad")
+        .select("*")
+        .eq("conversacion_id", conversacionId)
+        .order("created_at", { ascending: true });
+      if (error) return [];
+      return data as LatTrazabilidadEvento[];
+    },
+    staleTime: 30_000,
+  });
+}
+
+// ── useReasignarConversacion ──────────────────────────────────────────────────
+// Llama a la función RPC lat_reasignar_conversacion con trazabilidad completa.
+
+export function useReasignarConversacion() {
+  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(false);
+
+  const reasignar = useCallback(async (
+    conversacionId: string,
+    nuevoResponsableId: string,
+    intervenidoPorId: string,
+    motivo?: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    setLoading(true);
+    try {
+      const { error } = await (supabase as any).rpc("lat_reasignar_conversacion", {
+        p_conversacion_id:   conversacionId,
+        p_nuevo_responsable: nuevoResponsableId,
+        p_intervenido_por:   intervenidoPorId,
+        p_motivo:            motivo ?? null,
+      });
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ["lat_conversaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["lat_bandeja"] });
+      queryClient.invalidateQueries({ queryKey: ["lat_trazabilidad", conversacionId] });
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  }, [queryClient]);
+
+  return { reasignar, loading };
+}
+
+// ── useLatBandeja ─────────────────────────────────────────────────────────────
+// Bandeja de conversaciones con filtro por rol del usuario logueado.
+// Colaborador → solo sus conversaciones asignadas.
+// Supervisor/Admin → todas las conversaciones activas.
+
+export function useLatBandeja(
+  colaboradorId: string,
+  rol: string,
+) {
+  const queryClient = useQueryClient();
+  const isSupervisor = rol === "admin" || rol === "supervisor";
+
+  const { data, isLoading, error } = useQuery<LatConversacion[]>({
+    queryKey: ["lat_bandeja", colaboradorId, rol],
+    enabled: !!colaboradorId,
+    queryFn: async () => {
+      try {
+        // Verificar si la tabla tiene datos
+        const { count } = await (supabase as any)
+          .from("lat_conversaciones")
+          .select("id", { count: "exact", head: true });
+
+        if (!count || count === 0) {
+          // Tabla vacía → modo demo con mock
+          return mockConvs.map(adaptMockConv);
+        }
+
+        // Modo real: filtrar según rol
+        let query = (supabase as any)
+          .from("lat_conversaciones")
+          .select("*");
+
+        if (!isSupervisor) {
+          // Colaborador: solo conversaciones asignadas a él, excluye cerradas/ignoradas
+          query = query
+            .eq("responsable_id", colaboradorId)
+            .not("estado_asignacion", "in", "(cerrada,ignorada)");
+        } else {
+          // Supervisor/Admin: todas las activas
+          query = query
+            .not("estado_asignacion", "in", "(cerrada,ignorada)");
+        }
+
+        const { data: rows, error } = await query.order("ultima_interaccion", { ascending: false });
+        if (error) throw error;
+        return (rows as LatConversacion[]).map(r => ({ ...r, _source: "db" as const }));
+      } catch {
+        return mockConvs.map(adaptMockConv);
+      }
+    },
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!colaboradorId) return;
+    const channel = (supabase as any)
+      .channel(`lat-bandeja-${colaboradorId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "lat_conversaciones" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["lat_bandeja", colaboradorId, rol] });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [colaboradorId, rol, queryClient]);
+
+  return { data: data ?? [], isLoading, error };
 }
