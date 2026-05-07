@@ -26,6 +26,10 @@ interface Canal {
   id: string; troncal_id: string | null; nombre: string; tipo: string;
   numero_origen: string | null; activo: boolean; descripcion: string | null;
   cola_default_id: string | null; bot_default_id: string | null;
+  // Phase 1: routing normalization
+  identificador: string | null;
+  proveedor: string | null;
+  estado: "conectado" | "desconectado" | "error" | "pendiente" | null;
 }
 
 interface Accion {
@@ -57,11 +61,18 @@ interface Cola {
   supervisor_puede_transferir: boolean;
   permite_reasignacion_manual: boolean;
   owner_registrar_trazabilidad: boolean;
+  // Phase 1: canales permitidos como arrays (retrocompat con canal_id FK)
+  canales_entrantes_ids: string[];
+  canales_salientes_ids: string[];
 }
 
 interface ColaMiembro {
   id: string; cola_id: string; colaborador_id: string; rol: "agente" | "supervisor";
   colaboradores: { id: string; nombre: string; color: string } | null;
+  // Phase 1: estado y capacidad individual del miembro en la cola
+  activo: boolean;
+  max_conversaciones: number | null;
+  peso: number;
 }
 
 interface ColaIndicador { cola_id: string; en_cola: number; en_atencion: number; }
@@ -268,10 +279,7 @@ function VistaGeneralTab() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {canal.activo
-                    ? <><Wifi className="w-3.5 h-3.5 text-emerald-500" /><span className="text-[10px] text-emerald-600 font-medium">Activo</span></>
-                    : <><WifiOff className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-[10px] text-muted-foreground">Inactivo</span></>
-                  }
+                  <ConnStatus activo={canal.activo} estado={canal.estado} />
                 </div>
               </div>
             );
@@ -676,12 +684,30 @@ async function fetchGmailOAuthUrl(): Promise<string | null> {
   } catch { return null; }
 }
 
-function ConnStatus({ activo, hasToken }: { activo: boolean; hasToken?: boolean }) {
-  const connected = activo && (hasToken === undefined || hasToken);
+function ConnStatus({ activo, hasToken, estado }: { activo: boolean; hasToken?: boolean; estado?: string | null }) {
+  const effectiveEstado = estado ?? (activo ? "conectado" : "desconectado");
+  const noToken = hasToken === false;
+
+  const colorClass = noToken
+    ? "text-amber-600"
+    : effectiveEstado === "conectado" ? "text-emerald-600"
+    : effectiveEstado === "error"     ? "text-red-600"
+    : effectiveEstado === "pendiente" ? "text-blue-600"
+    : "text-muted-foreground";
+
+  const label = noToken
+    ? "Sin token"
+    : effectiveEstado === "conectado" ? "Conectado"
+    : effectiveEstado === "error"     ? "Error"
+    : effectiveEstado === "pendiente" ? "Pendiente"
+    : "Inactivo";
+
+  const Icon = !noToken && effectiveEstado === "conectado" ? Wifi : WifiOff;
+
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${connected ? "text-emerald-600" : activo ? "text-amber-600" : "text-muted-foreground"}`}>
-      {connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-      {connected ? "Conectado" : activo ? "Sin token" : "Inactivo"}
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${colorClass}`}>
+      <Icon className="w-3 h-3" />
+      {label}
     </span>
   );
 }
@@ -740,7 +766,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
 
   const openNewCanal = (tipo = "whatsapp") => {
     setIsNewCanal(true);
-    setCanalDraft({ activo: true, tipo });
+    setCanalDraft({ activo: true, tipo, estado: "conectado" });
     setCanalTab("detalles");
     setNewCanalType(null);
     setEditMode({ kind: "canal", id: null });
@@ -796,9 +822,10 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
   };
 
   const quickToggleCanal = async (canal: CanalConTroncal) => {
-    await db().from("lat_canales").update({ activo: !canal.activo }).eq("id", canal.id);
+    const newEstado = canal.estado === "conectado" ? "desconectado" : "conectado";
+    await db().from("lat_canales").update({ estado: newEstado }).eq("id", canal.id);
     qc.invalidateQueries({ queryKey: ["lat_canales"] });
-    toast.success(canal.activo ? "Canal desactivado" : "Canal activado");
+    toast.success(newEstado === "conectado" ? "Canal activado" : "Canal desactivado");
   };
 
   const closeEdit = () => {
@@ -809,13 +836,17 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
 
   const saveCanal = async () => {
     if (!canalDraft.nombre?.trim()) return;
+    const estado = canalDraft.estado ?? (canalDraft.activo ? "conectado" : "desconectado");
     const payload = {
       nombre: canalDraft.nombre,
       tipo: canalDraft.tipo || "whatsapp",
       troncal_id: canalDraft.troncal_id || null,
       numero_origen: canalDraft.numero_origen || null,
+      identificador: canalDraft.identificador || canalDraft.numero_origen || null,
+      proveedor: canalDraft.proveedor || null,
+      estado,
+      activo: estado === "conectado",
       descripcion: canalDraft.descripcion || null,
-      activo: canalDraft.activo ?? true,
       cola_default_id: canalDraft.cola_default_id || null,
     };
     if (isNewCanal) {
@@ -836,11 +867,11 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
   };
 
   const toggleCanalActivo = async () => {
-    const newActivo = !canalDraft.activo;
-    await db().from("lat_canales").update({ activo: newActivo }).eq("id", canalDraft.id);
-    setCanalDraft(p => ({ ...p, activo: newActivo }));
+    const newEstado = canalDraft.estado === "conectado" ? "desconectado" : "conectado";
+    await db().from("lat_canales").update({ estado: newEstado }).eq("id", canalDraft.id);
+    setCanalDraft(p => ({ ...p, estado: newEstado, activo: newEstado === "conectado" }));
     qc.invalidateQueries({ queryKey: ["lat_canales"] });
-    toast.success(newActivo ? "Canal activado" : "Canal desactivado");
+    toast.success(newEstado === "conectado" ? "Canal activado" : "Canal desactivado");
   };
 
   // ── Troncal CRUD ──────────────────────────────────────────────────────────────
@@ -988,7 +1019,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
           <div className="shrink-0">
             {isGmail
               ? <ConnStatus activo={gmailCfg?.activo ?? false} hasToken={!!gmailCfg?.gmail_refresh_token} />
-              : <ConnStatus activo={canalDraft.activo ?? false} />}
+              : <ConnStatus activo={canalDraft.activo ?? false} estado={canalDraft.estado} />}
           </div>
         </div>
         <div className="flex items-center gap-1 px-6 pt-3 pb-0 border-b border-border shrink-0">
@@ -1087,6 +1118,26 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
                   <div><p className="text-[10px] text-muted-foreground">Estado</p><ConnStatus activo={currentTroncal.activo} /></div>
                 </div>
               )}
+              {!canalDraft.troncal_id && (
+                <div className="col-span-2">
+                  <label className="text-xs text-muted-foreground mb-1 block">Proveedor directo</label>
+                  <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                    placeholder="Ej: Gupshup, Google, PBX, Twilio..."
+                    value={canalDraft.proveedor || ""}
+                    onChange={e => setCanalDraft(p => ({ ...p, proveedor: e.target.value }))} />
+                </div>
+              )}
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground mb-1 block">Estado de conexión</label>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={canalDraft.estado || "conectado"}
+                  onChange={e => setCanalDraft(p => ({ ...p, estado: e.target.value as Canal["estado"] }))}>
+                  <option value="conectado">Conectado</option>
+                  <option value="pendiente">Pendiente (en configuración)</option>
+                  <option value="desconectado">Desconectado</option>
+                  <option value="error">Error / Falla</option>
+                </select>
+              </div>
               <div className="col-span-2">
                 <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
                 <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
@@ -1130,6 +1181,11 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
                 cola_default_id: tipo === "cola" ? id : null,
                 bot_default_id:  tipo === "bot"  ? id : null,
               }).eq("id", canalDraft.id);
+              // Sync: si se asigna una cola como fallback, actualizar canal_id en esa cola
+              if (tipo === "cola" && id) {
+                await db().from("lat_colas").update({ canal_id: canalDraft.id }).eq("id", id);
+                qc.invalidateQueries({ queryKey: ["lat_colas"] });
+              }
               setCanalDraft(p => ({
                 ...p,
                 cola_default_id: tipo === "cola" ? id : null,
@@ -1414,7 +1470,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <ConnStatus activo={canal.activo} />
+                  <ConnStatus activo={canal.activo} estado={canal.estado} />
                 </div>
                 {!readonly && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100">
@@ -1708,13 +1764,15 @@ function ColasTab({ readonly }: { readonly: boolean }) {
       toast.error("No se puede activar la cola sin usuarios asignados (a menos que use Bot / Agente IA como estrategia)");
       return;
     }
-    const canalActivosIds = new Set(canales.filter(c => c.activo).map(c => c.id));
-    if (editing.canal_id && !canalActivosIds.has(editing.canal_id)) {
-      toast.error("El canal entrante seleccionado está inactivo");
+    const canalConectadosIds = new Set(
+      canales.filter(c => c.estado === "conectado" || (!c.estado && c.activo)).map(c => c.id)
+    );
+    if (editing.canal_id && !canalConectadosIds.has(editing.canal_id)) {
+      toast.error("El canal entrante seleccionado no está conectado");
       return;
     }
-    if (editing.canal_saliente_id && !canalActivosIds.has(editing.canal_saliente_id)) {
-      toast.error("El canal saliente seleccionado está inactivo");
+    if (editing.canal_saliente_id && !canalConectadosIds.has(editing.canal_saliente_id)) {
+      toast.error("El canal saliente seleccionado no está conectado");
       return;
     }
     if (editing.owner_last_user_activo) {
@@ -1755,14 +1813,23 @@ function ColasTab({ readonly }: { readonly: boolean }) {
       supervisor_puede_transferir: editing.supervisor_puede_transferir ?? true,
       permite_reasignacion_manual: editing.permite_reasignacion_manual ?? true,
       owner_registrar_trazabilidad: editing.owner_registrar_trazabilidad ?? true,
+      // Phase 1: arrays de canales permitidos (derivados de los FKs mientras la UI no los exponga directamente)
+      canales_entrantes_ids: editing.canal_id
+        ? [editing.canal_id]
+        : (editing.canales_entrantes_ids ?? []),
+      canales_salientes_ids: editing.canal_saliente_id
+        ? [editing.canal_saliente_id]
+        : (editing.canales_salientes_ids ?? []),
     };
     let colaId = editing.id;
     if (isNew) {
-      const { data } = await db().from("lat_colas").insert({ ...payload, orden: colas.length + 1 }).select("id").single();
+      const { data, error } = await db().from("lat_colas").insert({ ...payload, orden: colas.length + 1 }).select("id").single();
+      if (error) { toast.error("Error al crear la cola: " + error.message); return; }
       colaId = data?.id;
       toast.success("Cola creada");
     } else {
-      await db().from("lat_colas").update(payload).eq("id", colaId);
+      const { error } = await db().from("lat_colas").update(payload).eq("id", colaId);
+      if (error) { toast.error("Error al guardar: " + error.message); return; }
       toast.success("Cola actualizada");
     }
     if (colaId) {

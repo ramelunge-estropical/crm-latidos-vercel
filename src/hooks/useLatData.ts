@@ -46,6 +46,7 @@ export interface LatConversacion {
   canal_entrante_id?: string | null;
   regla_aplicada_id?: string | null;
   // Asignación pipeline
+  // Valores válidos: pendiente | en_cola | asignada | en_gestion | en_espera | desborde | ignorada | cerrada
   estado_asignacion?: string | null;
   motivo_no_asignada?: string | null;
   agente_disponibilidad_snap?: string | null;
