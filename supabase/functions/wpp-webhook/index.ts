@@ -23,122 +23,36 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const BUCKET = "lat-adjuntos";
 
-// ── Rule evaluation ───────────────────────────────────────────────────────────
+// ── Routing engine trigger ────────────────────────────────────────────────────
+// Llama al motor central de enrutamiento (lat-routing-engine).
+// Retorna routing_status para que el webhook decida si invocar el bot.
 
-function matchCondicion(cond: { campo: string; operador: string; valor: string }, fields: Record<string, string>): boolean {
-  const fieldVal = (fields[cond.campo] ?? "").toLowerCase();
-  const matchVal = (cond.valor ?? "").toLowerCase();
-  switch (cond.operador) {
-    case "contiene":    return fieldVal.includes(matchVal);
-    case "no_contiene": return !fieldVal.includes(matchVal);
-    case "es":          return fieldVal === matchVal;
-    case "empieza_con": return fieldVal.startsWith(matchVal);
-    case "termina_con": return fieldVal.endsWith(matchVal);
-    default:            return false;
-  }
-}
-
-/**
- * applyChannelRules — evalúa reglas del canal y fija cola_id / regla_aplicada_id.
- * Retorna { colaAsignada: boolean, accionIgnorar: boolean } para que el caller
- * decida si debe lanzar el bot o el assign-engine.
- */
-async function applyChannelRules(
-  convId: string,
-  sender: string,
-  texto: string,
-): Promise<{ colaAsignada: boolean; accionIgnorar: boolean }> {
-  // Find the active WhatsApp channel
-  const { data: canal } = await supabase
-    .from("lat_canales")
-    .select("id, cola_default_id, bot_default_id")
-    .eq("tipo", "whatsapp")
-    .eq("activo", true)
-    .limit(1)
-    .maybeSingle();
-
-  const canalId = canal?.id ?? null;
-  const now = new Date().toISOString();
-
-  // Load active rules: canal-specific first, then global
-  const { data: allReglas } = await supabase
-    .from("lat_reglas_asignacion")
-    .select("id, prioridad, canal_id, condiciones, accion")
-    .eq("activa", true)
-    .order("prioridad", { ascending: true });
-
-  if (!allReglas?.length && !canalId) return { colaAsignada: false, accionIgnorar: false };
-
-  const reglas = allReglas ?? [];
-  const canalRules  = reglas.filter(r => r.canal_id === canalId);
-  const globalRules = reglas.filter(r => r.canal_id === null || r.canal_id === undefined);
-  const ordered     = [...canalRules, ...globalRules];
-
-  const fields: Record<string, string> = {
-    numero_remitente: sender,
-    texto_mensaje:    texto,
-    palabras_clave:   texto,
-    mensaje_inicial:  texto,
-    canal_tipo:       "whatsapp",
-  };
-
-  const update: Record<string, unknown> = {};
-  if (canalId) {
-    update.canal_id_fk      = canalId;
-    update.canal_entrante_id = canalId;  // keep both columns in sync
-  }
-
-  let accionIgnorar = false;
-
-  for (const regla of ordered) {
-    const conds: Array<{ campo: string; operador: string; valor: string }> =
-      Array.isArray(regla.condiciones) ? regla.condiciones : [];
-    const matches = conds.length === 0 || conds.every(c => matchCondicion(c, fields));
-    if (!matches) continue;
-
-    const accion: Record<string, unknown> =
-      typeof regla.accion === "object" && regla.accion ? regla.accion : {};
-    update.regla_aplicada_id = regla.id;
-    update.ts_regla_aplicada = now;
-
-    if (accion.tipo === "asignar_cola") {
-      if (accion.cola_id) {
-        update.cola_id = accion.cola_id;
-      } else if (accion.cola_nombre) {
-        const { data: c } = await supabase
-          .from("lat_colas").select("id").eq("nombre", accion.cola_nombre).maybeSingle();
-        if (c) update.cola_id = c.id;
-      }
-      if (update.cola_id) {
-        update.estado            = "en_cola";
-        update.estado_asignacion = "en_cola";
-        update.ts_cola_asignada  = now;
-      }
-    } else if (accion.tipo === "asignar_prioridad" && accion.prioridad) {
-      update.prioridad = accion.prioridad;
-    } else if (accion.tipo === "ignorar") {
-      update.estado     = "ignorada";
-      accionIgnorar     = true;
+async function callRoutingEngine(
+  convId:      string,
+  channelType: string,
+  content:     string,
+  metadata:    Record<string, string>,
+): Promise<{ routing_status: string; routing_reason: string | null }> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
+      method:  "POST",
+      headers: { "Authorization": `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: convId,
+        channel_type:    channelType,
+        message_content: content,
+        metadata,
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[wpp-webhook] routing-engine HTTP ${res.status}`);
+      return { routing_status: "error", routing_reason: `HTTP ${res.status}` };
     }
-    break; // first match wins
+    return await res.json();
+  } catch (err) {
+    console.error("[wpp-webhook] routing-engine error:", err);
+    return { routing_status: "error", routing_reason: String(err) };
   }
-
-  // No rule matched → use canal default queue
-  if (!update.regla_aplicada_id && canal?.cola_default_id) {
-    update.cola_id           = canal.cola_default_id;
-    update.estado            = "en_cola";
-    update.estado_asignacion = "en_cola";
-    update.ts_cola_asignada  = now;
-  }
-
-  if (Object.keys(update).length > 0) {
-    await supabase.from("lat_conversaciones").update(update).eq("id", convId);
-  }
-
-  return {
-    colaAsignada: !!update.cola_id,
-    accionIgnorar,
-  };
 }
 
 // ── Bot agent trigger ─────────────────────────────────────────────────────────
@@ -147,42 +61,9 @@ function triggerBotAgent(convId: string, telefono: string, contenido: string) {
   const url = `${SUPABASE_URL}/functions/v1/lat-bot-agent`;
   const promise = fetch(url, {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
-      "Content-Type":  "application/json",
-    },
+    headers: { "Authorization": `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ conversacion_id: convId, telefono, contenido }),
   }).catch(err => console.error("bot-agent trigger failed:", err));
-  // Keep the edge function alive until the bot trigger request completes.
-  // Without this, Deno may terminate the process before the fetch resolves.
-  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
-}
-
-// ── Bot config check ──────────────────────────────────────────────────────────
-
-async function isBotActivo(canal = "whatsapp"): Promise<boolean> {
-  const { data } = await supabase
-    .from("lat_bot_config")
-    .select("activo")
-    .eq("canal", canal)
-    .maybeSingle();
-  return data?.activo === true;
-}
-
-// ── Assign engine trigger ─────────────────────────────────────────────────────
-// Called when bot is disabled and a channel rule already assigned a cola_id.
-// The engine will pick an available agent from lat_cola_miembros.
-
-function triggerAssignEngine(convId: string) {
-  const url = `${SUPABASE_URL}/functions/v1/lat-assign-engine`;
-  const promise = fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
-      "Content-Type":  "application/json",
-    },
-    body: JSON.stringify({ conversacion_id: convId }),
-  }).catch(err => console.error("assign-engine trigger failed:", err));
   (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
 }
 
@@ -530,15 +411,13 @@ Deno.serve(async (req: Request) => {
       if (insErr) console.error("lat_mensajes insert error (gupshup):", insErr);
       else {
         await touchConversacion(convId, contenido);
-        const { colaAsignada, accionIgnorar } = await applyChannelRules(convId, telefono, contenido);
-        if (!accionIgnorar && innerTyp === "text") {
-          const botOn = await isBotActivo("whatsapp");
-          if (botOn) {
-            triggerBotAgent(convId, telefono, contenido);
-          } else if (colaAsignada) {
-            // Bot off + canal rule assigned a queue → go straight to agent selection
-            triggerAssignEngine(convId);
-          }
+        const routing = await callRoutingEngine(convId, "whatsapp", contenido, {
+          numero_remitente: telefono,
+          texto_mensaje:    contenido,
+          canal_tipo:       "whatsapp",
+        });
+        if (routing.routing_status === "bot_delegado" && innerTyp === "text") {
+          triggerBotAgent(convId, telefono, contenido);
         }
       }
 
@@ -607,14 +486,13 @@ Deno.serve(async (req: Request) => {
             if (insErrMeta) console.error("lat_mensajes insert error (meta):", insErrMeta);
             else {
               await touchConversacion(convId, contenido);
-              const { colaAsignada: cola2, accionIgnorar: ignora2 } = await applyChannelRules(convId, telefono, contenido);
-              if (!ignora2 && msg.type === "text") {
-                const botOn2 = await isBotActivo("whatsapp");
-                if (botOn2) {
-                  triggerBotAgent(convId, telefono, contenido);
-                } else if (cola2) {
-                  triggerAssignEngine(convId);
-                }
+              const routing = await callRoutingEngine(convId, "whatsapp", contenido, {
+                numero_remitente: telefono,
+                texto_mensaje:    contenido,
+                canal_tipo:       "whatsapp",
+              });
+              if (routing.routing_status === "bot_delegado" && msg.type === "text") {
+                triggerBotAgent(convId, telefono, contenido);
               }
             }
           }
@@ -651,14 +529,13 @@ Deno.serve(async (req: Request) => {
       if (insErrWati) console.error("lat_mensajes insert error (wati):", insErrWati);
       else {
         await touchConversacion(convId, watiContenido);
-        const { colaAsignada: cola3, accionIgnorar: ignora3 } = await applyChannelRules(convId, telefono, watiContenido);
-        if (!ignora3 && body.text) {
-          const botOn3 = await isBotActivo("whatsapp");
-          if (botOn3) {
-            triggerBotAgent(convId, telefono, body.text);
-          } else if (cola3) {
-            triggerAssignEngine(convId);
-          }
+        const routing = await callRoutingEngine(convId, "whatsapp", watiContenido, {
+          numero_remitente: telefono,
+          texto_mensaje:    watiContenido,
+          canal_tipo:       "whatsapp",
+        });
+        if (routing.routing_status === "bot_delegado" && body.text) {
+          triggerBotAgent(convId, telefono, body.text);
         }
       }
       return new Response("OK", { status: 200 });

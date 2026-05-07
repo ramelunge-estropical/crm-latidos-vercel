@@ -47,16 +47,18 @@ interface Cola {
 }
 
 interface ColaMiembro {
-  colaborador_id: string;
-  rol: string;
+  colaborador_id:     string;
+  rol:                string;
+  max_conversaciones: number | null;
   colaboradores: { id: string; nombre: string; color: string } | null;
 }
 
 interface Presencia {
-  colaborador_id: string;
-  estado: string;
+  colaborador_id:  string;
+  estado:          string;
+  conectado:       boolean;
   capacidad_maxima: number;
-  chats_abiertos: number;
+  chats_abiertos:  number;
   ultima_actividad: string;
 }
 
@@ -90,8 +92,9 @@ async function getCola(colaId: string): Promise<Cola | null> {
 async function getColaMiembros(colaId: string): Promise<ColaMiembro[]> {
   const { data } = await supabase
     .from("lat_cola_miembros")
-    .select("colaborador_id, rol, colaboradores(id, nombre, color)")
+    .select("colaborador_id, rol, max_conversaciones, colaboradores(id, nombre, color)")
     .eq("cola_id", colaId)
+    .eq("activo", true)
     .eq("rol", "agente");
   return (data ?? []) as ColaMiembro[];
 }
@@ -100,7 +103,7 @@ async function getPresencias(colaboradorIds: string[]): Promise<Presencia[]> {
   if (!colaboradorIds.length) return [];
   const { data } = await supabase
     .from("colaborador_presencia")
-    .select("colaborador_id, estado, capacidad_maxima, chats_abiertos, ultima_actividad")
+    .select("colaborador_id, estado, capacidad_maxima, chats_abiertos, ultima_actividad, conectado")
     .in("colaborador_id", colaboradorIds);
   return (data ?? []) as Presencia[];
 }
@@ -212,28 +215,29 @@ function selectAgente(
   roundRobinCandidateId: string | null,
 ): SelectionResult {
   const maxConv = cola.max_conversaciones_agente ?? 5;
+  const getCapacidad = (m: ColaMiembro) => (m as any).max_conversaciones ?? maxConv;
 
-  // Build eligible list: connected + disponible + under capacity
+  // Build eligible list: conectado (sesión activa) + disponible + under capacity
   const elegibles = miembros.filter(m => {
     const p = presenciaMap.get(m.colaborador_id);
     if (!p) return false;
-    return p.estado === "disponible" && (p.chats_abiertos ?? 0) < maxConv;
+    if (!p.conectado) return false;           // sesión activa requerida (Phase 2)
+    if (p.estado !== "disponible") return false;
+    const capacidad = (m as any).max_conversaciones ?? maxConv;
+    return (p.chats_abiertos ?? 0) < capacidad;
   });
 
   if (!elegibles.length) {
     const totalMiembros = miembros.length;
-    const enLinea = miembros.filter(m => {
-      const p = presenciaMap.get(m.colaborador_id);
-      return p && p.estado !== "desconectado";
-    }).length;
+    const conectados = miembros.filter(m => presenciaMap.get(m.colaborador_id)?.conectado).length;
 
     let motivo: string;
     if (totalMiembros === 0) {
-      motivo = "La cola no tiene agentes asignados";
-    } else if (enLinea === 0) {
-      motivo = `Ninguno de los ${totalMiembros} agentes está conectado`;
+      motivo = "sin_agentes_en_cola";
+    } else if (conectados === 0) {
+      motivo = "usuarios_desconectados";
     } else {
-      motivo = `Los ${enLinea} agentes conectados alcanzaron su capacidad máxima (${maxConv} conversaciones c/u)`;
+      motivo = "capacidad_completa";
     }
     return { asignado: false, colaborador_id: null, colaborador_nombre: null, motivo, desborde: false };
   }
@@ -259,7 +263,10 @@ function selectAgente(
       elegido = elegibles.reduce((best, m) => {
         const pB = presenciaMap.get(best.colaborador_id)!;
         const pM = presenciaMap.get(m.colaborador_id)!;
-        return pM.chats_abiertos < pB.chats_abiertos ? m : best;
+        // Compare load relative to individual capacity (lower ratio = more available)
+        const ratioB = (pB.chats_abiertos ?? 0) / getCapacidad(best);
+        const ratioM = (pM.chats_abiertos ?? 0) / getCapacidad(m);
+        return ratioM < ratioB ? m : best;
       });
       break;
 
@@ -329,14 +336,15 @@ Deno.serve(async (req: Request) => {
     const presenciaMap = new Map<string, Presencia>();
     presencias.forEach(p => presenciaMap.set(p.colaborador_id, p));
 
-    // Fill absent members with default "desconectado"
+    // Fill absent members with default "desconectado" (not connected)
     colaboradorIds.forEach(id => {
       if (!presenciaMap.has(id)) {
         presenciaMap.set(id, {
-          colaborador_id: id,
-          estado: "desconectado",
+          colaborador_id:   id,
+          estado:           "desconectado",
+          conectado:        false,
           capacidad_maxima: 5,
-          chats_abiertos: 0,
+          chats_abiertos:   0,
           ultima_actividad: new Date().toISOString(),
         });
       }

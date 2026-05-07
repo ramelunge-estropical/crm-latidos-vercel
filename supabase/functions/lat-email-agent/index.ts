@@ -600,97 +600,38 @@ async function markProcessed(messageId: string, convId: string) {
   await supabase.from("lat_email_procesados").insert({ message_id: messageId, conversacion_id: convId });
 }
 
-// ── Rule evaluation ───────────────────────────────────────────────────────────
+// ── Routing engine ────────────────────────────────────────────────────────────
+// Delega a lat-routing-engine el flujo completo: canal → reglas → cola → agente.
 
-function matchCondicion(cond: { campo: string; operador: string; valor: string }, fields: Record<string, string>): boolean {
-  const fieldVal = (fields[cond.campo] ?? "").toLowerCase();
-  const matchVal = (cond.valor ?? "").toLowerCase();
-  switch (cond.operador) {
-    case "contiene":    return fieldVal.includes(matchVal);
-    case "no_contiene": return !fieldVal.includes(matchVal);
-    case "es":          return fieldVal === matchVal;
-    case "empieza_con": return fieldVal.startsWith(matchVal);
-    case "termina_con": return fieldVal.endsWith(matchVal);
-    default:            return false;
-  }
-}
-
-async function applyEmailChannelRules(
-  convId: string,
-  remitente: string,
-  asunto: string,
-  cuerpo: string | null,
+async function callRoutingEngine(
+  convId:          string,
+  subject:         string,
+  bodyText:        string | null,
+  remitente:       string,
   attachmentNames: string[],
-) {
-  const { data: canal } = await supabase
-    .from("lat_canales")
-    .select("id, cola_default_id")
-    .eq("tipo", "email")
-    .eq("activo", true)
-    .limit(1)
-    .maybeSingle();
-
-  const canalId = canal?.id ?? null;
-
-  const { data: allReglas } = await supabase
-    .from("lat_reglas_asignacion")
-    .select("id, prioridad, canal_id, condiciones, accion")
-    .eq("activa", true)
-    .order("prioridad", { ascending: true });
-
-  if (!allReglas?.length && !canalId) return;
-
-  const reglas = allReglas ?? [];
-  const canalRules  = reglas.filter(r => r.canal_id === canalId);
-  const globalRules = reglas.filter(r => r.canal_id === null || r.canal_id === undefined);
-  const ordered     = [...canalRules, ...globalRules];
-
-  const fields: Record<string, string> = {
-    remitente:          remitente,
-    destinatario:       EMAIL_INBOX,
-    alias_destinatario: EMAIL_INBOX,
-    asunto:             asunto,
-    cuerpo:             cuerpo ?? "",
-    nombre_adjunto:     attachmentNames.join(" "),
-    mensaje_inicial:    asunto,
-    canal_tipo:         "email",
-  };
-
-  const update: Record<string, unknown> = {};
-  if (canalId) update.canal_id_fk = canalId;
-
-  for (const regla of ordered) {
-    const conds: Array<{ campo: string; operador: string; valor: string }> =
-      Array.isArray(regla.condiciones) ? regla.condiciones : [];
-    const matches = conds.length === 0 || conds.every(c => matchCondicion(c, fields));
-    if (!matches) continue;
-
-    const accion: Record<string, unknown> =
-      typeof regla.accion === "object" && regla.accion ? regla.accion : {};
-    update.regla_aplicada_id = regla.id;
-
-    if (accion.tipo === "asignar_cola") {
-      if (accion.cola_id) {
-        update.cola_id = accion.cola_id;
-      } else if (accion.cola_nombre) {
-        const { data: c } = await supabase
-          .from("lat_colas").select("id").eq("nombre", accion.cola_nombre).maybeSingle();
-        if (c) update.cola_id = c.id;
-      }
-    } else if (accion.tipo === "asignar_prioridad" && accion.prioridad) {
-      update.prioridad = accion.prioridad;
-    } else if (accion.tipo === "ignorar") {
-      update.estado = "ignorada";
-    }
-    break;
-  }
-
-  if (!update.regla_aplicada_id && canal?.cola_default_id) {
-    update.cola_id = canal.cola_default_id;
-  }
-
-  if (Object.keys(update).length > 0) {
-    await supabase.from("lat_conversaciones").update(update).eq("id", convId);
+): Promise<void> {
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
+      method:  "POST",
+      headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: convId,
+        channel_type:    "email",
+        message_content: subject,
+        metadata: {
+          remitente:          remitente,
+          destinatario:       EMAIL_INBOX,
+          alias_destinatario: EMAIL_INBOX,
+          asunto:             subject,
+          cuerpo:             (bodyText ?? "").slice(0, 500),
+          nombre_adjunto:     attachmentNames.join(" "),
+          mensaje_inicial:    subject,
+          canal_tipo:         "email",
+        },
+      }),
+    });
+  } catch (err) {
+    console.error("[email-agent] routing-engine error:", err);
   }
 }
 
@@ -1221,11 +1162,11 @@ Deno.serve(async (req: Request) => {
         no_leidos:           1,
       }).eq("id", convId);
 
-      await applyEmailChannelRules(
+      await callRoutingEngine(
         convId,
-        email.from,
         email.subject,
         email.bodyText ?? null,
+        email.from,
         regularAtts.map(a => a.filename),
       );
 
