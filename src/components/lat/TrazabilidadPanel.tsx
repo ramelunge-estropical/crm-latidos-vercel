@@ -93,7 +93,7 @@ export function TrazabilidadPanel({ conversacion }: TrazabilidadPanelProps) {
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-muted-foreground">Estado</span>
           <span className={`font-medium ${estadoCfg?.color ?? 'text-foreground'}`}>
-            {estadoCfg?.label ?? estadoAsig || '—'}
+            {estadoCfg?.label ?? (estadoAsig || '—')}
           </span>
         </div>
 
