@@ -86,10 +86,10 @@ export function ProcessSidebar({
     enabled: !!currentUser?.ver_otros_sistemas,
   });
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("mis_gestiones_colaborador");
     localStorage.removeItem("crm_session_expiry");
-    supabase.auth.signOut();
+    await supabase.auth.signOut();
     window.location.reload();
   };
 
