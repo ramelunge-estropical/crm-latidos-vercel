@@ -13,7 +13,7 @@ import { NuevaConversacionDialog } from './NuevaConversacionDialog';
 import { TrazabilidadPanel } from './TrazabilidadPanel';
 import { ReasignacionDialog } from './ReasignacionDialog';
 import { getCliente } from '@/data/latMockData';
-import { useLatConversaciones } from '@/hooks/useLatData';
+import { useLatBandeja } from '@/hooks/useLatData';
 import { useCurrentUserRol } from '@/hooks/useSharedQueries';
 import { getFunnelStage, getFlags } from '@/lib/latFunnel';
 
@@ -47,8 +47,8 @@ export function LatBandejaView() {
   // ── Usuario logueado y su rol ─────────────────────────────────────────────
   const { rol, user, isSupervisor, colaboradorId } = useCurrentUserRol();
 
-  // ── Datos reales desde Supabase ────────────────────────────────────────────
-  const { data: todasConversaciones } = useLatConversaciones();
+  // ── Datos reales desde Supabase (filtrados por rol en la query) ───────────
+  const { data: todasConversaciones } = useLatBandeja(colaboradorId, rol);
 
   // Detectar si estamos en modo mock (tabla vacía)
   const isMockMode = useMemo(
