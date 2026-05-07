@@ -491,6 +491,7 @@ export function useLatBandeja(
         }
 
         // Bandeja individual: siempre filtra por el responsable autenticado
+        console.log("[LAT_BANDEJA] colaboradorId:", colaboradorId, "| rol:", rol);
         const { data: rows, error } = await (supabase as any)
           .from("lat_conversaciones")
           .select("*")
@@ -499,6 +500,7 @@ export function useLatBandeja(
           .order("ultima_interaccion", { ascending: false });
 
         if (error) throw error;
+        console.log("[LAT_BANDEJA] total devuelto:", rows?.length, "| responsable_id filtrado:", colaboradorId);
         return (rows as LatConversacion[]).map(r => ({ ...r, _source: "db" as const }));
       } catch {
         return mockConvs.map(adaptMockConv);
