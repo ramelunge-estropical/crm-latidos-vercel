@@ -611,11 +611,21 @@ async function callRoutingEngine(
   attachmentNames: string[],
 ): Promise<void> {
   try {
+    const { data: canal } = await supabase
+      .from("lat_canales")
+      .select("id")
+      .eq("tipo", "email")
+      .eq("estado", "conectado")
+      .order("ultima_actividad", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
     const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
       method:  "POST",
       headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         conversation_id: convId,
+        channel_id:      (canal as any)?.id ?? undefined,
         channel_type:    "email",
         message_content: subject,
         metadata: {
