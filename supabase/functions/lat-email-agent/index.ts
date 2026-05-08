@@ -600,6 +600,42 @@ async function markProcessed(messageId: string, convId: string) {
   await supabase.from("lat_email_procesados").insert({ message_id: messageId, conversacion_id: convId });
 }
 
+async function getConnectedGmailChannelId(): Promise<string | undefined> {
+  const { data: cfg } = await supabase
+    .from("lat_bot_config")
+    .select("gmail_email")
+    .eq("canal", "email")
+    .maybeSingle();
+
+  const gmailEmail = String((cfg as any)?.gmail_email || EMAIL_USER || "").trim().toLowerCase();
+  const { data: canales } = await supabase
+    .from("lat_canales")
+    .select("id, nombre, numero_origen, identificador, estado, cola_default_id")
+    .eq("tipo", "email");
+
+  const rows = (canales ?? []) as any[];
+  const matchesAccount = (c: any) =>
+    gmailEmail && [c.numero_origen, c.identificador, c.nombre]
+      .some(v => String(v ?? "").trim().toLowerCase() === gmailEmail);
+
+  const selected =
+    rows.find(c => matchesAccount(c) && c.estado === "conectado") ??
+    rows.find(matchesAccount) ??
+    rows.find(c => c.estado === "conectado" && c.cola_default_id) ??
+    rows.find(c => c.estado === "conectado") ??
+    rows[0];
+
+  console.log("[email-agent] Gmail channel resolved:", JSON.stringify({
+    gmail_email: gmailEmail,
+    channel_id: selected?.id ?? null,
+    channel_name: selected?.nombre ?? null,
+    channel_numero_origen: selected?.numero_origen ?? null,
+    channel_identificador: selected?.identificador ?? null,
+  }));
+
+  return selected?.id;
+}
+
 // ── Routing engine ────────────────────────────────────────────────────────────
 // Delega a lat-routing-engine el flujo completo: canal → reglas → cola → agente.
 
@@ -611,21 +647,14 @@ async function callRoutingEngine(
   attachmentNames: string[],
 ): Promise<void> {
   try {
-    const { data: canal } = await supabase
-      .from("lat_canales")
-      .select("id")
-      .eq("tipo", "email")
-      .eq("estado", "conectado")
-      .order("ultima_actividad", { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle();
+    const channelId = await getConnectedGmailChannelId();
 
     const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
       method:  "POST",
       headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         conversation_id: convId,
-        channel_id:      (canal as any)?.id ?? undefined,
+        channel_id:      channelId,
         channel_type:    "email",
         message_content: subject,
         metadata: {

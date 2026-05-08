@@ -780,13 +780,22 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
   };
 
   const openEditGmail = async () => {
-    let { data } = await db().from("lat_canales")
-      .select("id, cola_default_id, bot_default_id").eq("tipo", "email").maybeSingle();
+    const gmailEmail = (gmailCfg?.gmail_email || "").trim().toLowerCase();
+    const { data: emailCanales } = await db().from("lat_canales")
+      .select("id, nombre, numero_origen, identificador, cola_default_id, bot_default_id")
+      .eq("tipo", "email");
+    let data = ((emailCanales || []) as any[]).find(c =>
+      gmailEmail && [c.numero_origen, c.identificador, c.nombre]
+        .some(v => String(v || "").trim().toLowerCase() === gmailEmail)
+    ) || null;
     if (!data && gmailCfg) {
       const { data: created } = await db().from("lat_canales").insert({
         nombre: gmailCfg.nombre || gmailCfg.gmail_email || "Gmail",
         tipo: "email",
         numero_origen: gmailCfg.gmail_email,
+        identificador: gmailCfg.gmail_email,
+        proveedor: "gmail",
+        estado: gmailCfg.activo ? "conectado" : "desconectado",
         activo: gmailCfg.activo ?? true,
       }).select("id, cola_default_id, bot_default_id").single();
       data = created;
@@ -803,6 +812,11 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     const patch = {
       cola_default_id: tipo === "cola" ? id : null,
       bot_default_id:  tipo === "bot"  ? id : null,
+      numero_origen: gmailCfg?.gmail_email || null,
+      identificador: gmailCfg?.gmail_email || null,
+      proveedor: "gmail",
+      estado: gmailCfg?.activo ? "conectado" : "desconectado",
+      activo: gmailCfg?.activo ?? true,
     };
     if (gmailCanalId) {
       await db().from("lat_canales").update(patch).eq("id", gmailCanalId);
@@ -811,6 +825,9 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
         nombre: gmailCfg.gmail_email || gmailCfg.nombre || "Gmail",
         tipo: "email",
         numero_origen: gmailCfg.gmail_email,
+        identificador: gmailCfg.gmail_email,
+        proveedor: "gmail",
+        estado: gmailCfg.activo ? "conectado" : "desconectado",
         activo: gmailCfg.activo,
         ...patch,
       }).select("id").single();
