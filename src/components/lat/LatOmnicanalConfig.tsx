@@ -671,6 +671,7 @@ interface GmailBotCfg {
 type CanalEditTab = "detalles" | "reglas" | "conexion";
 type EditMode = { kind: "canal"; id: string | null } | { kind: "gmail" } | null;
 
+const GMAIL_INBOUND_ALIAS = "microvoz@estropical.com";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
@@ -781,19 +782,20 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
 
   const openEditGmail = async () => {
     const gmailEmail = (gmailCfg?.gmail_email || "").trim().toLowerCase();
+    const gmailIdentifiers = [gmailEmail, GMAIL_INBOUND_ALIAS].filter(Boolean);
     const { data: emailCanales } = await db().from("lat_canales")
       .select("id, nombre, numero_origen, identificador, cola_default_id, bot_default_id")
       .eq("tipo", "email");
     let data = ((emailCanales || []) as any[]).find(c =>
-      gmailEmail && [c.numero_origen, c.identificador, c.nombre]
-        .some(v => String(v || "").trim().toLowerCase() === gmailEmail)
+      [c.numero_origen, c.identificador, c.nombre]
+        .some(v => gmailIdentifiers.includes(String(v || "").trim().toLowerCase()))
     ) || null;
     if (!data && gmailCfg) {
       const { data: created } = await db().from("lat_canales").insert({
-        nombre: gmailCfg.nombre || gmailCfg.gmail_email || "Gmail",
+        nombre: gmailCfg.nombre || "Gmail Microvoz",
         tipo: "email",
         numero_origen: gmailCfg.gmail_email,
-        identificador: gmailCfg.gmail_email,
+        identificador: GMAIL_INBOUND_ALIAS,
         proveedor: "gmail",
         estado: gmailCfg.activo ? "conectado" : "desconectado",
         activo: gmailCfg.activo ?? true,
@@ -813,7 +815,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
       cola_default_id: tipo === "cola" ? id : null,
       bot_default_id:  tipo === "bot"  ? id : null,
       numero_origen: gmailCfg?.gmail_email || null,
-      identificador: gmailCfg?.gmail_email || null,
+      identificador: GMAIL_INBOUND_ALIAS,
       proveedor: "gmail",
       estado: gmailCfg?.activo ? "conectado" : "desconectado",
       activo: gmailCfg?.activo ?? true,
@@ -822,10 +824,10 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
       await db().from("lat_canales").update(patch).eq("id", gmailCanalId);
     } else if (gmailCfg) {
       const { data } = await db().from("lat_canales").insert({
-        nombre: gmailCfg.gmail_email || gmailCfg.nombre || "Gmail",
+        nombre: gmailCfg.nombre || "Gmail Microvoz",
         tipo: "email",
         numero_origen: gmailCfg.gmail_email,
-        identificador: gmailCfg.gmail_email,
+        identificador: GMAIL_INBOUND_ALIAS,
         proveedor: "gmail",
         estado: gmailCfg.activo ? "conectado" : "desconectado",
         activo: gmailCfg.activo,

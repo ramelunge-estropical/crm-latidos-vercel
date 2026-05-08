@@ -608,6 +608,8 @@ async function getConnectedGmailChannelId(): Promise<string | undefined> {
     .maybeSingle();
 
   const gmailEmail = String((cfg as any)?.gmail_email || EMAIL_USER || "").trim().toLowerCase();
+  const inboundAlias = String(EMAIL_INBOX || "").trim().toLowerCase();
+  const accountEmails = [gmailEmail, String(EMAIL_USER || "").trim().toLowerCase(), inboundAlias].filter(Boolean);
   const { data: canales } = await supabase
     .from("lat_canales")
     .select("id, nombre, numero_origen, identificador, estado, cola_default_id")
@@ -615,8 +617,8 @@ async function getConnectedGmailChannelId(): Promise<string | undefined> {
 
   const rows = (canales ?? []) as any[];
   const matchesAccount = (c: any) =>
-    gmailEmail && [c.numero_origen, c.identificador, c.nombre]
-      .some(v => String(v ?? "").trim().toLowerCase() === gmailEmail);
+    [c.numero_origen, c.identificador, c.nombre]
+      .some(v => accountEmails.includes(String(v ?? "").trim().toLowerCase()));
 
   const selected =
     rows.find(c => matchesAccount(c) && c.estado === "conectado") ??
@@ -627,6 +629,7 @@ async function getConnectedGmailChannelId(): Promise<string | undefined> {
 
   console.log("[email-agent] Gmail channel resolved:", JSON.stringify({
     gmail_email: gmailEmail,
+    inbound_alias: inboundAlias,
     channel_id: selected?.id ?? null,
     channel_name: selected?.nombre ?? null,
     channel_numero_origen: selected?.numero_origen ?? null,
