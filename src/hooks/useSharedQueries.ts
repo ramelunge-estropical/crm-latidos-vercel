@@ -31,7 +31,6 @@ export interface ClienteBasic {
   nombre_completo: string;
   razon_social: string | null;
   email: string | null;
-  email_secundario?: string | null;
   telefono: string | null;
   tipo_cliente: string;
   documento_numero: string | null;
@@ -300,7 +299,7 @@ export function useClientes() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("clientes")
-        .select("id, nombre_completo, razon_social, email, email_secundario, telefono, tipo_cliente, documento_numero, nit")
+        .select("id, nombre_completo, razon_social, email, telefono, tipo_cliente, documento_numero, nit")
         .order("nombre_completo");
       if (error) return [];
       return data as ClienteBasic[];

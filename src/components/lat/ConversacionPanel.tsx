@@ -357,38 +357,27 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const activeGestiones = gestiones.filter(g => g.pipeline_stages?.global_status !== 'done');
 
   // ── Cliente desde BD ──────────────────────────────────────────────────────
-  const contactoConversacion = conversacion.telefono ?? '';
-  const isEmailConversation = conversacion.canal === 'email';
-  const emailConversacion = isEmailConversation ? contactoConversacion.trim().toLowerCase() : '';
-  const telefono = !isEmailConversation ? contactoConversacion : '';
+  const telefono = conversacion.telefono ?? '';
 
   const { data: clienteDBResult } = useQuery<any[]>({
-    queryKey: ['lat-cliente-db', clienteId, contactoConversacion, conversacion.canal],
+    queryKey: ['lat-cliente-db', clienteId, telefono],
     queryFn: async () => {
       if (clienteId) {
         const { data } = await (supabase as any)
           .from('clientes')
-          .select('id, nombre_completo, razon_social, email, email_secundario, telefono, tipo_cliente, documento_numero, nit')
+          .select('id, nombre_completo, razon_social, email, telefono, tipo_cliente, documento_numero, nit')
           .eq('id', clienteId);
         return data ?? [];
       }
-      if (!contactoConversacion) return [];
-      if (isEmailConversation && emailConversacion) {
-        const { data } = await (supabase as any)
-          .from('clientes')
-          .select('id, nombre_completo, razon_social, email, email_secundario, telefono, tipo_cliente, documento_numero, nit')
-          .or(`email.eq.${emailConversacion},email_secundario.eq.${emailConversacion}`);
-        return data ?? [];
-      }
+      if (!telefono) return [];
       const phone = telefono.replace(/\D/g, '');
-      if (!phone) return [];
       const { data } = await (supabase as any)
         .from('clientes')
-        .select('id, nombre_completo, razon_social, email, email_secundario, telefono, tipo_cliente, documento_numero, nit')
+        .select('id, nombre_completo, razon_social, email, telefono, tipo_cliente, documento_numero, nit')
         .or(`telefono.eq.${phone},telefono.eq.+${phone},telefono.ilike.%${phone}%`);
       return data ?? [];
     },
-    enabled: !isMock && (!!clienteId || !!contactoConversacion),
+    enabled: !isMock && (!!clienteId || !!telefono),
   });
 
   const clientesEncontrados = clienteDBResult ?? [];
@@ -403,8 +392,6 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
         return (
           c.nombre_completo?.toLowerCase().includes(q) ||
           c.razon_social?.toLowerCase().includes(q) ||
-          c.email?.toLowerCase().includes(q) ||
-          c.email_secundario?.toLowerCase().includes(q) ||
           c.telefono?.includes(vincularSearch) ||
           c.documento_numero?.includes(vincularSearch) ||
           c.nit?.includes(vincularSearch)
@@ -428,7 +415,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     // Si la conversación no tiene cliente, lo vinculamos automáticamente
     if (!isMock && !clienteId) {
       const update: any = { cliente_id: cId, cliente_nombre: cNombre };
-      if (!isEmailConversation && !conversacion.telefono && tel) update.telefono = tel;
+      if (!conversacion.telefono && tel) update.telefono = tel;
       await (supabase as any).from('lat_conversaciones').update(update).eq('id', conversacion.id);
       toast.success('Cliente creado y vinculado');
     }
@@ -1274,9 +1261,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               <div>
                 <p className="text-sm font-medium text-foreground">Cliente no registrado</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {contactoConversacion
-                    ? `${isEmailConversation ? 'Correo' : 'Número'}: ${contactoConversacion}`
-                    : `Sin ${isEmailConversation ? 'correo' : 'número'} asociado`}
+                  {conversacion.telefono ? `Número: ${conversacion.telefono}` : 'Sin número asociado'}
                 </p>
                 <p className="text-[11px] text-muted-foreground/70 mt-1">
                   Creá el cliente para poder gestionar sus datos y vincular gestiones.
@@ -1304,7 +1289,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                     <input
                       autoFocus
                       type="text"
-                      placeholder="Nombre, email, CI, NIT o teléfono..."
+                      placeholder="Nombre, CI, NIT o teléfono..."
                       value={vincularSearch}
                       onChange={e => setVincularSearch(e.target.value)}
                       className="w-full bg-muted/50 text-xs rounded-lg pl-8 pr-8 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-ring"
@@ -1322,7 +1307,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                           className="w-full text-left px-3 py-2 hover:bg-accent/50 transition-colors border-b border-border/50 last:border-0"
                         >
                           <p className="text-xs font-medium truncate">{c.nombre_completo ?? c.razon_social}</p>
-                          <p className="text-[10px] text-muted-foreground">{c.email ?? c.telefono ?? (c.documento_numero ? `CI: ${c.documento_numero}` : '')}</p>
+                          <p className="text-[10px] text-muted-foreground">{c.telefono ?? c.email ?? (c.documento_numero ? `CI: ${c.documento_numero}` : '')}</p>
                         </button>
                       ))}
                     </div>
@@ -1361,8 +1346,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           setShowCrearCliente(open);
           if (!open) invalidateAll();
         }}
-        initialTelefono={isEmailConversation ? '' : contactoConversacion}
-        initialEmail={isEmailConversation ? emailConversacion : ''}
+        initialTelefono={conversacion.telefono ?? ''}
         initialNombre={conversacion.cliente_nombre ?? ''}
         initialCanal={conversacion.canal === 'whatsapp' ? 'WhatsApp' : conversacion.canal === 'phone' ? 'Telefonía' : 'Correo'}
         onCreated={handleAutoVincularCreado}
