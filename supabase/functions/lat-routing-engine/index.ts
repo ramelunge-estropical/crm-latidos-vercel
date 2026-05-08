@@ -113,9 +113,20 @@ async function getCanal(channelId?: string, channelType?: string): Promise<Canal
     .from("lat_canales")
     .select("id, tipo, nombre, estado, cola_default_id, bot_default_id");
 
-  const { data } = channelId
-    ? await q.eq("id", channelId).maybeSingle()
-    : await q.eq("tipo", channelType!).limit(1).maybeSingle();
+  if (channelId) {
+    const { data } = await q.eq("id", channelId).maybeSingle();
+    return data as Canal | null;
+  }
+
+  const { data: connected } = await q
+    .eq("tipo", channelType!)
+    .eq("estado", "conectado")
+    .not("cola_default_id", "is", null)
+    .limit(1)
+    .maybeSingle();
+  if (connected) return connected as Canal;
+
+  const { data } = await q.eq("tipo", channelType!).limit(1).maybeSingle();
 
   return data as Canal | null;
 }
