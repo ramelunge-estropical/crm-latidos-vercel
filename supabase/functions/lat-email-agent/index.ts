@@ -423,8 +423,9 @@ async function fetchUnreadEmailsGmail(): Promise<ParsedEmail[]> {
   // after:2026/04/24 catches last-week-of-April catch-up + all new emails going forward
   // No is:unread — picks up manually-read emails too; isProcessed() handles deduplication
   const query = `to:${EMAIL_INBOX} after:2026/04/24`;
+  const batchSize = Math.max(1, Math.min(Number(Deno.env.get("GMAIL_BATCH_SIZE") ?? "10"), 25));
   const listRes = await fetch(
-    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=50`,
+    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=${batchSize}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
@@ -1132,12 +1133,6 @@ Deno.serve(async (req: Request) => {
     for (const email of emails) {
       if (await isProcessed(email.messageId)) {
         console.log(`[email-agent] Skipping already processed: ${email.messageId} subject="${email.subject}" from=${email.from}`);
-        skipped++;
-        continue;
-      }
-      const selfAddrs = [EMAIL_USER.toLowerCase(), EMAIL_INBOX.toLowerCase()];
-      if (selfAddrs.includes(email.from.toLowerCase())) {
-        console.log(`[email-agent] Skipping self email: subject="${email.subject}" from=${email.from}`);
         skipped++;
         continue;
       }
