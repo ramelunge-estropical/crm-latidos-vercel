@@ -5,6 +5,7 @@ import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, Ba
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
+import { setColaboradorPresence } from "@/lib/presence";
 
 interface Process {
   id: string;
@@ -87,6 +88,7 @@ export function ProcessSidebar({
   });
 
   const handleLogout = async () => {
+    await setColaboradorPresence(colaboradorId, false);
     localStorage.removeItem("mis_gestiones_colaborador");
     localStorage.removeItem("crm_session_expiry");
     await supabase.auth.signOut();

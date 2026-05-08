@@ -17,6 +17,7 @@ import { GranolaView } from "@/components/GranolaView";
 import { CreateProcessDialog } from "@/components/CreateProcessDialog";
 import { LayoutGrid, Menu } from "lucide-react";
 import logoHeart from "@/assets/logo-heart.png";
+import { setColaboradorPresence } from "@/lib/presence";
 
 const VIEW_LABELS: Record<SidebarView, string> = {
   process:          "Pipeline",
@@ -60,6 +61,7 @@ const Index = () => {
             .single();
           if (colab && colab.activo !== false) {
             const expiry = Date.now() + 8 * 60 * 60 * 1000;
+            await setColaboradorPresence(colab.id, true);
             localStorage.setItem("mis_gestiones_colaborador", colab.id);
             localStorage.setItem("crm_session_expiry", String(expiry));
             window.history.replaceState({}, "", "/");
@@ -93,6 +95,7 @@ const Index = () => {
           .single();
         if (colab && colab.activo !== false) {
           const expiry = Date.now() + 8 * 60 * 60 * 1000;
+          await setColaboradorPresence(colab.id, true);
           localStorage.setItem("mis_gestiones_colaborador", colab.id);
           localStorage.setItem("crm_session_expiry", String(expiry));
           setIsLoggedIn(true);
@@ -105,14 +108,26 @@ const Index = () => {
       const expiry   = localStorage.getItem("crm_session_expiry");
       const valid    = colabId && expiry && Date.now() < parseInt(expiry);
       if (!valid) {
+        await setColaboradorPresence(colabId, false);
         localStorage.removeItem("mis_gestiones_colaborador");
         localStorage.removeItem("crm_session_expiry");
+      } else {
+        await setColaboradorPresence(colabId, true);
       }
       setIsLoggedIn(!!valid);
       setAuthReady(true);
     };
     init();
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const colaboradorId = localStorage.getItem("mis_gestiones_colaborador");
+    const touch = () => setColaboradorPresence(colaboradorId, true).catch(() => {});
+    touch();
+    const interval = window.setInterval(touch, 60_000);
+    return () => window.clearInterval(interval);
+  }, [isLoggedIn]);
 
   // Listener: navegación desde Dashboard → Bandeja con filtro
   // MUST be before conditional returns to satisfy Rules of Hooks

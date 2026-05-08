@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import logoHeart from "@/assets/logo-heart.png";
 import { Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { setColaboradorPresence } from "@/lib/presence";
 
 // Fallback: email lookup en colaboradores (mientras no haya Google Auth configurado)
 async function loginByEmail(email: string): Promise<string | null> {
@@ -43,6 +44,7 @@ export default function Login() {
     const id = await loginByEmail(email);
     if (id) {
       const expiry = Date.now() + 8 * 60 * 60 * 1000; // 8 horas
+      await setColaboradorPresence(id, true);
       localStorage.setItem("mis_gestiones_colaborador", id);
       localStorage.setItem("crm_session_expiry", String(expiry));
       window.location.href = "/";
