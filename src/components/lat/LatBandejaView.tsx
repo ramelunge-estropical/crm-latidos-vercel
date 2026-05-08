@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   ChevronLeft, Plus, Focus, Inbox, Users, ShieldCheck,
-  Activity, ArrowRightLeft, AlertCircle,
+  Activity, ArrowRightLeft, AlertCircle, Search, User, X
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { ConversacionList } from './ConversacionList';
 import { ConversacionPanel } from './ConversacionPanel';
@@ -14,8 +16,9 @@ import { TrazabilidadPanel } from './TrazabilidadPanel';
 import { ReasignacionDialog } from './ReasignacionDialog';
 import { getCliente } from '@/data/latMockData';
 import { useLatBandeja } from '@/hooks/useLatData';
-import { useCurrentUserRol } from '@/hooks/useSharedQueries';
+import { useCurrentUserRol, useClientes } from '@/hooks/useSharedQueries';
 import { getFunnelStage, getFlags } from '@/lib/latFunnel';
+import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 
 type MobileView = 'list' | 'chat';
 type FocusFilter = 'foco' | 'todos';
@@ -43,12 +46,18 @@ export function LatBandejaView() {
   const [flagFilter, setFlagFilter]         = useState<string>('todos');
   const [sideTab, setSideTab]               = useState<SideTab>('cliente');
   const [showReasignacion, setShowReasignacion] = useState(false);
+  const [showVincular, setShowVincular]         = useState(false);
+  const [vincularSearch, setVincularSearch]     = useState('');
+  const [showCrearCliente, setShowCrearCliente] = useState(false);
+
+  const queryClient = useQueryClient();
 
   // ── Usuario logueado y su rol ─────────────────────────────────────────────
   const { rol, user, isSupervisor, colaboradorId } = useCurrentUserRol();
 
   // ── Datos reales desde Supabase (filtrados por rol en la query) ───────────
   const { data: todasConversaciones } = useLatBandeja(colaboradorId, rol);
+  const { data: todosClientes = [] }  = useClientes();
 
   // Detectar si estamos en modo mock (tabla vacía)
   const isMockMode = useMemo(
@@ -161,6 +170,47 @@ export function LatBandejaView() {
   // ── Estado de asignación del chat seleccionado (para badge) ───────────────
   const selectedEstadoAsig = selectedConv?.estado_asignacion;
   const estadoAsigCfg = selectedEstadoAsig ? ESTADO_ASIG_LABEL[selectedEstadoAsig] : null;
+
+  const clientesFiltrados = vincularSearch.length >= 2
+    ? todosClientes.filter(c => {
+        const q = vincularSearch.toLowerCase();
+        return (
+          c.nombre_completo?.toLowerCase().includes(q) ||
+          c.razon_social?.toLowerCase().includes(q) ||
+          c.telefono?.includes(vincularSearch) ||
+          c.documento_numero?.includes(vincularSearch) ||
+          c.nit?.includes(vincularSearch)
+        );
+      }).slice(0, 8)
+    : [];
+
+  const handleVincularCliente = async (cId: string, cNombre: string) => {
+    if (!selectedConv) return;
+    await (supabase as any)
+      .from('lat_conversaciones')
+      .update({ cliente_id: cId, cliente_nombre: cNombre })
+      .eq('id', selectedConv.id);
+    
+    queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db'] });
+    toast.success('Cliente vinculado');
+    setShowVincular(false);
+    setVincularSearch('');
+  };
+
+  const handleAutoVincularCreado = async (cId: string, cNombre: string, tel?: string | null, email?: string | null) => {
+    if (!selectedConv) return;
+    if (!isMockMode && !selectedConv.cliente_id) {
+      const update: any = { cliente_id: cId, cliente_nombre: cNombre };
+      if (!selectedConv.telefono && tel) update.telefono = tel;
+      await (supabase as any).from('lat_conversaciones').update(update).eq('id', selectedConv.id);
+      toast.success('Cliente creado y vinculado');
+    }
+    queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-conversaciones'] });
+    queryClient.invalidateQueries({ queryKey: ['lat-cliente-db'] });
+  };
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -373,8 +423,69 @@ export function LatBandejaView() {
                     conversacion={selectedConv}
                   />
                 ) : (
-                  <div className="p-4 text-xs text-muted-foreground text-center mt-6">
-                    Sin cliente relacionado
+                  <div className="flex flex-col items-center justify-center py-10 px-4 text-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-warning/10 flex items-center justify-center">
+                      <User className="w-5 h-5 text-warning" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Cliente no registrado</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {selectedConv.telefono ? `Número: ${selectedConv.telefono}` : 'Sin número asociado'}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground/70 mt-1">
+                        Creá el cliente para poder gestionar sus datos y vincular gestiones.
+                      </p>
+                    </div>
+                    {!showVincular ? (
+                      <div className="flex flex-col gap-2 w-full mt-2">
+                        <button
+                          onClick={() => setShowCrearCliente(true)}
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Crear contacto
+                        </button>
+                        <button
+                          onClick={() => setShowVincular(true)}
+                          className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-border text-muted-foreground rounded-lg text-xs font-medium hover:bg-accent/50 transition-colors"
+                        >
+                          <Search className="w-3.5 h-3.5" /> Vincular manualmente
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-full space-y-2 mt-2">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                          <input
+                            autoFocus
+                            type="text"
+                            placeholder="Nombre, CI, NIT o teléfono..."
+                            value={vincularSearch}
+                            onChange={e => setVincularSearch(e.target.value)}
+                            className="w-full bg-muted/50 text-xs rounded-lg pl-8 pr-8 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                          <button onClick={() => { setShowVincular(false); setVincularSearch(''); }} className="absolute right-2 top-1/2 -translate-y-1/2">
+                            <X className="w-3.5 h-3.5 text-muted-foreground" />
+                          </button>
+                        </div>
+                        {clientesFiltrados.length > 0 && (
+                          <div className="border border-border rounded-lg overflow-hidden bg-card">
+                            {clientesFiltrados.map(c => (
+                              <button
+                                key={c.id}
+                                onClick={() => handleVincularCliente(c.id, c.nombre_completo ?? c.razon_social ?? '')}
+                                className="w-full text-left px-3 py-2 hover:bg-accent/50 transition-colors border-b border-border/50 last:border-0"
+                              >
+                                <p className="text-xs font-medium truncate">{c.nombre_completo ?? c.razon_social}</p>
+                                <p className="text-[10px] text-muted-foreground">{c.telefono ?? c.email ?? (c.documento_numero ? `CI: ${c.documento_numero}` : '')}</p>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {vincularSearch.length >= 2 && clientesFiltrados.length === 0 && (
+                          <p className="text-[11px] text-muted-foreground text-center py-2">Sin resultados</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -398,6 +509,17 @@ export function LatBandejaView() {
           onOpenChange={setShowReasignacion}
           conversacion={selectedConv}
           intervenidoPorId={colaboradorId}
+        />
+      )}
+
+      {selectedConv && (
+        <CreateClienteDialog
+          open={showCrearCliente}
+          onOpenChange={setShowCrearCliente}
+          initialTelefono={selectedConv.telefono ?? ''}
+          initialNombre={selectedConv.cliente_nombre ?? ''}
+          initialCanal={selectedConv.canal === 'whatsapp' ? 'WhatsApp' : selectedConv.canal === 'phone' ? 'Telefonía' : 'Correo'}
+          onCreated={handleAutoVincularCreado}
         />
       )}
 
