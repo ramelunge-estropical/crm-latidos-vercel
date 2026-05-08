@@ -424,7 +424,7 @@ async function fetchUnreadEmailsGmail(): Promise<ParsedEmail[]> {
   // No is:unread — picks up manually-read emails too; isProcessed() handles deduplication
   const query = `to:${EMAIL_INBOX} after:2026/04/24`;
   const listRes = await fetch(
-    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=10`,
+    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=50`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
@@ -435,8 +435,8 @@ async function fetchUnreadEmailsGmail(): Promise<ParsedEmail[]> {
 
   const listData = await listRes.json();
   const messages: { id: string }[] = listData.messages ?? [];
-  if (messages.length === 0) { console.log("[gmail] No unread emails"); return []; }
-  console.log(`[gmail] Found ${messages.length} unread emails`);
+  if (messages.length === 0) { console.log("[gmail] No candidate emails"); return []; }
+  console.log(`[gmail] Found ${messages.length} candidate emails`);
 
   const emails: ParsedEmail[] = [];
   for (const { id } of messages) {
