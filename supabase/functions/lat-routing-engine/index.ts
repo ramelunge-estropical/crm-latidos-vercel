@@ -235,11 +235,16 @@ async function getCola(colaId: string): Promise<Cola | null> {
   return data as Cola | null;
 }
 
-function validarCola(cola: Cola, canalId: string): { valida: boolean; motivo: string | null } {
+function validarCola(
+  cola: Cola,
+  canalId: string,
+  allowExplicitRoute = false,
+): { valida: boolean; motivo: string | null } {
   if (!cola.activa) return { valida: false, motivo: "Cola inactiva" };
 
   const ids = cola.canales_entrantes_ids ?? [];
   if (ids.length > 0 && !ids.includes(canalId)) {
+    if (allowExplicitRoute) return { valida: true, motivo: null };
     return { valida: false, motivo: "Canal no permitido en esta cola" };
   }
   return { valida: true, motivo: null };
@@ -442,6 +447,7 @@ async function tryAssignFromQueue(
   colaId:    string,
   convId:    string,
   canalId:   string,
+  allowExplicitRoute = false,
 ): Promise<AgentSelection & { colaValida: boolean; motivoCola: string | null }> {
   const cola = await getCola(colaId);
 
@@ -449,7 +455,7 @@ async function tryAssignFromQueue(
     return { colaValida: false, motivoCola: "Cola no encontrada", asignado: false, colaborador_id: null, colaborador_nombre: null, motivo: "Cola no encontrada" };
   }
 
-  const { valida, motivo: motivoCola } = validarCola(cola, canalId);
+  const { valida, motivo: motivoCola } = validarCola(cola, canalId, allowExplicitRoute);
   if (!valida) {
     return { colaValida: false, motivoCola, asignado: false, colaborador_id: null, colaborador_nombre: null, motivo: motivoCola };
   }
@@ -632,7 +638,8 @@ export async function routeIncomingCommunication(
   }
 
   // ── 3 & 4. Intentar asignar desde la cola principal ───────────────────────
-  const resultado = await tryAssignFromQueue(colaId, conversation_id, canal.id);
+  const allowExplicitRoute = !!reglaId || colaId === canal.cola_default_id;
+  const resultado = await tryAssignFromQueue(colaId, conversation_id, canal.id, allowExplicitRoute);
 
   if (!resultado.colaValida) {
     await patchConv(conversation_id, {
@@ -819,6 +826,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const result = await routeIncomingCommunication(body);
+    await patchConv(body.conversation_id, {
+      routing_status: result.routing_status,
+      routing_reason: result.routing_reason,
+    });
 
     return new Response(JSON.stringify({ ok: true, ...result }), {
       status: 200,

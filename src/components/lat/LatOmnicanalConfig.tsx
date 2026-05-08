@@ -820,6 +820,7 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
       estado: gmailCfg?.activo ? "conectado" : "desconectado",
       activo: gmailCfg?.activo ?? true,
     };
+    let effectiveCanalId = gmailCanalId;
     if (gmailCanalId) {
       await db().from("lat_canales").update(patch).eq("id", gmailCanalId);
     } else if (gmailCfg) {
@@ -833,7 +834,19 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
         activo: gmailCfg.activo,
         ...patch,
       }).select("id").single();
-      if (data) setGmailCanalId(data.id);
+      if (data) {
+        effectiveCanalId = data.id;
+        setGmailCanalId(data.id);
+      }
+    }
+    if (tipo === "cola" && id && effectiveCanalId) {
+      await db().from("lat_colas").update({
+        canal_id: effectiveCanalId,
+        canales_entrantes_ids: colas.find((c: any) => c.id === id)?.canales_entrantes_ids?.includes(effectiveCanalId)
+          ? colas.find((c: any) => c.id === id)?.canales_entrantes_ids
+          : [...(colas.find((c: any) => c.id === id)?.canales_entrantes_ids ?? []), effectiveCanalId],
+      }).eq("id", id);
+      qc.invalidateQueries({ queryKey: ["lat_colas"] });
     }
     setGmailFallbackTipo(tipo);
     setGmailFallbackId(id);
