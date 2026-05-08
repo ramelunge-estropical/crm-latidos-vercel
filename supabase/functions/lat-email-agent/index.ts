@@ -611,7 +611,7 @@ async function callRoutingEngine(
   attachmentNames: string[],
 ): Promise<void> {
   try {
-    await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
       method:  "POST",
       headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -630,6 +630,12 @@ async function callRoutingEngine(
         },
       }),
     });
+    const txt = await res.text().catch(() => "");
+    if (!res.ok) {
+      console.error("[email-agent] routing-engine failed:", res.status, txt);
+    } else {
+      console.log("[email-agent] routing-engine result:", txt);
+    }
   } catch (err) {
     console.error("[email-agent] routing-engine error:", err);
   }
@@ -1082,9 +1088,17 @@ Deno.serve(async (req: Request) => {
     let processed = 0, skipped = 0;
 
     for (const email of emails) {
-      if (await isProcessed(email.messageId)) { skipped++; continue; }
+      if (await isProcessed(email.messageId)) {
+        console.log(`[email-agent] Skipping already processed: ${email.messageId} subject="${email.subject}" from=${email.from}`);
+        skipped++;
+        continue;
+      }
       const selfAddrs = [EMAIL_USER.toLowerCase(), EMAIL_INBOX.toLowerCase()];
-      if (selfAddrs.includes(email.from.toLowerCase())) { skipped++; continue; }
+      if (selfAddrs.includes(email.from.toLowerCase())) {
+        console.log(`[email-agent] Skipping self email: subject="${email.subject}" from=${email.from}`);
+        skipped++;
+        continue;
+      }
 
       console.log(`[email] Processing: ${email.subject} from ${email.from}`);
 

@@ -57,9 +57,9 @@ BEGIN
 
   -- ── 4. Agregar el canal email a canales_entrantes_ids de la cola ───────────
   UPDATE lat_colas
-     SET canales_entrantes_ids = array_append(canales_entrantes_ids, v_canal_id)
+     SET canales_entrantes_ids = array_append(COALESCE(canales_entrantes_ids, ARRAY[]::UUID[]), v_canal_id)
    WHERE id = v_cola_id
-     AND NOT (canales_entrantes_ids @> ARRAY[v_canal_id]);
+     AND NOT (COALESCE(canales_entrantes_ids, ARRAY[]::UUID[]) @> ARRAY[v_canal_id]::UUID[]);
 
   RAISE NOTICE '✓ Canal email vinculado a cola Grupos y Bodas';
 
@@ -71,12 +71,12 @@ BEGIN
   -- ── 6. Resolver colaborador Jose Manuel Gutierrez ─────────────────────────
   SELECT id INTO v_jose_id
     FROM colaboradores
-   WHERE email = 'jmgutierrez@estropical.com'
+   WHERE lower(trim(email)) = lower('pinnovacion@estropical.com')
      AND activo = true
    LIMIT 1;
 
   IF v_jose_id IS NULL THEN
-    RAISE EXCEPTION 'No se encontró colaborador activo con email jmgutierrez@estropical.com.';
+    RAISE EXCEPTION 'No se encontró colaborador activo con email pinnovacion@estropical.com.';
   END IF;
 
   RAISE NOTICE '✓ Colaborador encontrado: Jose Manuel Gutierrez id = %', v_jose_id;

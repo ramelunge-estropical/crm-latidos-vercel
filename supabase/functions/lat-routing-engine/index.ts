@@ -597,7 +597,10 @@ export async function routeIncomingCommunication(
 
   // ── Bot activo para este canal → delegar al bot (con cola pre-asignada) ────
   const botActivo = await isBotActivo(channel_type ?? canal.tipo);
-  if (botActivo) {
+  const isEmailChannel = (channel_type ?? canal.tipo) === "email";
+  // Email has its own AI agent. It may analyze/reply, but inbound messages must
+  // still continue to human assignment so they appear in the advisor inbox.
+  if (botActivo && !isEmailChannel) {
     await patchConv(conversation_id, {
       cola_id:           colaId,
       estado:            "en_cola",
