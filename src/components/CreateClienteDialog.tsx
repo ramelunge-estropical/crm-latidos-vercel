@@ -152,13 +152,14 @@ interface CreateClienteDialogProps {
   onOpenChange: (open: boolean) => void;
   initialNombre?: string;
   initialTelefono?: string;
+  initialEmail?: string;
   initialCanal?: string;
   clienteId?: string;
   clienteData?: Record<string, any>;
   onCreated?: (clienteId: string, nombre: string, telefono?: string | null, email?: string | null) => void;
 }
 
-export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialCanal = "", clienteId, clienteData, onCreated }: CreateClienteDialogProps) {
+export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", initialTelefono = "", initialEmail = "", initialCanal = "", clienteId, clienteData, onCreated }: CreateClienteDialogProps) {
   const isEditMode = !!clienteId;
   const queryClient = useQueryClient();
 
@@ -174,6 +175,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
     ...EMPTY_FORM,
     nombre_completo: initialNombre,
     telefono:        initialTelefono,
+    email:           initialEmail,
     canal_contacto:  initialCanal,
   });
   useEffect(() => {
@@ -215,6 +217,7 @@ export function CreateClienteDialog({ open, onOpenChange, initialNombre = "", in
           ...EMPTY_FORM,
           nombre_completo: initialNombre,
           telefono:        initialTelefono,
+          email:           initialEmail,
           canal_contacto:  initialCanal,
         });
       }
