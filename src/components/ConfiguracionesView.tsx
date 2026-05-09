@@ -5,7 +5,7 @@ import {
   Settings, Shield, Users,
   MapPin, MessageSquare, BarChart3, Puzzle, Sliders,
   ChevronLeft, ChevronRight, Lock, EyeOff,
-  GitBranch, LayoutGrid, Layers
+  GitBranch, LayoutGrid, Layers, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { PipelinesConfig }     from "./config/PipelinesConfig";
 import { AreasConfig }         from "./config/AreasConfig";
 import { ColaboradoresConfig } from "./config/ColaboradoresConfig";
 import { LatOmnicanalConfig }  from "./lat/LatOmnicanalConfig";
+import { AgenteIAConfig }      from "./config/AgenteIAConfig";
 
 type Section =
   | "gestiones"
@@ -22,6 +23,7 @@ type Section =
   | "colaboradores"
   | "permisos"
   | "lat-omnicanal"
+  | "agentes-ia"
   | null;
 
 const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = {
@@ -31,6 +33,7 @@ const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = 
   colaboradores:   { canView: ["admin", "gerente"], canEdit: ["admin"] },
   permisos:        { canView: ["admin"],            canEdit: ["admin"] },
   "lat-omnicanal": { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  "agentes-ia":    { canView: ["admin", "gerente"], canEdit: ["admin"] },
 };
 
 const CARDS = [
@@ -97,6 +100,13 @@ const CARDS = [
     title: "Integraciones",
     desc: "Conectar con sistemas externos",
   },
+  {
+    id: "agentes-ia" as Section,
+    icon: Sparkles,
+    color: "bg-violet-500/10 text-violet-600",
+    title: "Agentes IA",
+    desc: "Configurar asistente IA, permisos por rol y parámetros del modelo",
+  },
 ];
 
 const SECTION_TITLES: Record<string, string> = {
@@ -106,6 +116,7 @@ const SECTION_TITLES: Record<string, string> = {
   colaboradores:   "Colaboradores",
   permisos:        "Permisos y Accesos",
   "lat-omnicanal": "LAT Omnicanal",
+  "agentes-ia":    "Agentes IA",
 };
 
 const ROL_LABELS: Record<string, string> = {
@@ -330,6 +341,7 @@ export function ConfiguracionesView() {
         {active === "colaboradores"   && <ColaboradoresConfig readonly={!canEdit("colaboradores")} />}
         {active === "permisos"        && <PermisosInfo />}
         {active === "lat-omnicanal"   && <LatOmnicanalConfig  readonly={!canEdit("lat-omnicanal")} />}
+        {active === "agentes-ia"      && <AgenteIAConfig      readonly={!canEdit("agentes-ia")} />}
       </div>
     </div>
   );
