@@ -1,1 +1,0 @@
-ALTER TABLE activities ADD COLUMN IF NOT EXISTS meet_link TEXT;

@@ -1,66 +1,82 @@
 /**
- * lat-bot-agent — Agente IA de WhatsApp para Estropical
+ * lat-bot-agent v2 — Motor de conversación WhatsApp (OpenAI + prompt optimizado)
  *
- * Flujo:
- *   1. Identifica al cliente por teléfono en BD → si no, pide CI + nombre completo
- *   2. Entiende la necesidad (hasta MAX_TURNS intercambios)
- *   3. Deriva a la cola correcta usando lat_reglas_asignacion / lat_colas
- *
- * Llamado por wpp-webhook (fire-and-forget) después de cada mensaje inbound.
+ * Responsabilidad del AI: saludo + identificación + detección de intención + FAQ simple
+ * Responsabilidad del código: routing, horarios, asignación de asesor, estado
  *
  * Secrets requeridos:
  *   OPENAI_API_KEY
- *   SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY
- *   GUPSHUP_API_KEY
- *   GUPSHUP_NUMBER      → número origen Gupshup
- *   GUPSHUP_APP_NAME    → nombre del app Gupshup
+ *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+ *   GUPSHUP_API_KEY, GUPSHUP_NUMBER, GUPSHUP_APP_NAME
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const OPENAI_KEY     = Deno.env.get("OPENAI_API_KEY")!;
-const SUPABASE_URL   = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY    = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GS_API_KEY     = Deno.env.get("GUPSHUP_API_KEY") ?? "";
-const GS_NUMBER      = Deno.env.get("GUPSHUP_NUMBER") ?? "";
-const GS_APP_NAME    = Deno.env.get("GUPSHUP_APP_NAME") ?? "";
+const OPENAI_KEY   = Deno.env.get("OPENAI_API_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const GS_API_KEY   = Deno.env.get("GUPSHUP_API_KEY") ?? "";
+const GS_NUMBER    = Deno.env.get("GUPSHUP_NUMBER") ?? "";
+const GS_APP_NAME  = Deno.env.get("GUPSHUP_APP_NAME") ?? "";
 
-const supabase   = createClient(SUPABASE_URL, SERVICE_KEY);
-const MAX_TURNS  = 6;
-const MODEL      = "gpt-4o-mini";
-
-function normalizePhone(phone: string): string {
-  return (phone ?? "").replace(/[^0-9]/g, "");
-}
+const supabase  = createClient(SUPABASE_URL, SERVICE_KEY);
+const MODEL     = "gpt-4o-mini";
+const MAX_TURNS = 6;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface BotContexto {
   fase: "identificacion" | "necesidad" | "finalizado";
-  ci?: string | null;
   nombre?: string | null;
   cliente_id?: string | null;
-  intencion?: string | null;
-  urgencia?: string | null;
 }
 
-// ─── OpenAI tools ─────────────────────────────────────────────────────────────
+// ─── Prompt del sistema (mínimo — solo lo indispensable para el AI) ───────────
+
+function buildSystemPrompt(
+  ctx: BotContexto,
+  clienteInfo: string,
+  colasStr: string,
+  turno: number,
+  ultimoAsesor: string | null,
+  cfg?: any,
+): string {
+  const maxT    = cfg?.max_turnos ?? MAX_TURNS;
+  const reglas  = cfg?.prompt_reglas ? `\nREGLAS ADICIONALES:\n${cfg.prompt_reglas}` : "";
+
+  return `Eres Lati, asistente de Tropical Tours Bolivia vía WhatsApp.
+Tono: amigable, profesional, español latinoamericano. Firmá cada mensaje con "- Lati 🌍".
+Nunca digas que sos IA, bot o asistente virtual. Solo "Lati".
+Nunca inventes precios, disponibilidad ni políticas.
+
+TURNO: ${turno + 1}/${maxT}
+FASE: ${ctx.fase}
+CLIENTE: ${clienteInfo}${ultimoAsesor ? `\nÚLTIMO ASESOR: ${ultimoAsesor}` : ""}
+COLAS: ${colasStr}
+
+FLUJO ESTRICTO:
+${ctx.fase === "identificacion"
+  ? "1. Saludá y pedí el nombre del cliente."
+  : `1. Cliente identificado: ${ctx.nombre}. Entendé su necesidad.`}
+2. Máximo 3 preguntas para detectar intención. Si es EMERGENCIA: derivar inmediatamente.
+3. Cuando entiendas la necesidad: llamá a detectar_intencion() Y asignar_cola() en el mismo turno.
+4. Si llegás al turno ${maxT}: derivar de todas formas.${reglas}`;
+}
+
+// ─── Tools ───────────────────────────────────────────────────────────────────
 
 const TOOLS = [
   {
     type: "function",
     function: {
       name: "identificar_cliente",
-      description: "Llama cuando tenés el CI y nombre completo del contacto",
+      description: "Registra el nombre del cliente cuando lo menciona.",
       parameters: {
         type: "object",
         properties: {
           nombre_completo: { type: "string" },
-          ci:              { type: "string" },
-          cliente_encontrado: { type: "boolean", description: "Si existe en la BD de clientes" },
         },
-        required: ["nombre_completo", "ci", "cliente_encontrado"],
+        required: ["nombre_completo"],
       },
     },
   },
@@ -68,7 +84,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "detectar_intencion",
-      description: "Registra la categoría e urgencia de la necesidad del cliente",
+      description: "Registra categoría e urgencia cuando entendiste la necesidad. Siempre junto a asignar_cola().",
       parameters: {
         type: "object",
         properties: {
@@ -76,7 +92,7 @@ const TOOLS = [
             type: "string",
             enum: ["vacacional", "visa", "grupos", "corporativo", "soporte", "emergencia", "cobranzas", "otro"],
           },
-          urgencia: { type: "string", enum: ["baja", "media", "alta", "critica"] },
+          urgencia:    { type: "string", enum: ["baja", "media", "alta", "critica"] },
           descripcion: { type: "string" },
         },
         required: ["categoria", "urgencia", "descripcion"],
@@ -87,143 +103,46 @@ const TOOLS = [
     type: "function",
     function: {
       name: "asignar_cola",
-      description: "Deriva al cliente a la cola correcta y finaliza la atención del bot. Usá esto cuando ya tenés la intención clara.",
+      description: "Deriva al cliente. Llamar siempre en el mismo turno que detectar_intencion().",
       parameters: {
         type: "object",
         properties: {
-          cola_nombre:       { type: "string", description: "Nombre exacto de la cola según la lista disponible" },
-          razon:             { type: "string" },
-          mensaje_despedida: { type: "string", description: "Mensaje cálido final que Lati envía antes de pasar al asesor" },
+          cola_nombre:       { type: "string" },
+          mensaje_despedida: { type: "string" },
         },
-        required: ["cola_nombre", "razon", "mensaje_despedida"],
+        required: ["cola_nombre", "mensaje_despedida"],
       },
     },
   },
 ];
-
-// ─── System prompt ────────────────────────────────────────────────────────────
-
-function buildSystemPrompt(
-  ctx: BotContexto,
-  clienteInfo: string,
-  colasInfo: string,
-  turno: number,
-  primerNombre?: string,
-  cfg?: { prompt_identidad?: string; prompt_reglas?: string; prompt_categorias?: string; max_turnos?: number; min_preguntas_calificacion?: number; prompt_calificacion?: string },
-): string {
-  const saludo    = primerNombre ? `¡Hola, ${primerNombre}!` : "¡Hola!";
-  const identidad  = cfg?.prompt_identidad ?? "Sos Lati, asistente virtual de Estropical Bolivia, agencia de viajes líder en Bolivia.";
-  const reglas     = cfg?.prompt_reglas    ?? "- Hablá en español latinoamericano, cálido y profesional\n- Nunca inventes precios ni disponibilidad\n- La agencia opera 24/7";
-  const cats       = cfg?.prompt_categorias ?? "- vacacional\n- visa\n- grupos\n- corporativo\n- soporte\n- emergencia\n- cobranzas\n- otro";
-  const maxT       = cfg?.max_turnos ?? MAX_TURNS;
-  const minCalif   = cfg?.min_preguntas_calificacion ?? 1;
-  const califPrompt = cfg?.prompt_calificacion ?? "- Hacé al menos 1 pregunta de calificación antes de derivar (destino, fechas, cantidad de viajeros, etc.)";
-
-  return `${identidad}
-Tu trabajo es atender mensajes de WhatsApp siguiendo este flujo ESTRICTO:
-
-## FASE 1 — IDENTIFICACIÓN
-${ctx.fase === "identificacion" ? `
-El cliente AÚN NO está identificado. Tu PRIMER mensaje debe:
-1. Saludar cálidamente (${saludo} si ya tenés su nombre, sino "¡Hola! Bienvenido/a a Estropical 🌍")
-2. Pedirle NOMBRE COMPLETO y CI en el mismo mensaje. Ejemplo:
-   "Para atenderte mejor, ¿me podés compartir tu nombre completo y número de CI (cédula de identidad)?"
-
-IMPORTANTE sobre la identificación:
-- Si el cliente te da solo el nombre pero no el CI → agradecé y pedí el CI: "¡Gracias [nombre]! Solo me falta tu número de CI para completar tu registro."
-- Si el cliente te da solo el CI pero no el nombre → pedí el nombre: "¡Gracias! ¿Y tu nombre completo?"
-- Solo llamá a identificar_cliente() cuando tengas AMBOS: nombre completo Y CI.
-- No avances a la siguiente fase sin ambos datos.
-` : `✅ Cliente identificado: ${ctx.nombre ?? ""} (CI: ${ctx.ci ?? ""})`}
-
-${ctx.fase === "necesidad" && turno === 1 ? `
-PRIMER MENSAJE de esta sesión: Saludá al cliente por su nombre: "${saludo} ¿En qué te puedo ayudar hoy? 😊"
-` : ""}
-
-## FASE 2 — DETECCIÓN DE NECESIDAD
-${ctx.fase !== "finalizado" ? `
-Con el cliente identificado, escuchá su necesidad e identificá la categoría:
-- vacacional: paquetes turísticos, destinos, hoteles, vuelos
-- visa: trámites de visa, documentación, migración
-- grupos: viajes grupales, bodas, eventos, incentivos
-- corporativo: viajes de empresa, carteras corporativas
-- soporte: problemas con reservas existentes, cambios, cancelaciones
-- emergencia: problema activo mientras viajan (MÁXIMA PRIORIDAD → derivar inmediatamente)
-- cobranzas: pagos, cuotas, saldos pendientes
-- otro: no clasificado
-
-Podés responder preguntas generales simples (destinos populares, requisitos generales, horarios de oficina).
-Para cotizaciones, reservas específicas o gestiones: llamá a detectar_intencion() y luego a asignar_cola().
-` : ""}
-
-## FASE 2.5 — CALIFICACIÓN (OBLIGATORIA antes de derivar)
-Antes de llamar a asignar_cola(), debés hacer al menos ${minCalif} pregunta(s) de calificación para entender bien la necesidad.
-Preguntas sugeridas por categoría:
-${califPrompt}
-
-EXCEPCIÓN: Si es EMERGENCIA, derivá inmediatamente sin preguntas.
-
-## FASE 3 — DERIVACIÓN
-Solo cuando ya tengas la información de calificación, hacé LAS DOS COSAS EN EL MISMO MENSAJE:
-1. Llamá a detectar_intencion()
-2. Inmediatamente llamá a asignar_cola()
-NO hagas una sin la otra. NO esperes respuesta intermedia.
-
-## CATEGORÍAS DE NECESIDAD
-${cats}
-
-## COLAS DISPONIBLES
-${colasInfo}
-
-## INFORMACIÓN DEL CLIENTE
-${clienteInfo}
-
-## REGLAS
-${reglas}
-- Firmá siempre como "- Lati 🌍" al final de cada mensaje
-- Si el cliente fue atendido antes por un asesor, mencionalo: "Anteriormente te atendió [nombre]."
-- Turno actual: ${turno}/${maxT} — si llegás al límite, derivá de todos modos`;
-}
 
 // ─── Helpers DB ───────────────────────────────────────────────────────────────
 
 async function getConversacion(id: string) {
   const { data } = await supabase
     .from("lat_conversaciones")
-    .select("id, telefono, bot_estado, bot_contexto, bot_turnos, cliente_id, cliente_nombre")
+    .select("id, telefono, bot_estado, bot_contexto, bot_turnos, cliente_id, cliente_nombre, ultima_interaccion, responsable_nombre")
     .eq("id", id)
     .single();
   return data as any;
 }
 
-async function getMensajesRecientes(convId: string) {
+async function getMensajesRecientes(convId: string, limit = 6) {
   const { data } = await supabase
     .from("lat_mensajes")
-    .select("tipo, contenido, created_at")
+    .select("tipo, contenido")
     .eq("conversacion_id", convId)
     .order("created_at", { ascending: false })
-    .limit(12);
+    .limit(limit);
   return (data ?? []).reverse() as any[];
 }
 
-async function getCliente(telefono: string) {
-  if (!telefono) return null;
+async function getClienteByTelefono(telefono: string) {
   const clean = telefono.replace(/\D/g, "");
   const { data } = await supabase
     .from("clientes")
-    .select("id, nombre_completo, razon_social, telefono, email, documento_numero, canal_contacto")
+    .select("id, nombre_completo, razon_social, documento_numero")
     .or(`telefono.ilike.%${clean}%,telefono.ilike.%${telefono}%`)
-    .limit(1)
-    .maybeSingle();
-  return data as any;
-}
-
-async function getClienteByCiOrNombre(ci: string, nombre: string) {
-  if (!ci && !nombre) return null;
-  const { data } = await supabase
-    .from("clientes")
-    .select("id, nombre_completo, telefono, email, documento_numero")
-    .or(`documento_numero.ilike.%${ci}%,nombre_completo.ilike.%${nombre}%`)
     .limit(1)
     .maybeSingle();
   return data as any;
@@ -232,174 +151,112 @@ async function getClienteByCiOrNombre(ci: string, nombre: string) {
 async function getBotConfig() {
   const { data } = await supabase
     .from("lat_bot_config")
-    .select("activo, modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias, min_preguntas_calificacion, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
+    .select("activo, max_turnos, temperatura, prompt_reglas, crear_gestion_auto, gestion_process_id, gestion_stage_id")
     .eq("canal", "whatsapp")
     .maybeSingle();
   return data as any;
 }
 
-async function crearGestion(conv: any, ctx: any, cfg: any) {
-  if (!cfg?.crear_gestion_auto || !cfg?.gestion_process_id) return null;
-
-  const PRIORIDAD_MAP: Record<string, string> = {
-    critica: "urgent", alta: "high", media: "medium", baja: "low",
-  };
-  const TYPE_MAP: Record<string, string> = {
-    vacacional: "consulta", visa: "consulta", grupos: "consulta",
-    corporativo: "consulta", soporte: "soporte", emergencia: "soporte",
-    cobranzas: "cobro", otro: "consulta",
-  };
-
-  const categoria  = ctx.intencion ?? "otro";
-  const titulo     = `${categoria.charAt(0).toUpperCase() + categoria.slice(1)} — ${ctx.nombre ?? conv.cliente_nombre ?? "Nuevo contacto"} (WhatsApp)`;
-  const prioridad  = PRIORIDAD_MAP[ctx.urgencia ?? "media"] ?? "medium";
-  const tipo       = TYPE_MAP[categoria] ?? "consulta";
-
-  const { data, error } = await supabase.from("gestiones").insert({
-    title:                  titulo,
-    description:            conv.resumen_ia ?? `Contacto vía WhatsApp. Categoría: ${categoria}.`,
-    process_id:             cfg.gestion_process_id,
-    stage_id:               cfg.gestion_stage_id ?? null,
-    cliente_id:             conv.cliente_id ?? null,
-    cliente_nombre:         conv.cliente_nombre ?? ctx.nombre ?? null,
-    priority:               prioridad,
-    type:                   tipo,
-    subtype:                categoria,
-    canal_origen:           "whatsapp",
-    conversacion_id_origen: conv.id,
-  }).select("id, codigo").single();
-
-  if (error) { console.error("[bot] Error creando gestión:", error.message); return null; }
-  console.log(`[bot] Gestión creada: ${data?.codigo} id:${data?.id}`);
-  return data;
-}
-
 async function getColas() {
   const { data } = await supabase
     .from("lat_colas")
-    .select("nombre, area, descripcion, color")
+    .select("id, nombre, area")
     .eq("activa", true)
     .order("orden");
   return (data ?? []) as any[];
-}
-
-async function getColaByNombre(nombre: string) {
-  const { data } = await supabase
-    .from("lat_colas")
-    .select("id, nombre")
-    .ilike("nombre", `%${nombre}%`)
-    .eq("activa", true)
-    .limit(1)
-    .maybeSingle();
-  return data as any;
 }
 
 async function updateConversacion(id: string, updates: Record<string, any>) {
   await supabase.from("lat_conversaciones").update(updates).eq("id", id);
 }
 
-async function saveMensajeSistema(convId: string, contenido: string) {
+// ─── Gupshup send ─────────────────────────────────────────────────────────────
+
+async function sendWhatsApp(telefono: string, texto: string, convId: string) {
   await supabase.from("lat_mensajes").insert({
     conversacion_id: convId,
     tipo:            "outbound",
-    contenido,
-    estado:          "enviado",
+    contenido:       texto,
+    estado:          GS_API_KEY ? "enviando" : "enviado",
     autor_nombre:    "Lati",
   });
+
+  if (!GS_API_KEY || !GS_NUMBER) return;
+
+  try {
+    await fetch("https://api.gupshup.io/wa/api/v1/msg", {
+      method:  "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", apikey: GS_API_KEY },
+      body: new URLSearchParams({
+        channel:     "whatsapp",
+        source:      GS_NUMBER,
+        destination: telefono,
+        message:     JSON.stringify({ type: "text", text: texto }),
+        "src.name":  GS_APP_NAME,
+      }).toString(),
+    });
+  } catch (err) {
+    console.error("[bot] sendWhatsApp error:", err);
+  }
 }
 
 // ─── Assign engine trigger ────────────────────────────────────────────────────
 
 function triggerAssignEngine(convId: string) {
-  const url = `${SUPABASE_URL}/functions/v1/lat-assign-engine`;
-  const promise = fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${SERVICE_KEY}`,
-      "Content-Type":  "application/json",
-    },
-    body: JSON.stringify({ conversacion_id: convId }),
-  }).catch(err => console.error("[bot] assign-engine trigger error:", err));
-  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
+  const p = fetch(`${SUPABASE_URL}/functions/v1/lat-assign-engine`, {
+    method:  "POST",
+    headers: { Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+    body:    JSON.stringify({ conversacion_id: convId }),
+  }).catch(e => console.error("[bot] assign-engine error:", e));
+  (globalThis as any).EdgeRuntime?.waitUntil?.(p);
 }
 
-// ─── Gupshup send ─────────────────────────────────────────────────────────────
+// ─── Auto-crear gestión ───────────────────────────────────────────────────────
 
-async function sendWhatsApp(telefono: string, texto: string, convId: string) {
-  if (!GS_API_KEY || !GS_NUMBER) {
-    console.warn("Gupshup credentials missing — message not sent");
-    await saveMensajeSistema(convId, texto);
-    return;
-  }
-
-  const body = new URLSearchParams({
-    channel:     "whatsapp",
-    source:      GS_NUMBER,
-    destination: telefono,
-    message:     JSON.stringify({ type: "text", text: texto }),
-    "src.name":  GS_APP_NAME,
+async function crearGestion(conv: any, ctx: any, cfg: any) {
+  if (!cfg?.crear_gestion_auto || !cfg?.gestion_process_id) return;
+  const prioMap: Record<string, string> = { critica: "urgent", alta: "high", media: "medium", baja: "low" };
+  await supabase.from("gestiones").insert({
+    title:                  `${ctx.intencion ?? "Consulta"} — ${ctx.nombre ?? "Nuevo contacto"} (WhatsApp)`,
+    description:            ctx.descripcion ?? "Contacto vía WhatsApp",
+    process_id:             cfg.gestion_process_id,
+    stage_id:               cfg.gestion_stage_id ?? null,
+    cliente_id:             conv.cliente_id ?? null,
+    cliente_nombre:         ctx.nombre ?? null,
+    priority:               prioMap[ctx.urgencia ?? "media"] ?? "medium",
+    subtype:                ctx.intencion ?? "otro",
+    canal_origen:           "whatsapp",
+    conversacion_id_origen: conv.id,
   });
-
-  try {
-    const res = await fetch("https://api.gupshup.io/wa/api/v1/msg", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", apikey: GS_API_KEY },
-      body: body.toString(),
-    });
-    const resText = await res.text();
-    const msgId   = (() => { try { return JSON.parse(resText)?.messageId ?? null; } catch { return null; } })();
-    await supabase.from("lat_mensajes").insert({
-      conversacion_id: convId,
-      tipo:            "outbound",
-      contenido:       texto,
-      estado:          res.ok ? "enviado" : "fallido",
-      autor_nombre:    "Lati",
-      wpp_message_id:  msgId,
-    });
-  } catch (err) {
-    console.error("sendWhatsApp error:", err);
-    await saveMensajeSistema(convId, texto);
-  }
 }
 
 // ─── OpenAI call ──────────────────────────────────────────────────────────────
 
 async function callOpenAI(systemPrompt: string, mensajes: any[], nuevoMensaje: string, temperatura = 0.4) {
-  const history = mensajes.map((m: any) => ({
-    role: m.tipo === "inbound" ? "user" : "assistant",
+  const history = mensajes.map(m => ({
+    role:    m.tipo === "inbound" ? "user" : "assistant",
     content: m.contenido,
   }));
 
-  // Add current message if not already last
   if (!history.length || history[history.length - 1].role !== "user") {
     history.push({ role: "user", content: nuevoMensaje });
   }
 
-  const payload = {
-    model: MODEL,
-    messages: [{ role: "system", content: systemPrompt }, ...history],
-    tools: TOOLS,
-    tool_choice: "auto",
-    temperature: temperatura,
-    max_tokens: 400,
-  };
-
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${OPENAI_KEY}`,
-    },
-    body: JSON.stringify(payload),
+    method:  "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+    body: JSON.stringify({
+      model:      MODEL,
+      messages:   [{ role: "system", content: systemPrompt }, ...history],
+      tools:      TOOLS,
+      tool_choice: "auto",
+      temperature: temperatura,
+      max_tokens:  400,
+    }),
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenAI error ${res.status}: ${err}`);
-  }
-
-  const data = await res.json();
-  return data.choices?.[0]?.message ?? null;
+  if (!res.ok) throw new Error(`OpenAI error ${res.status}: ${await res.text()}`);
+  return (await res.json()).choices?.[0]?.message ?? null;
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -411,46 +268,27 @@ Deno.serve(async (req: Request) => {
     const { conversacion_id, telefono, contenido } = await req.json();
     if (!conversacion_id) return new Response("missing conversacion_id", { status: 400 });
 
-    // 1. Load bot config + conversation in parallel
-    const [botCfg, conv] = await Promise.all([getBotConfig(), getConversacion(conversacion_id)]);
+    // 1. Config + conversación en paralelo
+    const [cfg, conv] = await Promise.all([getBotConfig(), getConversacion(conversacion_id)]);
     if (!conv) return new Response("conv not found", { status: 404 });
+    if (!cfg || cfg.activo === false) return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
 
-    // Skip if bot is disabled
-    if (!botCfg || botCfg.activo === false) {
-      console.log("[bot] WhatsApp bot desactivado — ignorando mensaje");
-      return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
-    }
+    const maxTurns = cfg?.max_turnos ?? MAX_TURNS;
 
-    const effectiveMaxTurns = botCfg?.max_turnos ?? MAX_TURNS;
-
-    // 2a. Auto-reactivate / reset session on new inbound message
-    //     Triggers when: handed_off, pausado, OR activo with stale context (>3h idle)
-    const RESET_AFTER_MS = 3 * 60 * 60 * 1000;
-    const lastInteractionAge = Date.now() - new Date(conv.ultima_interaccion).getTime();
-    const isStaleSession = conv.bot_estado === "activo"
+    // 2. Resetear sesión si viene de handed_off/pausado o inactiva >3h
+    const stale = conv.bot_estado === "activo"
       && (conv.bot_turnos ?? 0) > 0
-      && lastInteractionAge > RESET_AFTER_MS;
+      && Date.now() - new Date(conv.ultima_interaccion).getTime() > 3 * 60 * 60 * 1000;
 
-    if (conv.bot_estado === "handed_off" || conv.bot_estado === "pausado" || isStaleSession) {
+    if (conv.bot_estado === "handed_off" || conv.bot_estado === "pausado" || stale) {
       const freshCtx: BotContexto = conv.cliente_id
         ? { fase: "necesidad", cliente_id: conv.cliente_id, nombre: conv.cliente_nombre }
         : { fase: "identificacion" };
-
       await updateConversacion(conversacion_id, {
-        bot_estado:          "activo",
-        bot_turnos:          0,
-        bot_contexto:        freshCtx,
-        cola_id:             null,
-        intencion_detectada: null,
-        urgencia_detectada:  null,
-        resumen_ia:          null,
-        estado:              "abierta",
+        bot_estado: "activo", bot_turnos: 0, bot_contexto: freshCtx,
+        cola_id: null, intencion_detectada: null, urgencia_detectada: null, resumen_ia: null, estado: "abierta",
       });
-
-      conv.bot_estado   = "activo";
-      conv.bot_turnos   = 0;
-      conv.bot_contexto = freshCtx;
-      console.log(`[bot] Sesión reiniciada (motivo: ${isStaleSession ? "stale" : conv.bot_estado})`);
+      Object.assign(conv, { bot_estado: "activo", bot_turnos: 0, bot_contexto: freshCtx });
     }
 
     const ctx: BotContexto = (conv.bot_contexto && typeof conv.bot_contexto === "object")
@@ -459,222 +297,153 @@ Deno.serve(async (req: Request) => {
 
     const turno = conv.bot_turnos ?? 0;
 
-    // 2b. Force handoff if max turns exceeded
-    if (turno >= (botCfg?.max_turnos ?? MAX_TURNS)) {
-      const cola = await getColaByNombre("Frontdesk Vacacional");
+    // 3. Handoff forzado por turnos
+    if (turno >= maxTurns) {
+      const { data: colaFD } = await supabase.from("lat_colas")
+        .select("id").ilike("nombre", "%Frontdesk%").eq("activa", true).limit(1).maybeSingle();
       await updateConversacion(conversacion_id, {
-        bot_estado:        "handed_off",
-        cola_id:           cola?.id ?? null,
-        estado:            "en_cola",
-        estado_asignacion: "en_cola",
-        ts_cola_asignada:  new Date().toISOString(),
+        bot_estado: "handed_off", cola_id: colaFD?.id ?? null,
+        estado: "en_cola", estado_asignacion: "en_cola", ts_cola_asignada: new Date().toISOString(),
       });
-      await sendWhatsApp(
-        conv.telefono ?? telefono,
-        "Ya te estoy conectando con uno de nuestros asesores, que van a poder ayudarte mejor. ¡Gracias por tu paciencia! 🙏",
-        conversacion_id,
-      );
-      if (cola?.id) triggerAssignEngine(conversacion_id);
-      return new Response("max turns handed off", { status: 200 });
+      await sendWhatsApp(conv.telefono ?? telefono, "Te estoy conectando con un asesor. ¡Gracias por tu paciencia! 🙏", conversacion_id);
+      if (colaFD?.id) triggerAssignEngine(conversacion_id);
+      return new Response("max turns", { status: 200 });
     }
 
-    // 3. Load client context
-    const clienteDB = conv.cliente_id
-      ? null  // ya vinculado, no re-buscar por teléfono
-      : await getCliente(conv.telefono ?? telefono);
-
-    // If found by phone and context is still "identificacion", auto-advance to "necesidad"
-    if (clienteDB && ctx.fase === "identificacion") {
-      ctx.fase      = "necesidad";
-      ctx.nombre    = clienteDB.nombre_completo ?? clienteDB.razon_social;
-      ctx.ci        = clienteDB.documento_numero ?? null;
-      ctx.cliente_id = clienteDB.id;
-      await updateConversacion(conversacion_id, {
-        cliente_id:     clienteDB.id,
-        cliente_nombre: clienteDB.nombre_completo ?? clienteDB.razon_social,
-        bot_contexto:   ctx,
-      });
-      console.log(`[bot] Cliente identificado por teléfono: ${ctx.nombre}`);
+    // 4. Auto-identificar por teléfono si no está vinculado
+    if (!ctx.cliente_id) {
+      const clienteDB = await getClienteByTelefono(conv.telefono ?? telefono);
+      if (clienteDB) {
+        ctx.fase       = "necesidad";
+        ctx.nombre     = clienteDB.nombre_completo ?? clienteDB.razon_social;
+        ctx.cliente_id = clienteDB.id;
+        await updateConversacion(conversacion_id, {
+          cliente_id: clienteDB.id, cliente_nombre: ctx.nombre, bot_contexto: ctx,
+        });
+      }
     }
 
-    // Derive primer nombre for greeting
-    const nombreCompleto = clienteDB?.nombre_completo ?? clienteDB?.razon_social ?? ctx.nombre ?? conv.cliente_nombre ?? null;
-    const primerNombre   = nombreCompleto ? nombreCompleto.split(" ")[0] : undefined;
+    // 5. Contexto dinámico mínimo
+    const clienteInfo = ctx.nombre
+      ? `${ctx.nombre} (${ctx.fase === "necesidad" ? "identificado" : "pendiente"})`
+      : "No identificado — pedir nombre";
 
-    const clienteInfo = clienteDB
-      ? `Nombre: ${clienteDB.nombre_completo ?? clienteDB.razon_social}\nCI: ${clienteDB.documento_numero ?? "no registrado"}\nTeléfono: ${clienteDB.telefono}\nEmail: ${clienteDB.email ?? "-"}\n✅ Registrado en BD.`
-      : ctx.nombre
-        ? `Nombre: ${ctx.nombre}\nCI: ${ctx.ci ?? "pendiente"}\nNo está registrado en la BD.`
-        : "Cliente no identificado aún. Pedí CI y nombre completo.";
-
-    // 4. Load colas + last human agent name
-    const [colas, lastHumanMsg] = await Promise.all([
+    const [colas, lastAsesor] = await Promise.all([
       getColas(),
-      supabase
-        .from("lat_mensajes")
-        .select("autor_nombre")
-        .eq("conversacion_id", conversacion_id)
-        .eq("tipo", "outbound")
-        .neq("autor_nombre", "Lati")
-        .not("autor_nombre", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
+      supabase.from("lat_mensajes")
+        .select("autor_nombre").eq("conversacion_id", conversacion_id)
+        .eq("tipo", "outbound").neq("autor_nombre", "Lati").not("autor_nombre", "is", null)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle()
         .then(r => r.data?.autor_nombre ?? null),
     ]);
-    const colasInfo       = colas.map(c => `- ${c.nombre} (${c.area ?? ""}): ${c.descripcion ?? ""}`).join("\n");
-    const ultimoAsesor    = conv.responsable_nombre ?? lastHumanMsg ?? null;
 
-    // Append last agent info to clienteInfo if available
-    const clienteInfoFull = ultimoAsesor
-      ? `${clienteInfo}\nÚltimo asesor que lo atendió: ${ultimoAsesor}`
-      : clienteInfo;
+    const colasStr     = colas.map(c => `${c.nombre}${c.area ? ` (${c.area})` : ""}`).join(" | ");
+    const systemPrompt = buildSystemPrompt(ctx, clienteInfo, colasStr, turno, conv.responsable_nombre ?? lastAsesor, cfg);
 
-    // 5. Load history
-    const mensajes  = await getMensajesRecientes(conversacion_id);
-
-    // 6. Build prompt & call OpenAI
-    const systemPrompt = buildSystemPrompt(ctx, clienteInfoFull, colasInfo, turno + 1, primerNombre, botCfg);
-    const aiMessage    = await callOpenAI(systemPrompt, mensajes, contenido, botCfg?.temperatura ?? 0.4);
-
+    // 6. Historial reducido (6 mensajes) + llamada a OpenAI
+    const mensajes  = await getMensajesRecientes(conversacion_id, 6);
+    const aiMessage = await callOpenAI(systemPrompt, mensajes, contenido, cfg?.temperatura ?? 0.4);
     if (!aiMessage) throw new Error("No response from OpenAI");
 
-    // 7. Execute tool calls
-    let respuestaTexto: string | null = aiMessage.content ?? null;
+    // 7. Procesar tool calls
+    let textoRespuesta: string | null = aiMessage.content ?? null;
     let newCtx = { ...ctx };
-    let shouldHandoff = false;
+    let intencionData: any = null;
+    let shouldHandoff  = false;
     let handoffColaName = "";
-    let handoffMsg = "";
-
-    let toolCalledIdentificar = false;
-    let toolCalledIntencion   = false;
+    let handoffMsg      = "";
 
     for (const toolCall of (aiMessage.tool_calls ?? [])) {
       const fn   = toolCall.function.name;
       const args = JSON.parse(toolCall.function.arguments ?? "{}");
 
       if (fn === "identificar_cliente") {
-        toolCalledIdentificar = true;
-        newCtx.fase   = "necesidad";
         newCtx.nombre = args.nombre_completo;
-        newCtx.ci     = args.ci;
+        newCtx.fase   = "necesidad";
 
-        // Try to find/link client in DB
-        const clienteMatch = await getClienteByCiOrNombre(args.ci, args.nombre_completo);
-        const firstName = args.nombre_completo.split(" ")[0];
+        const { data: existing } = await supabase.from("clientes")
+          .select("id, nombre_completo").ilike("nombre_completo", `%${args.nombre_completo}%`).limit(1).maybeSingle();
 
-        if (clienteMatch) {
-          newCtx.cliente_id = clienteMatch.id;
-          await updateConversacion(conversacion_id, {
-            cliente_id:     clienteMatch.id,
-            cliente_nombre: clienteMatch.nombre_completo,
-          });
-          respuestaTexto = `¡Hola, ${firstName}! Ya te tengo registrado en nuestro sistema. ¿En qué te puedo ayudar hoy? 😊`;
+        if (existing) {
+          newCtx.cliente_id = existing.id;
+          await updateConversacion(conversacion_id, { cliente_id: existing.id, cliente_nombre: existing.nombre_completo });
         } else {
-          // Client not in DB → auto-create as new lead so the asesor has it ready
-          const { data: newCliente } = await supabase
-            .from("clientes")
-            .insert({
-              nombre_completo:  args.nombre_completo,
-              documento_numero: args.ci ?? null,
-              telefono:         normalizePhone(conv.telefono ?? telefono),
-              canal_contacto:   "whatsapp",
-              tipo:             "natural",
-            })
-            .select("id")
-            .single();
-
-          if (newCliente?.id) {
-            newCtx.cliente_id = newCliente.id;
-            await updateConversacion(conversacion_id, {
-              cliente_id:     newCliente.id,
-              cliente_nombre: args.nombre_completo,
-            });
-            console.log(`[bot] Nuevo cliente creado: ${args.nombre_completo} id:${newCliente.id}`);
+          const clean = (conv.telefono ?? telefono).replace(/\D/g, "");
+          const { data: nuevo } = await supabase.from("clientes").insert({
+            nombre_completo: args.nombre_completo,
+            telefono:        clean,
+            canal_contacto:  "whatsapp",
+            tipo:            "natural",
+          }).select("id").single();
+          if (nuevo?.id) {
+            newCtx.cliente_id = nuevo.id;
+            await updateConversacion(conversacion_id, { cliente_id: nuevo.id, cliente_nombre: args.nombre_completo });
           }
-          respuestaTexto = `¡Gracias, ${firstName}! ¿En qué te puedo ayudar hoy? 😊`;
         }
-        console.log(`[bot] Cliente identificado: ${args.nombre_completo} CI:${args.ci} en_bd:${!!clienteMatch}`);
+        textoRespuesta = null; // el AI ya genera el texto en su respuesta
       }
 
       if (fn === "detectar_intencion") {
-        toolCalledIntencion = true;
-        newCtx.intencion = args.categoria;
-        newCtx.urgencia  = args.urgencia;
+        intencionData = args;
         await updateConversacion(conversacion_id, {
           intencion_detectada: args.categoria,
           urgencia_detectada:  args.urgencia,
           resumen_ia:          args.descripcion,
         });
-        console.log(`[bot] Intención detectada: ${args.categoria} urgencia:${args.urgencia}`);
       }
 
       if (fn === "asignar_cola") {
-        shouldHandoff    = true;
-        handoffColaName  = args.cola_nombre;
-        handoffMsg       = args.mensaje_despedida;
-        console.log(`[bot] Asignando a cola: ${args.cola_nombre}`);
+        shouldHandoff   = true;
+        handoffColaName = args.cola_nombre;
+        handoffMsg      = args.mensaje_despedida;
       }
     }
 
-    // Bug fix #2: if intencion was detected but asignar_cola was NOT called in the same turn,
-    // make a second OpenAI call forcing it to assign the queue immediately
-    if (toolCalledIntencion && !shouldHandoff) {
-      console.log("[bot] detectar_intencion sin asignar_cola — forzando segunda llamada a OpenAI");
-      const forcedSystemPrompt = buildSystemPrompt(newCtx, clienteInfo, colasInfo, turno + 1);
-      const forcedAiMessage = await callOpenAI(
-        forcedSystemPrompt + "\n\nIMPORTANTE: Ya tenés la intención del cliente. DEBES llamar a asignar_cola() AHORA.",
-        mensajes,
-        contenido,
+    // 8. Si detectó intención pero no asignó cola → segunda llamada forzada
+    if (intencionData && !shouldHandoff) {
+      const forced = await callOpenAI(
+        systemPrompt + "\n\nYa detectaste la intención. DEBES llamar a asignar_cola() AHORA.",
+        mensajes, contenido,
       );
-      for (const toolCall of (forcedAiMessage?.tool_calls ?? [])) {
+      for (const toolCall of (forced?.tool_calls ?? [])) {
         const fn   = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments ?? "{}");
         if (fn === "asignar_cola") {
           shouldHandoff   = true;
           handoffColaName = args.cola_nombre;
           handoffMsg      = args.mensaje_despedida;
-          console.log(`[bot] (forzado) Asignando a cola: ${args.cola_nombre}`);
         }
       }
     }
 
-    // 8. Send text response (before handoff)
     const telefDest = conv.telefono ?? telefono;
-    if (respuestaTexto && !shouldHandoff) {
-      await sendWhatsApp(telefDest, respuestaTexto, conversacion_id);
+
+    // 9. Enviar texto si no hay handoff
+    if (textoRespuesta && !shouldHandoff) {
+      await sendWhatsApp(telefDest, textoRespuesta, conversacion_id);
     }
 
-    // 9. Execute handoff
+    // 10. Ejecutar handoff
     if (shouldHandoff) {
-      const cola = await getColaByNombre(handoffColaName);
-      const finalCtx = { ...newCtx, fase: "finalizado" };
+      const { data: cola } = await supabase.from("lat_colas")
+        .select("id").ilike("nombre", `%${handoffColaName}%`).eq("activa", true).limit(1).maybeSingle();
 
+      const finalCtx = { ...newCtx, fase: "finalizado" as const };
       await updateConversacion(conversacion_id, {
-        bot_estado:        "handed_off",
-        bot_contexto:      finalCtx,
-        bot_turnos:        turno + 1,
-        cola_id:           cola?.id ?? null,
-        estado:            "en_cola",
-        estado_asignacion: "en_cola",
-        ts_cola_asignada:  new Date().toISOString(),
+        bot_estado: "handed_off", bot_contexto: finalCtx, bot_turnos: turno + 1,
+        cola_id: cola?.id ?? null, estado: "en_cola", estado_asignacion: "en_cola",
+        ts_cola_asignada: new Date().toISOString(),
       });
 
-      // Auto-create gestión with full context
-      const convActualizado = { ...conv, ...finalCtx, resumen_ia: conv.resumen_ia, cliente_id: newCtx.cliente_id ?? conv.cliente_id, cliente_nombre: newCtx.nombre ?? conv.cliente_nombre };
-      await crearGestion(convActualizado, finalCtx, botCfg);
-
-      const msg = handoffMsg || "Ya te comunico con un asesor especializado. ¡Gracias por contactarnos! 🌍";
-      await sendWhatsApp(telefDest, msg, conversacion_id);
-
-      // Trigger assign engine to pick available agent from the queue
+      await crearGestion(
+        { ...conv, cliente_id: newCtx.cliente_id ?? conv.cliente_id },
+        { ...finalCtx, intencion: intencionData?.categoria, urgencia: intencionData?.urgencia, descripcion: intencionData?.descripcion },
+        cfg,
+      );
+      await sendWhatsApp(telefDest, handoffMsg || "Te conecto con un asesor ahora. ¡Gracias! 🌍", conversacion_id);
       if (cola?.id) triggerAssignEngine(conversacion_id);
     } else {
-      // 10. Update context
-      await updateConversacion(conversacion_id, {
-        bot_contexto: newCtx,
-        bot_turnos:   turno + 1,
-      });
+      await updateConversacion(conversacion_id, { bot_contexto: newCtx, bot_turnos: turno + 1 });
     }
 
     return new Response(JSON.stringify({ ok: true, turno: turno + 1, fase: newCtx.fase }), {
@@ -683,7 +452,7 @@ Deno.serve(async (req: Request) => {
     });
 
   } catch (err: any) {
-    console.error("lat-bot-agent error:", err?.message ?? err);
+    console.error("[lat-bot-agent] error:", err?.message ?? err);
     return new Response(JSON.stringify({ error: err?.message }), { status: 500 });
   }
 });

@@ -26,5 +26,8 @@ dist-ssr
 
 # Supabase CLI binary and temp files
 supabase.exe
-supabase
 supabase/.temp/
+
+# Seed local — no va a prod
+supabase/seed_local_test.sql
+supabase/migrations_backup/
