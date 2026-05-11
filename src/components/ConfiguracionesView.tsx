@@ -216,9 +216,10 @@ export function ConfiguracionesView() {
 
   // Wait for query to resolve before gating — avoids false "sin acceso" during load
   const userRol = loadingUser ? null : (currentUser?.rol || "colaborador");
+  const isSadmin = userRol === "sadmin";
 
-  const canView = (sectionId: string) => SECTION_PERMS[sectionId]?.canView.includes(userRol ?? "") ?? false;
-  const canEdit = (sectionId: string) => SECTION_PERMS[sectionId]?.canEdit.includes(userRol ?? "") ?? false;
+  const canView = (_sectionId: string) => isSadmin || SECTION_PERMS[_sectionId]?.canView.includes(userRol ?? "") === true;
+  const canEdit = (_sectionId: string) => isSadmin || SECTION_PERMS[_sectionId]?.canEdit.includes(userRol ?? "") === true;
 
   if (loadingUser || userRol === null) {
     return (
