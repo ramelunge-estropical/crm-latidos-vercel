@@ -150,21 +150,6 @@ async function sendWhatsApp(telefono: string, texto: string, convId: string) {
   }
 }
 
-// ── Assign engine ─────────────────────────────────────────────────────────────
-
-// Awaitable: llamado con `await` en el handoff para garantizar que la asignación
-// ocurra dentro del ciclo de vida de la Edge Function, no como fire-and-forget.
-async function triggerAssignEngine(convId: string): Promise<void> {
-  try {
-    await fetch(`${SUPABASE_URL}/functions/v1/lat-assign-engine`, {
-      method:  "POST",
-      headers: { Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
-      body:    JSON.stringify({ conversacion_id: convId }),
-    });
-  } catch (e) {
-    console.error("[bot] assign-engine error:", e);
-  }
-}
 
 // ── Audit log ─────────────────────────────────────────────────────────────────
 
@@ -371,7 +356,6 @@ Deno.serve(async (req: Request) => {
         estado: "en_cola", estado_asignacion: "en_cola", ts_cola_asignada: new Date().toISOString(),
       });
       await sendWhatsApp(conv.telefono ?? telefono, "Te estoy conectando con un asesor. ¡Gracias por tu paciencia!", conversacion_id);
-      if (colaHF?.id) await triggerAssignEngine(conversacion_id);
       await logAudit({ conversacion_id, turno, mensaje_cliente: contenido, accion: "handoff_max_turnos", cola_sugerida: colaHF?.nombre, cola_id: colaHF?.id, motivo: "max_turnos" });
       return new Response("max turns", { status: 200 });
     }
@@ -462,7 +446,6 @@ Deno.serve(async (req: Request) => {
       );
 
       await sendWhatsApp(telefDest, ai.mensaje_cliente, conversacion_id);
-      if (colaFinal?.id) await triggerAssignEngine(conversacion_id);
 
       await logAudit({
         conversacion_id,
