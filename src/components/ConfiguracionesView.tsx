@@ -126,6 +126,17 @@ const ROL_LABELS: Record<string, string> = {
 function PermisosInfo() {
   const roles = [
     {
+      rol: "Super Admin",
+      color: "bg-rose-500/10 text-rose-600",
+      permisos: [
+        "Ve absolutamente todos los chats de la bandeja",
+        "Acceso total a Configuraciones",
+        "Crear/editar/eliminar colaboradores y roles",
+        "Asignaciones y reasignaciones manuales",
+        "Gestionar colas, canales y reglas LAT",
+      ],
+    },
+    {
       rol: "Admin",
       color: "bg-red-500/10 text-red-600",
       permisos: [
