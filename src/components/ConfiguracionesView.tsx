@@ -15,6 +15,7 @@ import { AreasConfig }         from "./config/AreasConfig";
 import { ColaboradoresConfig } from "./config/ColaboradoresConfig";
 import { LatOmnicanalConfig }  from "./lat/LatOmnicanalConfig";
 import { AgenteIAConfig }      from "./config/AgenteIAConfig";
+import { PermisosConfig }      from "./config/PermisosConfig";
 
 type Section =
   | "gestiones"
@@ -351,7 +352,7 @@ export function ConfiguracionesView() {
         {active === "pipelines"       && <PipelinesConfig     readonly={!canEdit("pipelines")} />}
         {active === "areas"           && <AreasConfig         readonly={!canEdit("areas")} />}
         {active === "colaboradores"   && <ColaboradoresConfig readonly={!canEdit("colaboradores")} />}
-        {active === "permisos"        && <PermisosInfo />}
+        {active === "permisos"        && <PermisosConfig readonly={!canEdit("permisos")} />}
         {active === "lat-omnicanal"   && <LatOmnicanalConfig  readonly={!canEdit("lat-omnicanal")} />}
         {active === "agentes-ia"      && <AgenteIAConfig      readonly={!canEdit("agentes-ia")} />}
       </div>
