@@ -27,6 +27,7 @@ interface BotConfig {
   activo: boolean;
   modelo: string;
   max_turnos: number;
+  max_tokens: number;
   temperatura: number;
   prompt_identidad: string;
   prompt_reglas: string;
@@ -264,6 +265,17 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
               className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
             />
             <p className="text-[10px] text-muted-foreground">Mensajes antes de derivar al asesor</p>
+          </div>
+
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="text-xs font-medium">Tokens máximos por respuesta</label>
+            <input
+              type="number" min={100} max={1000} step={50} disabled={readonly}
+              value={current.max_tokens ?? 400}
+              onChange={e => set("max_tokens", parseInt(e.target.value))}
+              className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+            />
+            <p className="text-[10px] text-muted-foreground">Longitud máxima de cada respuesta del bot. Menos = más barato. Recomendado: 300–500</p>
           </div>
         </div>
 

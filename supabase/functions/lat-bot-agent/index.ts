@@ -251,7 +251,7 @@ async function crearGestion(conv: any, ctx: any, cfg: any) {
 
 // ─── OpenAI call ──────────────────────────────────────────────────────────────
 
-async function callOpenAI(systemPrompt: string, mensajes: any[], nuevoMensaje: string, temperatura = 0.4) {
+async function callOpenAI(systemPrompt: string, mensajes: any[], nuevoMensaje: string, temperatura = 0.4, cfg?: any) {
   const history = mensajes.map(m => ({
     role:    m.tipo === "inbound" ? "user" : "assistant",
     content: m.contenido,
@@ -265,12 +265,12 @@ async function callOpenAI(systemPrompt: string, mensajes: any[], nuevoMensaje: s
     method:  "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
     body: JSON.stringify({
-      model:      MODEL,
-      messages:   [{ role: "system", content: systemPrompt }, ...history],
-      tools:      TOOLS,
+      model:       cfg?.modelo     ?? MODEL,
+      messages:    [{ role: "system", content: systemPrompt }, ...history],
+      tools:       TOOLS,
       tool_choice: "auto",
       temperature: temperatura,
-      max_tokens:  400,
+      max_tokens:  cfg?.max_tokens ?? 400,
     }),
   });
 
@@ -361,7 +361,7 @@ Deno.serve(async (req: Request) => {
 
     // 6. Historial reducido (6 mensajes) + llamada a OpenAI
     const mensajes  = await getMensajesRecientes(conversacion_id, 6);
-    const aiMessage = await callOpenAI(systemPrompt, mensajes, contenido, cfg?.temperatura ?? 0.4);
+    const aiMessage = await callOpenAI(systemPrompt, mensajes, contenido, cfg?.temperatura ?? 0.4, cfg);
     if (!aiMessage) throw new Error("No response from OpenAI");
 
     // 7. Procesar tool calls
