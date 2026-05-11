@@ -31,12 +31,18 @@ Deno.serve(async (req: Request) => {
 
   console.log(`[lat-process-queue] Iniciando. source=${source}`);
 
-  // 1. Obtener conversaciones sin agente (en_cola + en_espera) FIFO con cola válida
+  // 1. Obtener conversaciones sin agente (en_cola + en_espera) FIFO con cola válida.
+  //    Excluir conversaciones bot_delegado donde el bot sigue activo (bot_estado != 'handed_off'):
+  //    - routing_status IS NULL → no pasó por bot, incluir
+  //    - routing_status != 'bot_delegado' → canal normal (email u otro), incluir
+  //    - routing_status = 'bot_delegado' y bot_estado = 'handed_off' → bot terminó, incluir
+  //    - routing_status = 'bot_delegado' y bot_estado = 'activo' → bot en curso, EXCLUIR
   const { data: waiting, error } = await supabase
     .from("lat_conversaciones")
     .select("id, cola_id")
     .in("estado_asignacion", ["en_cola", "en_espera"])
     .not("cola_id", "is", null)
+    .or("routing_status.is.null,routing_status.neq.bot_delegado,bot_estado.eq.handed_off")
     .order("created_at", { ascending: true });
 
   if (error) {
