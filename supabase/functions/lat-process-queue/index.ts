@@ -1,8 +1,8 @@
 /**
- * lat-process-queue — Procesador de cola FIFO de conversaciones en_espera
+ * lat-process-queue — Procesador de cola FIFO de conversaciones sin agente asignado
  *
  * Flujo:
- *   1. Obtiene todas las conversaciones con estado_asignacion='en_espera' en orden FIFO
+ *   1. Obtiene todas las conversaciones en 'en_cola' o 'en_espera' en orden FIFO
  *   2. Para cada una llama a lat-assign-engine (reutiliza lógica existente)
  *   3. Optimización por cola: si una cola no tiene agentes, omite sus conversaciones restantes
  *
@@ -31,11 +31,11 @@ Deno.serve(async (req: Request) => {
 
   console.log(`[lat-process-queue] Iniciando. source=${source}`);
 
-  // 1. Obtener conversaciones en espera FIFO con cola válida
+  // 1. Obtener conversaciones sin agente (en_cola + en_espera) FIFO con cola válida
   const { data: waiting, error } = await supabase
     .from("lat_conversaciones")
     .select("id, cola_id")
-    .eq("estado_asignacion", "en_espera")
+    .in("estado_asignacion", ["en_cola", "en_espera"])
     .not("cola_id", "is", null)
     .order("created_at", { ascending: true });
 
@@ -55,7 +55,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  console.log(`[lat-process-queue] ${waiting.length} conversaciones en espera`);
+  console.log(`[lat-process-queue] ${waiting.length} conversaciones pendientes de asignación`);
 
   // 2. Procesar FIFO con short-circuit por cola
   const exhaustedQueues = new Set<string>();
@@ -67,12 +67,12 @@ Deno.serve(async (req: Request) => {
     // Si esta cola ya agotó sus agentes, omitir
     if (exhaustedQueues.has(colaId)) continue;
 
-    // Guard anti-race: verificar que siga en_espera antes de llamar al motor
+    // Guard anti-race: verificar que siga sin asignar antes de llamar al motor
     const { data: fresh } = await supabase
       .from("lat_conversaciones")
       .select("id")
       .eq("id", conv.id)
-      .eq("estado_asignacion", "en_espera")
+      .in("estado_asignacion", ["en_cola", "en_espera"])
       .maybeSingle();
 
     if (!fresh) continue; // Ya fue asignada por llamada concurrente
