@@ -138,11 +138,15 @@ async function getMensajesRecientes(convId: string, limit = 6) {
 }
 
 async function getClienteByTelefono(telefono: string) {
-  const clean = telefono.replace(/\D/g, "");
+  const clean  = telefono.replace(/\D/g, "");          // ej: 59175001199
+  const last8  = clean.slice(-8);                      // ej: 75001199 (sin código país)
+  const last9  = clean.slice(-9);                      // ej: 591001199 — intermedio
+  // Busca coincidencia con número completo, variante con +, o últimos 8 dígitos
+  // (maneja formatos como "+591 75001199", "591 75001199", "59175001199")
   const { data } = await supabase
     .from("clientes")
     .select("id, nombre_completo, razon_social, documento_numero")
-    .or(`telefono.ilike.%${clean}%,telefono.ilike.%${telefono}%`)
+    .or(`telefono.ilike.%${clean}%,telefono.ilike.%${last9}%,telefono.ilike.%${last8}%`)
     .limit(1)
     .maybeSingle();
   return data as any;
