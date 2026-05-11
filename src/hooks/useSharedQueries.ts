@@ -196,8 +196,9 @@ export function useCurrentUserRol() {
   return {
     rol,
     user:         data,
-    isAdmin:      rol === "admin",
-    isSupervisor: rol === "supervisor" || rol === "admin",
+    isSadmin:     rol === "sadmin",
+    isAdmin:      rol === "admin"   || rol === "sadmin",
+    isSupervisor: rol === "supervisor" || rol === "admin" || rol === "sadmin",
     colaboradorId,
   };
 }

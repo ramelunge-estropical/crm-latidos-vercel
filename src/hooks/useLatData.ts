@@ -490,10 +490,20 @@ export function useLatBandeja(
           return mockConvs.map(adaptMockConv);
         }
 
-        // Bandeja individual: mis conversaciones asignadas + conversaciones en mis colas
         console.log("[LAT_BANDEJA] colaboradorId:", colaboradorId, "| rol:", rol);
 
-        // Obtener colas donde el usuario es miembro activo
+        // sadmin ve absolutamente todo sin filtro
+        if (rol === "sadmin") {
+          const { data: rows, error } = await (supabase as any)
+            .from("lat_conversaciones")
+            .select("*")
+            .order("ultima_interaccion", { ascending: false });
+          if (error) throw error;
+          console.log("[LAT_BANDEJA] sadmin — total:", rows?.length);
+          return (rows as LatConversacion[]).map(r => ({ ...r, _source: "db" as const }));
+        }
+
+        // Bandeja individual: mis conversaciones asignadas + conversaciones en mis colas
         const { data: colaRows } = await (supabase as any)
           .from("lat_cola_miembros")
           .select("cola_id")

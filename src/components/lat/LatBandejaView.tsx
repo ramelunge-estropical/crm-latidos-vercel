@@ -53,7 +53,7 @@ export function LatBandejaView() {
   const queryClient = useQueryClient();
 
   // ── Usuario logueado y su rol ─────────────────────────────────────────────
-  const { rol, user, isSupervisor, colaboradorId } = useCurrentUserRol();
+  const { rol, user, isSadmin, isSupervisor, colaboradorId } = useCurrentUserRol();
 
   // ── Datos reales desde Supabase (filtrados por rol en la query) ───────────
   const { data: todasConversaciones } = useLatBandeja(colaboradorId, rol);
@@ -227,7 +227,12 @@ export function LatBandejaView() {
 
           {/* Identificador de rol */}
           <div className="flex items-center gap-1.5">
-            {isSupervisor ? (
+            {isSadmin ? (
+              <span className="flex items-center gap-1 text-[10px] text-rose-600 font-semibold">
+                <ShieldCheck className="w-3 h-3" />
+                Super Admin · vista total
+              </span>
+            ) : isSupervisor ? (
               <span className="flex items-center gap-1 text-[10px] text-violet-600 font-medium">
                 <ShieldCheck className="w-3 h-3" />
                 {rol === 'admin' ? 'Admin' : 'Supervisor'}
