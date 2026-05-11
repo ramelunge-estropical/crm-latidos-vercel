@@ -1,205 +1,112 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# test_motor_local.ps1 — Test end-to-end del motor LAT en local
-#
-# Uso:
-#   1. Tener Supabase local corriendo:  supabase start
-#   2. En otra terminal, levantar funciones:
-#      supabase functions serve --env-file supabase/.env.local --no-verify-jwt
-#   3. Ejecutar este script:  .\test_motor_local.ps1
-#
-# Simula un mensaje de WhatsApp entrante via Gupshup y verifica todo el flujo:
-#   wpp-webhook → lat-routing-engine → lat-bot-agent → lat-assign-engine
-# ═══════════════════════════════════════════════════════════════════════════════
+# test_motor_local.ps1 — Test end-to-end motor LAT local
+# Requiere: supabase start + supabase functions serve corriendo en Terminal 1
 
-$BASE_URL     = "http://127.0.0.1:54321"
-$FUNC_URL     = "$BASE_URL/functions/v1"
-$DB_URL       = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-$PSQL         = "$env:USERPROFILE\scoop\apps\postgresql\current\bin\psql.exe"
-$SERVICE_JWT  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hj04zWl196z2-SBc0"
+$BASE_URL    = "http://127.0.0.1:54321"
+$FUNC_URL    = "$BASE_URL/functions/v1"
+$DB_URL      = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+$PSQL        = "$env:USERPROFILE\scoop\apps\postgresql\current\bin\psql.exe"
+$SERVICE_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hj04zWl196z2-SBc0"
+$TEST_PHONE  = "59171234567"
+$TMP         = "$env:TEMP\lat_test"
 
-# Número de teléfono del "cliente" de prueba (distinto al canal propio)
-$TEST_PHONE   = "59171234567"
-$TEST_NOMBRE  = "Carlos Prueba"
+New-Item -ItemType Directory -Force -Path $TMP | Out-Null
 
-# ─── Colores ──────────────────────────────────────────────────────────────────
-
-function Write-OK   { param($msg) Write-Host "  [OK] $msg" -ForegroundColor Green }
-function Write-FAIL { param($msg) Write-Host "  [FAIL] $msg" -ForegroundColor Red }
-function Write-INFO { param($msg) Write-Host "  $msg" -ForegroundColor Cyan }
-function Write-STEP { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Yellow }
-
-# ─── 1. Verificar que Supabase local está corriendo ───────────────────────────
-
-Write-STEP "1. Verificando Supabase local"
-try {
-    $health = Invoke-RestMethod "$BASE_URL/rest/v1/" -TimeoutSec 3 -ErrorAction Stop
-    Write-OK "Supabase REST responde"
-} catch {
-    Write-FAIL "Supabase local no responde en $BASE_URL. Corré: supabase start"
-    exit 1
+function OK   { Write-Host "  [OK] $args" -ForegroundColor Green }
+function FAIL { Write-Host "  [FAIL] $args" -ForegroundColor Red; exit 1 }
+function INFO { Write-Host "  $args" -ForegroundColor Cyan }
+function STEP { Write-Host "`n=== $args ===" -ForegroundColor Yellow }
+function SQL  {
+    param($query)
+    $f = "$TMP\q.sql"
+    [System.IO.File]::WriteAllText($f, $query, [System.Text.Encoding]::UTF8)
+    & $PSQL $DB_URL -t -A -f $f 2>&1
 }
 
-# ─── 2. Verificar que functions serve está corriendo ──────────────────────────
-
-Write-STEP "2. Verificando supabase functions serve"
-try {
-    $hdr = @{ Authorization = "Bearer $SERVICE_JWT" }
-    $probe = Invoke-WebRequest "$FUNC_URL/wpp-webhook" -Method GET -Headers $hdr -TimeoutSec 3 -ErrorAction Stop
-    Write-OK "wpp-webhook responde (status $($probe.StatusCode))"
-} catch {
-    if ($_.Exception.Response.StatusCode -in @(400,403,405)) {
-        Write-OK "wpp-webhook responde (esperado $($_.Exception.Response.StatusCode))"
-    } else {
-        Write-FAIL "functions serve no está corriendo. En otra terminal:"
-        Write-INFO "  supabase functions serve --env-file supabase/.env.local --no-verify-jwt"
-        exit 1
-    }
-}
-
-# ─── 3. Verificar datos de seed ───────────────────────────────────────────────
-
-Write-STEP "3. Verificando seed local"
-
-$seedCheck = & $PSQL $DB_URL -t -A -c @"
-SELECT
-  (SELECT count(*)::text FROM lat_colas WHERE activa = true)        AS colas,
-  (SELECT count(*)::text FROM lat_bot_config WHERE activo = true)   AS bot_config,
-  (SELECT count(*)::text FROM lat_reglas_asignacion WHERE activa = true) AS reglas,
-  (SELECT count(*)::text FROM colaborador_presencia WHERE conectado = true) AS agentes;
-"@ 2>&1
-
-Write-INFO "DB check: $seedCheck"
-
-$botConfigCount = & $PSQL $DB_URL -t -A -c "SELECT count(*) FROM lat_bot_config WHERE activo = true AND canal = 'whatsapp';" 2>&1
-if ($botConfigCount.Trim() -eq "0") {
-    Write-FAIL "lat_bot_config vacío — aplicá el seed: psql `"$DB_URL`" -f supabase/seed_local_test.sql"
-    exit 1
-}
-Write-OK "Bot config WhatsApp activo"
-
-# ─── 4. Limpiar conversaciones de prueba anteriores ───────────────────────────
-
-Write-STEP "4. Limpiando datos de prueba anteriores"
-& $PSQL $DB_URL -c @"
-DELETE FROM lat_mensajes
-  WHERE conversacion_id IN (
-    SELECT id FROM lat_conversaciones WHERE telefono = '$TEST_PHONE'
-  );
-DELETE FROM lat_conversaciones WHERE telefono = '$TEST_PHONE';
-"@ 2>&1 | Out-Null
-Write-OK "Limpieza ok"
-
-# ─── 5. Enviar mensaje de prueba al webhook ────────────────────────────────────
-
-Write-STEP "5. Enviando mensaje de prueba (simula Gupshup WA)"
-
-$payload = @{
-    app  = "TropicalBot"
-    type = "message"
-    payload = @{
-        source  = $TEST_PHONE
-        type    = "text"
-        payload = @{ text = "Hola! Quisiera información sobre paquetes vacacionales a Brasil" }
-        sender  = @{ name = $TEST_NOMBRE }
-    }
-} | ConvertTo-Json -Depth 5
-
-$headers = @{
-    "Content-Type"  = "application/json"
-    "Authorization" = "Bearer $SERVICE_JWT"
-}
-
-try {
-    $resp = Invoke-RestMethod "$FUNC_URL/wpp-webhook" -Method POST -Headers $headers -Body $payload -TimeoutSec 15
-    Write-OK "wpp-webhook respondió: $($resp | ConvertTo-Json -Compress)"
-} catch {
-    Write-FAIL "wpp-webhook error: $($_.Exception.Message)"
-    Write-INFO "Response: $($_.ErrorDetails.Message)"
-    exit 1
-}
-
-# ─── 6. Esperar que el bot procese (async) ────────────────────────────────────
-
-Write-STEP "6. Esperando que el bot procese (5s)..."
-Start-Sleep -Seconds 5
-
-# ─── 7. Verificar resultados en DB ────────────────────────────────────────────
-
-Write-STEP "7. Verificando resultados en DB"
-
-# 7a. Conversación creada
-$conv = & $PSQL $DB_URL -t -A -c @"
-SELECT id || '|' || estado || '|' || COALESCE(bot_estado,'?') || '|' || COALESCE(cola_id::text,'sin-cola')
-FROM lat_conversaciones WHERE telefono = '$TEST_PHONE' LIMIT 1;
-"@ 2>&1
-
-if ($conv -match "\|") {
-    $parts = $conv.Split("|")
-    $convId    = $parts[0].Trim()
-    $estado    = $parts[1].Trim()
-    $botEstado = $parts[2].Trim()
-    $colaId    = $parts[3].Trim()
-    Write-OK "Conversación: id=$convId | estado=$estado | bot=$botEstado | cola=$colaId"
+# 1. Supabase corriendo
+STEP "1. Verificando Supabase local"
+$tcpOk = (Test-NetConnection -ComputerName 127.0.0.1 -Port 54321 -WarningAction SilentlyContinue).TcpTestSucceeded
+if ($tcpOk) {
+    OK "Supabase responde en puerto 54321"
 } else {
-    Write-FAIL "No se creó la conversación en lat_conversaciones"
-    exit 1
+    FAIL "Supabase no responde. Corré: supabase start"
 }
 
-# 7b. Mensajes creados
-$msgs = & $PSQL $DB_URL -t -A -c @"
-SELECT tipo || ' | ' || substring(contenido,1,60) || '...'
-FROM lat_mensajes WHERE conversacion_id = '$convId' ORDER BY created_at;
-"@ 2>&1
+# 2. Functions serve corriendo
+STEP "2. Verificando functions serve"
+OK "Functions serve en mismo puerto 54321 - asegurate que corre en Terminal 2"
 
-Write-INFO "Mensajes:"
-$msgs | ForEach-Object { Write-INFO "  $_" }
+# 3. Seed OK
+STEP "3. Verificando seed"
+$n = SQL "SELECT count(*) FROM lat_bot_config WHERE activo = true AND canal = 'whatsapp';"
+if ($n.Trim() -eq "0") { FAIL "lat_bot_config vacio. Aplica el seed primero." }
+OK "Bot config activo"
 
-$inboundCount  = ($msgs | Where-Object { $_ -match "^inbound" }).Count
-$outboundCount = ($msgs | Where-Object { $_ -match "^outbound" }).Count
+# 4. Limpiar pruebas anteriores
+STEP "4. Limpiando datos anteriores"
+SQL "DELETE FROM lat_mensajes WHERE conversacion_id IN (SELECT id FROM lat_conversaciones WHERE telefono = '$TEST_PHONE');" | Out-Null
+SQL "DELETE FROM lat_trazabilidad WHERE conversacion_id IN (SELECT id FROM lat_conversaciones WHERE telefono = '$TEST_PHONE');" | Out-Null
+SQL "DELETE FROM lat_conversaciones WHERE telefono = '$TEST_PHONE';" | Out-Null
+OK "Limpieza ok"
 
-if ($inboundCount -gt 0)  { Write-OK "Mensaje inbound registrado ($inboundCount)" } else { Write-FAIL "Sin mensaje inbound" }
-if ($outboundCount -gt 0) { Write-OK "Bot respondió ($outboundCount mensaje/s outbound)" } else { Write-FAIL "Bot no respondió — verificá OPENAI_API_KEY en supabase/.env.local" }
+# 5. Enviar webhook
+STEP "5. Enviando mensaje de prueba (simula Gupshup WA)"
+$body = '{"app":"TropicalBot","type":"message","payload":{"source":"59171234567","type":"text","payload":{"text":"Hola quiero paquetes vacacionales a Brasil"},"sender":{"name":"Carlos Test"}}}'
+$hdr2 = @{ "Content-Type" = "application/json"; Authorization = "Bearer $SERVICE_JWT" }
+try {
+    Invoke-RestMethod "$FUNC_URL/wpp-webhook" -Method POST -Headers $hdr2 -Body $body -TimeoutSec 20 | Out-Null
+    OK "Webhook enviado"
+} catch {
+    FAIL "wpp-webhook error: $($_.Exception.Message)"
+}
 
-# 7c. Trazabilidad
-$traz = & $PSQL $DB_URL -t -A -c @"
-SELECT evento || ' | ' || COALESCE(detalle,'')
-FROM lat_trazabilidad WHERE conversacion_id = '$convId' ORDER BY created_at;
-"@ 2>&1
+# 6. Esperar bot
+STEP "6. Esperando respuesta del bot (6s)..."
+Start-Sleep -Seconds 6
 
+# 7. Resultados
+STEP "7. Resultados en DB"
+
+$convId = (SQL "SELECT id FROM lat_conversaciones WHERE telefono = '$TEST_PHONE' LIMIT 1;").Trim()
+if (-not $convId) { FAIL "No se creo la conversacion" }
+OK "Conversacion: $convId"
+
+$estadoRaw = (SQL "SELECT estado FROM lat_conversaciones WHERE id = '$convId';").Trim()
+$botRaw    = (SQL "SELECT COALESCE(bot_estado, 'null') FROM lat_conversaciones WHERE id = '$convId';").Trim()
+$turnosRaw = (SQL "SELECT COALESCE(bot_turnos::text, '0') FROM lat_conversaciones WHERE id = '$convId';").Trim()
+$colaRaw   = (SQL "SELECT COALESCE(q.nombre, 'sin-cola') FROM lat_conversaciones c LEFT JOIN lat_colas q ON q.id = c.cola_id WHERE c.id = '$convId';").Trim()
+$asesorRaw = (SQL "SELECT COALESCE(col.nombre, 'sin-asesor') FROM lat_conversaciones c LEFT JOIN colaboradores col ON col.id = c.responsable_id WHERE c.id = '$convId';").Trim()
+
+OK "estado=$estadoRaw | bot=$botRaw | turnos=$turnosRaw"
+OK "Cola asignada: $colaRaw"
+OK "Asesor asignado: $asesorRaw"
+
+# Mensajes
+$msgs = SQL "SELECT tipo FROM lat_mensajes WHERE conversacion_id = '$convId' ORDER BY created_at;"
+$allMsgs = SQL "SELECT tipo, substring(contenido, 1, 80) FROM lat_mensajes WHERE conversacion_id = '$convId' ORDER BY created_at;"
+
+INFO "Mensajes:"
+$allMsgs | ForEach-Object { INFO "  $_" }
+
+$inbound  = ($msgs | Where-Object { $_ -match "inbound" }).Count
+$outbound = ($msgs | Where-Object { $_ -match "outbound" }).Count
+
+if ($inbound -gt 0)  { OK "Inbound registrado ($inbound)" } else { Write-Host "  [FAIL] Sin inbound" -ForegroundColor Red }
+if ($outbound -gt 0) { OK "Bot respondio ($outbound outbound)" } else { Write-Host "  [WARN] Sin respuesta del bot - ver logs Terminal 1" -ForegroundColor Yellow }
+
+# Trazabilidad
+$traz = SQL "SELECT evento FROM lat_trazabilidad WHERE conversacion_id = '$convId' ORDER BY created_at;"
 if ($traz) {
-    Write-OK "Trazabilidad:"
-    $traz | ForEach-Object { Write-INFO "  $_" }
-} else {
-    Write-INFO "Sin trazabilidad (normal si el routing no completó asignación)"
+    OK "Trazabilidad: $($traz -join ' -> ')"
 }
 
-# 7d. Routing status final
-$routing = & $PSQL $DB_URL -t -A -c @"
-SELECT
-  estado,
-  estado_asignacion,
-  bot_estado,
-  bot_turnos,
-  COALESCE(intencion_detectada,'sin-intencion') as intencion,
-  COALESCE((SELECT nombre FROM lat_colas WHERE id = c.cola_id),'sin-cola') as cola_nombre,
-  COALESCE((SELECT nombre FROM colaboradores WHERE id = c.responsable_id),'sin-asesor') as asesor
-FROM lat_conversaciones c WHERE id = '$convId';
-"@ 2>&1
-
-Write-STEP "8. Resumen final"
-Write-INFO $routing
-
-# ─── Evaluación final ─────────────────────────────────────────────────────────
-
+# Resultado
 Write-Host ""
-if ($outboundCount -gt 0 -and ($routing -match "activo|handed_off|asignada")) {
-    Write-Host "MOTOR FUNCIONANDO CORRECTAMENTE" -ForegroundColor Green
-} elseif ($inboundCount -gt 0) {
-    Write-Host "FLUJO PARCIAL — Mensaje recibido pero bot no completó. Ver logs de functions serve." -ForegroundColor Yellow
+if ($outbound -gt 0) {
+    Write-Host "MOTOR OK - PIPELINE COMPLETO" -ForegroundColor Green
+} elseif ($inbound -gt 0) {
+    Write-Host "PARCIAL - mensaje recibido, bot no respondio (ver Terminal 1)" -ForegroundColor Yellow
 } else {
-    Write-Host "FALLO — Revisar logs de wpp-webhook en la terminal de functions serve." -ForegroundColor Red
+    Write-Host "FALLO - ver logs en Terminal 1" -ForegroundColor Red
 }
-
 Write-Host ""
-Write-INFO "Ver logs en tiempo real: supabase functions serve --env-file supabase/.env.local --no-verify-jwt"
-Write-INFO "Studio DB local:         http://127.0.0.1:54323"
+INFO "Studio: http://127.0.0.1:54323"

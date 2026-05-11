@@ -202,6 +202,11 @@ export function ConversacionList({
                     {flags.en_cola && (
                       <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-warning/10 text-warning">en cola</span>
                     )}
+                    {conv.cola_area_nombre && (
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 truncate max-w-[90px]">
+                        {conv.cola_area_nombre}
+                      </span>
+                    )}
                     {conv.proxima_accion && (
                       <span className="text-[9px] text-muted-foreground truncate">
                         → {conv.proxima_accion}
