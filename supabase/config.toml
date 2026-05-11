@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.lat-email-agent]
 verify_jwt = false
+
+[functions.lat-process-queue]
+verify_jwt = false
