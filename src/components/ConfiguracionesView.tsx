@@ -27,13 +27,13 @@ type Section =
   | null;
 
 const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = {
-  gestiones:       { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  pipelines:       { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  areas:           { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  colaboradores:   { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  permisos:        { canView: ["admin"],            canEdit: ["admin"] },
-  "lat-omnicanal": { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  "agentes-ia":    { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  gestiones:       { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  pipelines:       { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  areas:           { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  colaboradores:   { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  permisos:        { canView: ["sadmin", "admin"],            canEdit: ["sadmin", "admin"] },
+  "lat-omnicanal": { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  "agentes-ia":    { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
 };
 
 const CARDS = [
@@ -120,7 +120,7 @@ const SECTION_TITLES: Record<string, string> = {
 };
 
 const ROL_LABELS: Record<string, string> = {
-  admin: "Admin", gerente: "Gerente", colaborador: "Colaborador", viewer: "Viewer",
+  sadmin: "Super Admin", admin: "Admin", gerente: "Gerente", colaborador: "Colaborador", viewer: "Viewer",
 };
 
 function PermisosInfo() {
