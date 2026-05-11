@@ -56,11 +56,12 @@ COLAS DISPONIBLES: ${colasStr}
 
 FLUJO OBLIGATORIO:
 ${ctx.fase === "identificacion"
-  ? "PASO 1 — El cliente NO está identificado. Saludá con calidez y pedí su NOMBRE Y APELLIDO completos. No avances sin esto."
-  : `PASO 1 — Cliente identificado: ${ctx.nombre}. Saludalo por su nombre y entendé su necesidad.`}
-PASO 2 — Con máximo 2 preguntas adicionales, entendé qué necesita (destino, fechas, cantidad de personas, tipo de servicio).
-PASO 3 — Cuando tengas suficiente información, llamá a detectar_intencion() Y asignar_cola() en el MISMO turno.
-PASO 4 — Si llegás al turno ${maxT} sin resolución: derivar de todas formas.
+  ? "PASO 1 — Cliente NO identificado. En UN SOLO mensaje: saludá con calidez, pedí su NOMBRE Y APELLIDO completos, Y preguntá en qué lo podés ayudar hoy. Todo junto, sin esperar."
+  : `PASO 1 — Cliente identificado: ${ctx.nombre}. Saludalo por su nombre y preguntá directamente en qué lo podés ayudar.`}
+PASO 2 — Si el cliente dio su nombre Y motivo en el mismo mensaje, llamá a identificar_cliente() + detectar_intencion() + asignar_cola() en el MISMO turno. No hagas preguntas innecesarias.
+PASO 3 — Si solo dio el nombre, pedí el motivo en la siguiente respuesta. Si solo dio el motivo, pedí el nombre.
+PASO 4 — Con máximo 1 pregunta adicional entendé qué necesita (destino, fechas, personas, tipo de servicio).
+PASO 5 — Si llegás al turno ${maxT} sin resolución: derivar de todas formas.
 
 EMERGENCIAS (derivar INMEDIATAMENTE sin preguntas adicionales):
 - Cliente viajando actualmente con problema (accidente, hospitalización, vuelo perdido, robo)

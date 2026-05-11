@@ -199,12 +199,16 @@ export function ConversacionList({
                     {flags.con_gestion && (
                       <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-accent/30 text-accent-foreground">gestión</span>
                     )}
-                    {/* Cola asignada — muestra nombre si existe, evita duplicar badge de estado */}
-                    {(conv.cola_area_nombre) && (
-                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 truncate max-w-[110px]" title={conv.cola_area_nombre}>
+                    {/* Asignación: muestra asesor si está asignado, o cola si está en espera */}
+                    {conv.responsable_nombre ? (
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 truncate max-w-[110px]" title={`Asignado a ${conv.responsable_nombre}`}>
+                        👤 {conv.responsable_nombre}
+                      </span>
+                    ) : conv.cola_area_nombre ? (
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 truncate max-w-[110px]" title={`En cola: ${conv.cola_area_nombre}`}>
                         📋 {conv.cola_area_nombre}
                       </span>
-                    )}
+                    ) : null}
                     {conv.proxima_accion && (
                       <span className="text-[9px] text-muted-foreground truncate">
                         → {conv.proxima_accion}

@@ -81,7 +81,8 @@ export function getFunnelStage(conv: LatConversacion): FunnelStage {
   if (
     estadoAsig === "en_cola" || estadoAsig === "pendiente" ||
     estadoAsig === "desborde" ||
-    estado === "nuevo" || estado === "pendiente_respuesta" || estado === "abierto" ||
+    estado === "en_cola" || estado === "nuevo" ||
+    estado === "pendiente_respuesta" || estado === "abierto" ||
     conv.en_cola ||
     (conv.no_leidos ?? 0) > 0
   ) {
