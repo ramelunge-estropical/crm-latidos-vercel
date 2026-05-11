@@ -416,7 +416,7 @@ Deno.serve(async (req: Request) => {
           texto_mensaje:    contenido,
           canal_tipo:       "whatsapp",
         });
-        if (routing.routing_status === "bot_delegado" && innerTyp === "text") {
+        if (routing.routing_status === "bot_delegado") {
           triggerBotAgent(convId, telefono, contenido);
         }
       }
@@ -491,7 +491,7 @@ Deno.serve(async (req: Request) => {
                 texto_mensaje:    contenido,
                 canal_tipo:       "whatsapp",
               });
-              if (routing.routing_status === "bot_delegado" && msg.type === "text") {
+              if (routing.routing_status === "bot_delegado") {
                 triggerBotAgent(convId, telefono, contenido);
               }
             }

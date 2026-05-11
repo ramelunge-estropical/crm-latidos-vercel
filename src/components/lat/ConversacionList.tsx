@@ -199,12 +199,10 @@ export function ConversacionList({
                     {flags.con_gestion && (
                       <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-accent/30 text-accent-foreground">gestión</span>
                     )}
-                    {flags.en_cola && (
-                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-warning/10 text-warning">en cola</span>
-                    )}
-                    {conv.cola_area_nombre && (
-                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 truncate max-w-[90px]">
-                        {conv.cola_area_nombre}
+                    {/* Cola asignada — muestra nombre si existe, evita duplicar badge de estado */}
+                    {(conv.cola_area_nombre) && (
+                      <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 truncate max-w-[110px]" title={conv.cola_area_nombre}>
+                        📋 {conv.cola_area_nombre}
                       </span>
                     )}
                     {conv.proxima_accion && (
