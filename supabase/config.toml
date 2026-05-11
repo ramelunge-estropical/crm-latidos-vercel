@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.lat-process-queue]
 verify_jwt = false
+
+[functions.lat-assign-engine]
+verify_jwt = false
