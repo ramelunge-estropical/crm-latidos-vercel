@@ -490,17 +490,36 @@ export function useLatBandeja(
           return mockConvs.map(adaptMockConv);
         }
 
-        // Bandeja individual: siempre filtra por el responsable autenticado
+        // Bandeja individual: mis conversaciones asignadas + conversaciones en mis colas
         console.log("[LAT_BANDEJA] colaboradorId:", colaboradorId, "| rol:", rol);
-        const { data: rows, error } = await (supabase as any)
+
+        // Obtener colas donde el usuario es miembro activo
+        const { data: colaRows } = await (supabase as any)
+          .from("lat_cola_miembros")
+          .select("cola_id")
+          .eq("colaborador_id", colaboradorId)
+          .eq("activo", true);
+        const colaIds: string[] = (colaRows ?? []).map((r: any) => r.cola_id as string);
+        console.log("[LAT_BANDEJA] colas del colaborador:", colaIds.length);
+
+        // Conversaciones asignadas a mí O en mis colas
+        let query = (supabase as any)
           .from("lat_conversaciones")
           .select("*")
-          .eq("responsable_id", colaboradorId)
           .not("estado_asignacion", "in", "(cerrada,ignorada)")
           .order("ultima_interaccion", { ascending: false });
 
+        if (colaIds.length > 0) {
+          query = query.or(
+            `responsable_id.eq.${colaboradorId},cola_id.in.(${colaIds.join(",")})`,
+          );
+        } else {
+          query = query.eq("responsable_id", colaboradorId);
+        }
+
+        const { data: rows, error } = await query;
         if (error) throw error;
-        console.log("[LAT_BANDEJA] total devuelto:", rows?.length, "| responsable_id filtrado:", colaboradorId);
+        console.log("[LAT_BANDEJA] total devuelto:", rows?.length);
         return (rows as LatConversacion[]).map(r => ({ ...r, _source: "db" as const }));
       } catch {
         return mockConvs.map(adaptMockConv);
