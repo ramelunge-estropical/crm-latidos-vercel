@@ -362,7 +362,7 @@ Deno.serve(async (req: Request) => {
     if (turno >= maxTurnos) {
       const colaHF = colaFallback ?? colaFrontdesk ?? null;
       await updateConversacion(conversacion_id, {
-        bot_estado: "handed_off", cola_id: colaHF?.id ?? null,
+        bot_estado: "handed_off", cola_id: colaHF?.id ?? null, cola_area_nombre: colaHF?.nombre ?? null,
         estado: "en_cola", estado_asignacion: "en_cola", ts_cola_asignada: new Date().toISOString(),
       });
       await sendWhatsApp(conv.telefono ?? telefono, "Te estoy conectando con un asesor. ¡Gracias por tu paciencia!", conversacion_id);
@@ -441,6 +441,7 @@ Deno.serve(async (req: Request) => {
         bot_contexto:        finalCtx,
         bot_turnos:          turno + 1,
         cola_id:             colaFinal?.id ?? null,
+        cola_area_nombre:    colaFinal?.nombre ?? null,
         intencion_detectada: clasi.intencion,
         urgencia_detectada:  clasi.urgencia,
         resumen_ia:          clasi.resumen,

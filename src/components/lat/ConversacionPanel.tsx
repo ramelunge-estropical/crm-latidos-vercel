@@ -433,16 +433,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     try {
       await (supabase as any)
         .from('lat_conversaciones')
-        .update({ en_foco: false, estado: 'liberado' })
+        .update({ en_foco: false, estado: 'resuelta', estado_asignacion: 'cerrada' })
         .eq('id', conversacion.id);
       await (supabase as any).from('lat_mensajes').insert({
         conversacion_id: conversacion.id,
         tipo: 'sistema',
-        contenido: 'Chat liberado del foco. Volverá automáticamente al recibir un nuevo evento.',
+        contenido: 'Chat marcado como atendido.',
         estado: 'enviado',
       });
       invalidateAll();
-      toast.success('Chat liberado del foco');
+      toast.success('Chat marcado como atendido');
     } catch (e: any) {
       toast.error(e.message ?? 'Error al liberar chat');
     } finally {
