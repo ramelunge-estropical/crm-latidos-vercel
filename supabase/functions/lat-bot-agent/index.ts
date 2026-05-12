@@ -301,8 +301,14 @@ async function callOpenAI(
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { status: 200 });
 
+  let conversacion_id: string | undefined;
+  let contenido: string | undefined;
+
   try {
-    const { conversacion_id, telefono, contenido } = await req.json();
+    const body = await req.json();
+    conversacion_id = body.conversacion_id;
+    const telefono  = body.telefono;
+    contenido       = body.contenido;
     if (!conversacion_id) return new Response("missing conversacion_id", { status: 400 });
 
     // 1. Paralelo: config + conversación + colas
@@ -342,8 +348,9 @@ Deno.serve(async (req: Request) => {
       Object.assign(conv, { bot_estado: "activo", bot_turnos: 0, bot_contexto: freshCtx });
     }
 
-    const ctx: BotContexto = (conv.bot_contexto && typeof conv.bot_contexto === "object")
-      ? { preguntas_intencion: 0, ...(conv.bot_contexto as BotContexto) }
+    const ctxRaw = conv.bot_contexto as any;
+    const ctx: BotContexto = (ctxRaw?.fase)
+      ? { preguntas_intencion: 0, ...ctxRaw }
       : { fase: "identificacion", preguntas_intencion: 0 };
 
     const turno = conv.bot_turnos ?? 0;
@@ -483,7 +490,17 @@ Deno.serve(async (req: Request) => {
     );
 
   } catch (err: any) {
-    console.error("[lat-bot-agent] error:", err?.message ?? err);
-    return new Response(JSON.stringify({ error: err?.message }), { status: 500 });
+    const msg = err?.message ?? String(err);
+    console.error("[lat-bot-agent] error:", msg);
+    if (conversacion_id) {
+      await supabase.from("lat_routing_audit_log").insert({
+        conversacion_id,
+        turno: -1,
+        mensaje_cliente: contenido ?? "",
+        accion: "error",
+        motivo: msg,
+      }).catch(() => {});
+    }
+    return new Response(JSON.stringify({ error: msg }), { status: 500 });
   }
 });
