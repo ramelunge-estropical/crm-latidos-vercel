@@ -503,27 +503,33 @@ export function useLatBandeja(
           return (rows as LatConversacion[]).map(r => ({ ...r, _source: "db" as const }));
         }
 
-        // Bandeja individual: mis conversaciones asignadas + conversaciones en mis colas
-        const { data: colaRows } = await (supabase as any)
-          .from("lat_cola_miembros")
-          .select("cola_id")
-          .eq("colaborador_id", colaboradorId)
-          .eq("activo", true);
-        const colaIds: string[] = (colaRows ?? []).map((r: any) => r.cola_id as string);
-        console.log("[LAT_BANDEJA] colas del colaborador:", colaIds.length);
+        // supervisor/admin ven sus colas además de sus conversaciones asignadas.
+        // colaborador (y cualquier otro rol) SOLO ve sus propias conversaciones asignadas.
+        const canSeeQueues = rol === "supervisor" || rol === "admin";
+        let colaIds: string[] = [];
 
-        // Conversaciones asignadas a mí O en mis colas
+        if (canSeeQueues) {
+          const { data: colaRows } = await (supabase as any)
+            .from("lat_cola_miembros")
+            .select("cola_id")
+            .eq("colaborador_id", colaboradorId)
+            .eq("activo", true);
+          colaIds = (colaRows ?? []).map((r: any) => r.cola_id as string);
+          console.log("[LAT_BANDEJA] colas del colaborador:", colaIds.length);
+        }
+
         let query = (supabase as any)
           .from("lat_conversaciones")
           .select("*")
           .not("estado_asignacion", "in", "(cerrada,ignorada)")
           .order("ultima_interaccion", { ascending: false });
 
-        if (colaIds.length > 0) {
+        if (canSeeQueues && colaIds.length > 0) {
           query = query.or(
             `responsable_id.eq.${colaboradorId},cola_id.in.(${colaIds.join(",")})`,
           );
         } else {
+          // colaborador: estrictamente solo sus chats asignados
           query = query.eq("responsable_id", colaboradorId);
         }
 
