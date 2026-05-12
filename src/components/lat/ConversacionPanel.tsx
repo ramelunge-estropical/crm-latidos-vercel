@@ -23,7 +23,7 @@ import { GitBranch, Hand, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useClientes } from '@/hooks/useSharedQueries';
+import { useCurrentUserRol, useClientes } from '@/hooks/useSharedQueries';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -285,6 +285,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   };
 
   const isMock = conversacion._source === 'mock';
+
+  const { user: currentUser } = useCurrentUserRol();
+  const autorNombre = currentUser?.nombre ?? undefined;
 
   const mockCliente = isMock ? getCliente(conversacion.id) : null;
   const clienteNombre = conversacion.cliente_nombre ?? conversacion.telefono ?? mockCliente?.nombre ?? 'Sin nombre';
@@ -649,7 +652,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     for (let i = 0; i < queue.length; i++) {
       const item = queue[i];
       const cap = i === 0 ? caption : '';
-      const result = await sendAdjunto(conversacion.id, item.file, cap, isMock);
+      const result = await sendAdjunto(conversacion.id, item.file, cap, isMock, autorNombre);
       if (result.ok) {
         okCount++;
         // Quitar el item enviado de la cola para feedback progresivo
@@ -679,7 +682,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     if (pendingItems.length > 0) { await handleSendQueue(); return; }
     if (!inputValue.trim()) return;
     const tipo = showNota ? 'nota_interna' : 'outbound';
-    const result = await send(conversacion.id, inputValue, tipo, isMock);
+    const result = await send(conversacion.id, inputValue, tipo, isMock, autorNombre);
     if (result.ok) {
       setInputValue('');
       setShowNota(false);
@@ -706,6 +709,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           template_language: template.language,
           template_variables: variables,
           template_body_preview: bodyPreview,
+          autor_nombre: autorNombre ?? null,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -1582,6 +1586,9 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
 
         {/* Footer: hora + tickets */}
         <div className={`flex items-center justify-end gap-1 ${hasMedia ? 'px-2 pb-1' : 'mt-1'} ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+          {isOutbound && mensaje.autor_nombre && (
+            <span className="text-[9px] opacity-75">{mensaje.autor_nombre}</span>
+          )}
           <span className="text-[9px]">{format(ts, 'HH:mm', { locale: es })}</span>
           {StatusIcon && (
             <span title={`Estado: ${estadoLabelMap[normalizedStatus]}`} className={`inline-flex items-center gap-1 text-[9px] font-medium ${statusTextClassName}`}>

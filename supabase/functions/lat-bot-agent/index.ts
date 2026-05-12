@@ -68,12 +68,13 @@ function isWithinHorario(cfg: any): boolean {
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
 async function getBotConfig() {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("lat_bot_config")
-    .select("activo, modelo, max_turnos, max_tokens, temperatura, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, min_preguntas_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id, horario_zona_horaria, horario_franjas")
+    .select("activo, modelo, max_turnos, temperatura, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, min_preguntas_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id, horario_zona_horaria, horario_franjas")
     .eq("canal", "whatsapp")
-    .maybeSingle();
-  return data as any;
+    .limit(1);
+  if (error) console.error("[bot] getBotConfig error:", JSON.stringify(error));
+  return (data?.[0] ?? null) as any;
 }
 
 async function getColas(): Promise<Cola[]> {
@@ -124,17 +125,21 @@ async function updateConversacion(id: string, updates: Record<string, any>) {
 // ── WhatsApp ──────────────────────────────────────────────────────────────────
 
 async function sendWhatsApp(telefono: string, texto: string, convId: string) {
-  await supabase.from("lat_mensajes").insert({
+  const { data: inserted } = await supabase.from("lat_mensajes").insert({
     conversacion_id: convId,
     tipo:            "outbound",
     contenido:       texto,
-    estado:          GS_API_KEY ? "enviando" : "enviado",
+    estado:          "pendiente",
     autor_nombre:    "Lati",
-  });
+  }).select("id").single();
+  const msgId = inserted?.id ?? null;
 
-  if (!GS_API_KEY || !GS_NUMBER) return;
+  if (!GS_API_KEY || !GS_NUMBER) {
+    if (msgId) await supabase.from("lat_mensajes").update({ estado: "enviado" }).eq("id", msgId);
+    return;
+  }
   try {
-    await fetch("https://api.gupshup.io/wa/api/v1/msg", {
+    const res = await fetch("https://api.gupshup.io/wa/api/v1/msg", {
       method:  "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", apikey: GS_API_KEY },
       body: new URLSearchParams({
@@ -145,8 +150,18 @@ async function sendWhatsApp(telefono: string, texto: string, convId: string) {
         "src.name":  GS_APP_NAME,
       }).toString(),
     });
+    const text = await res.text();
+    let data: any = {};
+    try { data = JSON.parse(text); } catch { /* */ }
+    const ok = res.ok && (data?.status === "submitted" || !!data?.messageId);
+    if (msgId) {
+      await supabase.from("lat_mensajes")
+        .update({ estado: ok ? "enviado" : "fallido", wpp_message_id: data?.messageId ?? null })
+        .eq("id", msgId);
+    }
   } catch (err) {
     console.error("[bot] sendWhatsApp error:", err);
+    if (msgId) await supabase.from("lat_mensajes").update({ estado: "fallido" }).eq("id", msgId);
   }
 }
 
@@ -271,17 +286,26 @@ async function callOpenAI(
     history.push({ role: "user", content: nuevoMensaje });
   }
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
-    body: JSON.stringify({
-      model:           cfg?.modelo     ?? "gpt-4o-mini",
-      messages:        [{ role: "system", content: systemPrompt }, ...history],
-      response_format: { type: "json_object" },
-      temperature:     cfg?.temperatura ?? 0.3,
-      max_tokens:      cfg?.max_tokens  ?? 400,
-    }),
-  });
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 20_000);
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_KEY}` },
+      signal:  abort.signal,
+      body: JSON.stringify({
+        model:           cfg?.modelo     ?? "gpt-4o-mini",
+        messages:        [{ role: "system", content: systemPrompt }, ...history],
+        response_format: { type: "json_object" },
+        temperature:     cfg?.temperatura ?? 0.3,
+        max_tokens:      cfg?.max_tokens  ?? 400,
+      }),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) throw new Error(`OpenAI error ${res.status}: ${await res.text()}`);
 
@@ -305,23 +329,38 @@ Deno.serve(async (req: Request) => {
   let contenido: string | undefined;
 
   try {
+    console.log("[bot] ▶ inicio handler");
+    // DIAGNÓSTICO: confirmar que la función es invocada
+    await supabase.from("lat_routing_audit_log").insert({
+      conversacion_id: null,
+      turno: -99,
+      mensaje_cliente: "",
+      accion: "bot_invocado",
+      motivo: new Date().toISOString(),
+    }).then(() => {}, () => {});
+    console.log("[bot] ✓ audit_log insert OK");
     const body = await req.json();
     conversacion_id = body.conversacion_id;
     const telefono  = body.telefono;
     contenido       = body.contenido;
+    console.log("[bot] ✓ body parsed, conv_id:", conversacion_id);
     if (!conversacion_id) return new Response("missing conversacion_id", { status: 400 });
 
     // 1. Paralelo: config + conversación + colas
+    console.log("[bot] → llamando getBotConfig / getConversacion / getColas");
     const [cfg, conv, colas] = await Promise.all([
       getBotConfig(),
       getConversacion(conversacion_id),
       getColas(),
     ]);
+    console.log("[bot] ✓ DB queries OK — cfg.activo:", cfg?.activo, "conv:", !!conv, "colas:", colas?.length);
 
-    if (!conv) return new Response("conv not found", { status: 404 });
+    if (!conv) { console.log("[bot] ← conv not found"); return new Response("conv not found", { status: 404 }); }
     if (!cfg || cfg.activo === false) {
+      console.log("[bot] ← bot disabled (cfg null o activo=false)");
       return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
     }
+    console.log("[bot] ✓ bot activo, modelo:", cfg.modelo);
 
     const maxTurnos    = cfg?.max_turnos               ?? 6;
     const maxPreguntas = cfg?.min_preguntas_calificacion ?? 3;
@@ -384,8 +423,11 @@ Deno.serve(async (req: Request) => {
 
     // 5. Prompt + historial + llamada a OpenAI
     const systemPrompt = buildSystemPrompt(ctx, clienteInfo, colas, turno, maxTurnos, maxPreguntas, enHorario, cfg);
+    console.log("[bot] → getMensajesRecientes");
     const mensajes     = await getMensajesRecientes(conversacion_id, 8);
+    console.log("[bot] ✓ mensajes:", mensajes?.length, "→ llamando OpenAI");
     const ai           = await callOpenAI(systemPrompt, mensajes, contenido, cfg);
+    console.log("[bot] ✓ OpenAI respondió, accion:", ai?.accion);
 
     if (!ai) throw new Error("No structured response from OpenAI");
 
@@ -499,7 +541,7 @@ Deno.serve(async (req: Request) => {
         mensaje_cliente: contenido ?? "",
         accion: "error",
         motivo: msg,
-      }).catch(() => {});
+      }).then(() => {}, () => {});
     }
     return new Response(JSON.stringify({ error: msg }), { status: 500 });
   }
