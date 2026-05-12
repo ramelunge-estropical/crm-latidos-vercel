@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   ChevronLeft, Plus, Focus, Inbox, Users, ShieldCheck,
-  Activity, ArrowRightLeft, AlertCircle, Search, User, X
+  ArrowRightLeft, AlertCircle, Search, User, X
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -12,7 +12,6 @@ import { Cliente360Panel } from './Cliente360Panel';
 import { ClienteDBPanel } from './ClienteDBPanel';
 import { SoftphoneWidget } from './SoftphoneWidget';
 import { NuevaConversacionDialog } from './NuevaConversacionDialog';
-import { TrazabilidadPanel } from './TrazabilidadPanel';
 import { ReasignacionDialog } from './ReasignacionDialog';
 import { getCliente } from '@/data/latMockData';
 import { useLatBandeja } from '@/hooks/useLatData';
@@ -22,7 +21,6 @@ import { CreateClienteDialog } from '@/components/CreateClienteDialog';
 
 type MobileView = 'list' | 'chat';
 type FocusFilter = 'foco' | 'todos';
-type SideTab = 'cliente' | 'trazabilidad';
 
 // ── Etiquetas de estado de asignación para la bandeja supervisor ──────────────
 const ESTADO_ASIG_LABEL: Record<string, { label: string; dot: string }> = {
@@ -44,7 +42,6 @@ export function LatBandejaView() {
   const [showNuevaConv, setShowNuevaConv]   = useState(false);
   const [stageFilter, setStageFilter]       = useState<string>('todos');
   const [flagFilter, setFlagFilter]         = useState<string>('todos');
-  const [sideTab, setSideTab]               = useState<SideTab>('cliente');
   const [showReasignacion, setShowReasignacion] = useState(false);
   const [showVincular, setShowVincular]         = useState(false);
   const [vincularSearch, setVincularSearch]     = useState('');
@@ -387,39 +384,11 @@ export function LatBandejaView() {
         )}
       </div>
 
-      {/* ── Panel lateral: Cliente 360 / Trazabilidad ────────────────────── */}
+      {/* ── Panel lateral: Cliente 360 ──────────────────────────────────── */}
       {selectedConv && (
         <div className="hidden lg:flex flex-col w-80 xl:w-96 border-l border-border shrink-0 bg-card min-h-0 overflow-hidden">
-
-          {/* Tabs del panel lateral */}
-          <div className="flex border-b border-border/50 shrink-0">
-            <button
-              onClick={() => setSideTab('cliente')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-medium transition-colors border-b-2 ${
-                sideTab === 'cliente'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Users className="w-3 h-3" />
-              Cliente 360
-            </button>
-            <button
-              onClick={() => setSideTab('trazabilidad')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-medium transition-colors border-b-2 ${
-                sideTab === 'trazabilidad'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Activity className="w-3 h-3" />
-              Trazabilidad
-            </button>
-          </div>
-
           <div className="flex-1 overflow-y-auto scrollbar-thin">
-            {sideTab === 'cliente' ? (
-              <>
+            <>
                 {mockCliente ? (
                   <Cliente360Panel cliente={mockCliente} conversacion={selectedConv as any} />
                 ) : selectedConv.cliente_id ? (
@@ -493,10 +462,7 @@ export function LatBandejaView() {
                     )}
                   </div>
                 )}
-              </>
-            ) : (
-              <TrazabilidadPanel conversacion={selectedConv} />
-            )}
+            </>
           </div>
         </div>
       )}

@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import {
   TrendingUp, TrendingDown, AlertTriangle, Clock, CheckCircle2, Inbox, Activity,
   Timer, RefreshCw, GitBranch, ArrowUpRight, MessageSquare, Phone, Mail,
-  Zap, Gauge, ChevronRight, Circle, AlertOctagon, PauseCircle, PlayCircle,
+  Zap, Gauge, ChevronRight, Circle, AlertOctagon, PauseCircle, PlayCircle, Network,
 } from 'lucide-react';
 import { useLatConversaciones, LatConversacion } from '@/hooks/useLatData';
 import { FUNNEL_STAGES, getFunnelStage, getFlags, groupByStage, isFinalizadaHoy, countFlag } from '@/lib/latFunnel';
@@ -185,6 +185,12 @@ export function LatDashboardView() {
     }
     return out;
   }, [conversaciones, resumen.slaRiesgo, cargaUsada]);
+
+  // ── GTR: conversaciones activas con estado de asignación ────────────────
+  const gtrData = useMemo(
+    () => conversaciones.filter(c => c.estado_asignacion && c.estado_asignacion !== 'cerrada' && c.estado_asignacion !== 'ignorada'),
+    [conversaciones],
+  );
 
   // Estado del asesor (mock simple)
   const asesorEstado: 'disponible' | 'en_gestion' | 'pausa' = resumen.enGestion > 0 ? 'en_gestion' : 'disponible';
@@ -381,6 +387,12 @@ export function LatDashboardView() {
             </div>
           </section>
 
+          {/* ── PANEL GTR ────────────────────────────────────────────── */}
+          <section>
+            <SectionHead icon={Network} label="Gestión de trazabilidad y routing (GTR)" hint={`${gtrData.length} activas`} />
+            <GtrPanel data={gtrData} />
+          </section>
+
           {/* ── FUNNEL OPERATIVO (ejecutivo, no listado) ─────────────── */}
           <section>
             <SectionHead icon={GitBranch} label="Funnel operativo" hint={`${totalFunnel} conversaciones`} />
@@ -542,6 +554,62 @@ function AlertCard({ tipo, titulo, count, cta }: { tipo: 'critical' | 'warning' 
       >
         Ver en Bandeja <ChevronRight className="w-3 h-3" />
       </button>
+    </div>
+  );
+}
+
+const CANAL_LABEL: Record<string, string> = {
+  whatsapp: 'WA', phone: 'Tel', email: 'Email', instagram: 'IG', facebook: 'FB', web: 'Web', interno: 'Int',
+};
+
+const GTR_ESTADO: Record<string, { dot: string; label: string }> = {
+  en_cola:    { dot: 'bg-amber-400',        label: 'En cola'    },
+  asignada:   { dot: 'bg-primary',          label: 'Asignada'   },
+  en_gestion: { dot: 'bg-emerald-500',      label: 'En gestión' },
+  en_espera:  { dot: 'bg-blue-400',         label: 'En espera'  },
+  desborde:   { dot: 'bg-orange-500',       label: 'Desborde'   },
+  pendiente:  { dot: 'bg-muted-foreground', label: 'Pendiente'  },
+};
+
+function GtrPanel({ data }: { data: LatConversacion[] }) {
+  if (data.length === 0) {
+    return (
+      <div className="bg-card rounded-xl border border-border px-4 py-8 text-center">
+        <p className="text-xs text-muted-foreground">Sin conversaciones activas en el enrutador</p>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <div className="grid grid-cols-[3.5rem_1fr_7rem_1fr_1fr] gap-3 px-4 py-2 border-b border-border/50 bg-muted/30">
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Canal</span>
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Cliente</span>
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Estado</span>
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Responsable</span>
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Cola / Área</span>
+      </div>
+      <div className="divide-y divide-border/50 max-h-72 overflow-y-auto scrollbar-thin">
+        {data.map(c => {
+          const estado = c.estado_asignacion ?? 'pendiente';
+          const cfg = GTR_ESTADO[estado] ?? { dot: 'bg-muted-foreground', label: estado };
+          return (
+            <button
+              key={c.id}
+              onClick={() => goBandeja({})}
+              className="w-full grid grid-cols-[3.5rem_1fr_7rem_1fr_1fr] gap-3 px-4 py-2.5 hover:bg-accent/30 transition-colors text-left"
+            >
+              <span className="text-[10px] font-medium text-muted-foreground">{CANAL_LABEL[c.canal] ?? c.canal}</span>
+              <span className="text-xs text-foreground truncate">{c.cliente_nombre ?? c.telefono ?? '—'}</span>
+              <span className="inline-flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+                <span className="text-[10px] text-foreground truncate">{cfg.label}</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground truncate">{c.responsable_nombre ?? '—'}</span>
+              <span className="text-[10px] text-muted-foreground truncate">{c.cola_area_nombre ?? '—'}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
