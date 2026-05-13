@@ -1455,14 +1455,25 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   const isVideo  = !!adjUrl && (adjTipo.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(mensaje.adjunto_nombre ?? ''));
   const isFile   = !!adjUrl && !isImage && !isAudio && !isVideo;
   const trimmedContent = mensaje.contenido?.trim() ?? '';
+
+  // Contactos compartidos: `[contacts]` (legacy) o `{"__contacts":[...]}`
+  type ContactEntry = { nombre: string; telefono?: string | null; email?: string | null; empresa?: string | null };
+  let parsedContacts: ContactEntry[] | null = null;
+  if (trimmedContent === '[contacts]') {
+    parsedContacts = [{ nombre: 'Contacto compartido' }];
+  } else if (trimmedContent.startsWith('{"__contacts":')) {
+    try { parsedContacts = JSON.parse(trimmedContent).__contacts ?? null; } catch { /* noop */ }
+  }
+  const isContacts = parsedContacts !== null;
+
   // Mensajes donde el media existía pero no se pudo guardar la URL (descarga falló en webhook)
-  const isNoUrlMedia = !adjUrl && genericMediaPlaceholderPattern.test(trimmedContent);
+  const isNoUrlMedia = !adjUrl && !isContacts && genericMediaPlaceholderPattern.test(trimmedContent);
   const noUrlMediaKind: 'image' | 'audio' | 'video' | 'document' =
     trimmedContent.match(/📷|imagen/i) ? 'image' :
     trimmedContent.match(/🎤|voz|audio/i) ? 'audio' :
     trimmedContent.match(/🎥|video/i) ? 'video' : 'document';
   const hasMedia = isImage || isAudio || isVideo || isFile || isNoUrlMedia;
-  const showText = !!trimmedContent && !(hasMedia && genericMediaPlaceholderPattern.test(trimmedContent));
+  const showText = !!trimmedContent && !isContacts && !(hasMedia && genericMediaPlaceholderPattern.test(trimmedContent));
   const linkClassName = isOutbound
     ? 'underline underline-offset-2 decoration-primary-foreground/60 font-medium break-all hover:opacity-80'
     : 'underline underline-offset-2 decoration-primary/60 text-primary font-medium break-all hover:opacity-80';
@@ -1574,6 +1585,37 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
                noUrlMediaKind === 'video'    ? 'Video no disponible'  :
                'Archivo no disponible'}
             </span>
+          </div>
+        )}
+
+        {/* Contacto compartido */}
+        {isContacts && parsedContacts && (
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            {parsedContacts.map((c, i) => (
+              <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-xl ${isOutbound ? 'bg-primary-foreground/10' : 'bg-background/40'}`}>
+                <div className={`mt-0.5 shrink-0 ${isOutbound ? 'text-primary-foreground/70' : 'text-primary'}`}>
+                  <User className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-[12px] font-semibold truncate">{c.nombre}</span>
+                  {c.telefono && (
+                    <span className={`text-[11px] flex items-center gap-1 ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      <Phone className="w-3 h-3 shrink-0" />{c.telefono}
+                    </span>
+                  )}
+                  {c.email && (
+                    <span className={`text-[11px] flex items-center gap-1 ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      <Mail className="w-3 h-3 shrink-0" />{c.email}
+                    </span>
+                  )}
+                  {c.empresa && (
+                    <span className={`text-[11px] flex items-center gap-1 ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      <Building2 className="w-3 h-3 shrink-0" />{c.empresa}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

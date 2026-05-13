@@ -56,15 +56,29 @@ async function callRoutingEngine(
 }
 
 // ── Bot agent trigger ─────────────────────────────────────────────────────────
+// Fire-and-forget: usa waitUntil para que wpp-webhook devuelva 200 a Gupshup
+// de inmediato sin esperar que lat-bot-agent termine su procesamiento.
 
 function triggerBotAgent(convId: string, telefono: string, contenido: string) {
-  const url = `${SUPABASE_URL}/functions/v1/lat-bot-agent`;
-  const promise = fetch(url, {
+  const task = fetch(`${SUPABASE_URL}/functions/v1/lat-bot-agent`, {
     method: "POST",
     headers: { "Authorization": `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ conversacion_id: convId, telefono, contenido }),
-  }).catch(err => console.error("bot-agent trigger failed:", err));
-  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[wpp-webhook] bot-agent HTTP ${res.status}: ${body}`);
+    }
+  }).catch((err) => {
+    console.error("[wpp-webhook] bot-agent trigger failed:", err);
+  });
+
+  // Mantiene el worker vivo hasta que la tarea termine
+  try {
+    (globalThis as any).EdgeRuntime?.waitUntil?.(task);
+  } catch (_) {
+    // Si EdgeRuntime no está disponible, la tarea igualmente sigue en background
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -469,6 +483,14 @@ Deno.serve(async (req: Request) => {
               }
               const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", voice:"🎤 Nota de voz", video:"🎥 Video", document:"📎 Documento", sticker:"😀 Sticker" };
               contenido = mediaObj.caption ?? labelMap[msg.type] ?? `[${msg.type}]`;
+            } else if (msg.type === "contacts") {
+              const contactList = (msg.contacts ?? []).map((c: any) => ({
+                nombre: c.name?.formatted_name ?? c.name?.first_name ?? "Contacto",
+                telefono: c.phones?.[0]?.phone ?? null,
+                email: c.emails?.[0]?.email ?? null,
+                empresa: c.org?.company ?? null,
+              }));
+              contenido = JSON.stringify({ __contacts: contactList.length ? contactList : [{ nombre: "Contacto compartido" }] });
             } else {
               contenido = `[${msg.type}]`;
             }

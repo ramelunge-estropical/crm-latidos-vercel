@@ -339,11 +339,6 @@ export function LatBandejaView() {
                 <span className="text-muted-foreground">{estadoAsigCfg.label}</span>
               </span>
             )}
-            {selectedConv.routing_status && (
-              <span className="text-[10px] text-muted-foreground">
-                · motor: {selectedConv.routing_status}
-              </span>
-            )}
             {/* Botón reasignar: solo para supervisors/admin */}
             {isSupervisor && selectedConv._source === 'db' && (
               <button

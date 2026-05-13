@@ -1,6 +1,6 @@
 -- LAT: safety net de enrutamiento automatico para todo mensaje entrante.
 -- Cada INSERT inbound en lat_mensajes invoca lat-routing-engine.
--- Si la conversacion ya esta asignada, el motor responde ya_asignada y no la mueve.
+-- Si la conversacion ya esta asignada, el motor responde asignada y no la mueve.
 
 CREATE EXTENSION IF NOT EXISTS pg_net;
 

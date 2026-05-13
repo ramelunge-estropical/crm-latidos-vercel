@@ -22,7 +22,6 @@
  *   canal_desconectado  — canal no conectado o inexistente
  *   sin_cola            — sin regla ni cola default configurada
  *   cola_invalida       — cola no pasó validación básica
- *   ya_asignada         — conversación ya tiene agente activo; no se reasigna
  *
  * Secrets requeridos:
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -507,7 +506,7 @@ export async function routeIncomingCommunication(
     return {
       queue_id:         null,
       assigned_user_id: (convActual as any)?.responsable_id ?? null,
-      routing_status:   "ya_asignada",
+      routing_status:   "asignada",
       routing_reason:   "Conversación ya tiene agente activo",
     };
   }
