@@ -21,7 +21,22 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Cola { id: string; nombre: string; area: string | null; }
+interface BotClasificacionHints {
+  categoria?: string;
+  keywords?: string[];
+  frases_ejemplo?: string[];
+  preguntas_calificacion?: string[];
+  exclusiones?: string[];
+  confianza_min?: number;
+  derivar_inmediato?: boolean;
+}
+
+interface Cola {
+  id: string;
+  nombre: string;
+  area: string | null;
+  bot_clasificacion?: BotClasificacionHints | null;
+}
 
 interface BotContexto {
   fase: "identificacion" | "necesidad" | "finalizado";
@@ -143,7 +158,7 @@ async function getBotConfig() {
 async function getColas(): Promise<Cola[]> {
   const { data } = await supabase
     .from("lat_colas")
-    .select("id, nombre, area")
+    .select("id, nombre, area, bot_clasificacion")
     .eq("activa", true)
     .order("orden");
   return (data ?? []) as Cola[];
@@ -286,9 +301,24 @@ function buildSystemPrompt(
   const categorias  = cfg?.prompt_categorias ? `\nCATEGORÍAS DE INTENCIÓN (mapea el mensaje a la categoría y elige la cola correspondiente):\n${cfg.prompt_categorias}` : "";
   const calificacion = cfg?.prompt_calificacion ? `\nPREGUNTAS POR CATEGORÍA:\n${cfg.prompt_calificacion}` : "";
   const identidad   = cfg?.prompt_identidad  ? cfg.prompt_identidad : "Lati, parte del equipo de Tropical Tours Bolivia.";
-  const colasList   = colas.map(c =>
-    `  { "id": "${c.id}", "nombre": "${c.nombre}"${c.area ? `, "area": "${c.area}"` : ""} }`
-  ).join(",\n");
+  const colasList = colas.map(c => {
+    const bc = c.bot_clasificacion;
+    const partes: string[] = [
+      `"id": "${c.id}"`,
+      `"nombre": "${c.nombre}"`,
+    ];
+    if (c.area) partes.push(`"area": "${c.area}"`);
+    if (bc?.categoria) partes.push(`"categoria": "${bc.categoria}"`);
+    if (bc?.keywords?.length)
+      partes.push(`"keywords": ${JSON.stringify(bc.keywords)}`);
+    if (bc?.frases_ejemplo?.length)
+      partes.push(`"frases_ejemplo": ${JSON.stringify(bc.frases_ejemplo.slice(0, 4))}`);
+    if (bc?.preguntas_calificacion?.length)
+      partes.push(`"preguntas": ${JSON.stringify(bc.preguntas_calificacion)}`);
+    if (bc?.exclusiones?.length)
+      partes.push(`"exclusiones": ${JSON.stringify(bc.exclusiones)}`);
+    return `  { ${partes.join(", ")} }`;
+  }).join(",\n");
 
   return `Eres ${identidad}
 Tono: amigable, cálido, profesional. Español neutro latinoamericano (sin voseo: usa "puedes", "eres", "tienes", no "podés", "sos", "tenés").
@@ -561,10 +591,15 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Validar cola_id contra lista real; fallback a "no clasificada"
-      const colaMatch  = colas.find(c => c.id === clasi.cola_id);
-      const colaFinal  = colaMatch ?? colaFallback ?? null;
-      const esFallback = !colaMatch;
+      // Validar cola_id contra lista real y confianza mínima; fallback a supervisor
+      const colaMatch    = colas.find(c => c.id === clasi.cola_id);
+      const confianzaMin = colaMatch?.bot_clasificacion?.confianza_min ?? 0.50;
+      const confianzaOk  = (clasi.confianza ?? 0) >= confianzaMin;
+      const colaFinal    = (colaMatch && confianzaOk) ? colaMatch : (colaFallback ?? null);
+      const esFallback   = !colaMatch || !confianzaOk;
+      const motivoFallback = !colaMatch
+        ? `cola_id ${clasi.cola_id} no existe`
+        : `confianza ${clasi.confianza} < mínima ${confianzaMin}`;
 
       const finalCtx: BotContexto = { ...newCtx, fase: "finalizado" };
       await updateConversacion(conversacion_id, {
@@ -606,7 +641,7 @@ Deno.serve(async (req: Request) => {
         cola_sugerida:       colaFinal?.nombre ?? null,
         cola_id:             colaFinal?.id ?? null,
         confianza:           clasi.confianza,
-        motivo:              esFallback ? "fallback_cola_invalida" : "cola_exacta",
+        motivo:              esFallback ? motivoFallback : "cola_exacta",
         output_modelo:       ai,
       });
 
