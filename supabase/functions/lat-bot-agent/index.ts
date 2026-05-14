@@ -29,6 +29,7 @@ interface BotContexto {
   cliente_id?: string | null;
   preguntas_intencion: number;
   intentos_identificacion?: number;
+  intencion_preliminar?: string | null;
 }
 
 interface AiClasificacion {
@@ -44,6 +45,20 @@ interface AiResponse {
   mensaje_cliente: string;
   identificacion?: { nombre_completo: string } | null;
   clasificacion?: AiClasificacion | null;
+}
+
+// ── Detección de rechazo / intención clara → corta bucle de identificación ────
+
+function saltarIdentificacion(msg: string): boolean {
+  const t = msg.toLowerCase();
+  return (
+    // Rechazo explícito a dar nombre
+    /\bno\s+(gracias|quiero|me\s+gusta\s+mi\s+nombre)\b/.test(t) ||
+    /\bno\s+quiero\s+(dar|decir)\b/.test(t) ||
+    /\b(s[oó]lo|solo)\s+quiero\b/.test(t) ||
+    // Solicitud de asesor / persona humana
+    /\b(asesor|agente|operador|humano|persona\s+real|que\s+me\s+atienda|hablar\s+con)\b/.test(t)
+  );
 }
 
 // ── Horario (calculado en código, no en GPT) ──────────────────────────────────
@@ -221,6 +236,7 @@ function buildSystemPrompt(
   cfg?: any,
 ): string {
   const reglas      = cfg?.prompt_reglas     ? `\nREGLAS ADICIONALES:\n${cfg.prompt_reglas}`        : "";
+  const categorias  = cfg?.prompt_categorias ? `\nCATEGORÍAS DE INTENCIÓN (mapea el mensaje a la categoría y elige la cola correspondiente):\n${cfg.prompt_categorias}` : "";
   const calificacion = cfg?.prompt_calificacion ? `\nPREGUNTAS POR CATEGORÍA:\n${cfg.prompt_calificacion}` : "";
   const identidad   = cfg?.prompt_identidad  ? cfg.prompt_identidad : "Lati, parte del equipo de Tropical Tours Bolivia.";
   const colasList   = colas.map(c =>
@@ -237,24 +253,33 @@ ESTADO ACTUAL:
 - Preguntas de clasificación usadas: ${ctx.preguntas_intencion}/${maxPreguntas}
 - Fase: ${ctx.fase}
 - Cliente: ${clienteInfo}
-- En horario de atención: ${enHorario ? "sí" : "no (fuera de horario — igual clasifica y deriva)"}
+- En horario de atención: ${enHorario ? "sí" : "no (fuera de horario — igual clasifica y deriva)"}${ctx.intencion_preliminar ? `\n- Intención mencionada en mensaje anterior: "${ctx.intencion_preliminar}"` : ""}
 
 COLAS DISPONIBLES — usa el id exacto (campo "id") al clasificar:
 [
 ${colasList}
 ]
 
+REGLA — IDENTIFICACIÓN (máximo 1 solicitud de nombre por conversación):
+Lati puede pedir nombre UNA sola vez. Si el cliente rechazó dar su nombre, no respondió con datos útiles, pidió asesor, o ya expresó una intención clara, NO volver a pedir nombre. Usar la intención disponible para clasificar y derivar aunque no exista cliente vinculado.
+
 FLUJO:
 ${ctx.fase === "identificacion"
-  ? `1. Saluda e, en un solo mensaje, pide NOMBRE Y APELLIDO completos y pregunta en qué puedes ayudar.
-   IMPORTANTE: Si el cliente ya respondió pero no proporcionó ningún dato identificable (nombre, apellido, teléfono, correo, documento u otro dato de cliente), NO repitas la pregunta de identificación. Avanza directamente preguntando su necesidad y usa accion "responder". La conversación debe continuar aunque no quede cliente vinculado.`
-  : `1. El cliente ya está identificado como: ${ctx.nombre}. Pregunta directamente en qué puedes ayudar.`
+  ? `1. Analiza el mensaje y captura todos los datos útiles que el cliente haya proporcionado:
+   - Nombre + intención suficiente para derivar → usa accion "identificar_y_clasificar".
+   - Solo nombre (sin intención clara) → usa accion "identificar"; luego pregunta en qué puedes ayudar.
+   - Solo intención (sin nombre) → usa accion "responder" y en UN ÚNICO mensaje pide el nombre completo; NO derives todavía a menos que el cliente pida asesor explícitamente.
+   - Ni nombre ni intención → usa accion "responder": saluda y en UN ÚNICO mensaje pide nombre completo y en qué puedes ayudar. Esta es la única solicitud de nombre en toda la conversación.`
+  : ctx.nombre
+    ? `1. El cliente está identificado como: ${ctx.nombre}. Continúa con su necesidad. No pidas más datos de identificación.`
+    : `1. No solicites nombre ni datos personales proactivamente (ya se pidió antes). Si el cliente proporciona su nombre u otro dato útil voluntariamente, captúralo: usa accion "identificar" (solo nombre, sin intención suficiente aún) o "identificar_y_clasificar" (nombre + intención). Si el mensaje contiene intención de servicio sin nombre, usa accion "clasificar" y deriva.`
 }
-2. Cuando tengas nombre + motivo claro, clasifica y deriva en el mismo turno (accion "identificar_y_clasificar" o "clasificar").
-3. Puedes hacer máximo ${maxPreguntas} preguntas de clasificación. Si ya alcanzaste el límite, deriva.
-4. Si llegas al turno ${maxTurnos} sin clasificar, deriva a la cola "No Clasificada Revisión Supervisor".
-5. EMERGENCIAS (accidente, hospitalización, vuelo perdido, robo en destino): deriva INMEDIATAMENTE al asesor de Emergencia en Destino. Sin preguntas adicionales.
-6. Mensajes no-texto (imagen, audio, sticker, documento): pide que escriban su consulta en texto.${reglas}${calificacion}
+2. Si el cliente pide hablar con un asesor, agente o persona humana: usa accion "clasificar" y deriva INMEDIATAMENTE a Frontdesk o cola general. Sin preguntas adicionales.
+3. Cuando tengas motivo claro, clasifica y deriva en el mismo turno (accion "clasificar" o "identificar_y_clasificar").
+4. Puedes hacer máximo ${maxPreguntas} preguntas de clasificación. Si ya alcanzaste el límite, deriva.
+5. Si llegas al turno ${maxTurnos} sin clasificar, deriva a la cola "No Clasificada Revisión Supervisor".
+6. EMERGENCIAS (accidente, hospitalización, vuelo perdido, robo en destino): deriva INMEDIATAMENTE al asesor de Emergencia en Destino. Sin preguntas adicionales.
+7. Mensajes no-texto (imagen, audio, sticker, documento): pide que escriban su consulta en texto.${reglas}${categorias}${calificacion}
 
 RESPONDE SIEMPRE con este JSON exacto (sin markdown extra ni texto fuera del JSON):
 {
@@ -421,6 +446,17 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // 4b. Cortar bucle de identificación antes de construir el prompt:
+    // si ya se intentó pedir nombre una vez, o si el mensaje contiene
+    // rechazo explícito / intención de servicio clara → avanzar a "necesidad"
+    // para que el system-prompt ordene clasificar en lugar de pedir nombre.
+    if (ctx.fase === "identificacion") {
+      const yaIntento = (ctx.intentos_identificacion ?? 0) >= 1;
+      if (yaIntento || saltarIdentificacion(contenido ?? "")) {
+        ctx.fase = "necesidad";
+      }
+    }
+
     const clienteInfo = ctx.nombre ? `${ctx.nombre} (identificado)` : "No identificado";
 
     // 5. Prompt + historial + llamada a OpenAI
@@ -532,6 +568,12 @@ Deno.serve(async (req: Request) => {
 
     if (newCtx.fase === "necesidad") {
       newCtx.preguntas_intencion = (newCtx.preguntas_intencion ?? 0) + 1;
+    }
+
+    // Guardar intención preliminar si el cliente mencionó servicio pero aún no se clasificó
+    const tieneIntencion = /\b(cotizar|reservar|viaje|boleto|visa|vuelo|viajar|paquete|destino|hotel|hospedaje|turismo|precio|tarifa)\b/i.test(contenido ?? "");
+    if (tieneIntencion && !newCtx.intencion_preliminar) {
+      newCtx.intencion_preliminar = (contenido ?? "").slice(0, 300);
     }
 
     await updateConversacion(conversacion_id, { bot_contexto: newCtx, bot_turnos: turno + 1 });
