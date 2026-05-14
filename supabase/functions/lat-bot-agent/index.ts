@@ -62,7 +62,7 @@ function saltarIdentificacion(msg: string): boolean {
 }
 
 // Extrae un nombre de persona del inicio del mensaje del cliente (fallback cuando
-// la IA clasifica sin devolver identificacion.nombre_completo)
+// la IA clasifica o responde sin devolver identificacion.nombre_completo)
 function extractNombreDeContenido(msg: string): string | null {
   const match = (msg ?? "").match(
     /^([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?: [A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+){1,3})(?:[,.]|\s|$)/,
@@ -72,6 +72,35 @@ function extractNombreDeContenido(msg: string): string | null {
   if (/^(hola|buenos|buenas|buen|gracias|disculp|permis|ok|estimad|bienvenid|tardes|noches|d[ií]as)/i.test(candidato)) return null;
   if (candidato.split(" ").length < 2) return null;
   return candidato;
+}
+
+// Busca cliente por teléfono y lo vincula a la conversación.
+// Si no existe, lo crea. Devuelve el cliente_id o null si falla.
+async function linkContacto(
+  convId: string,
+  telefono: string,
+  nombre: string,
+): Promise<string | null> {
+  const clean = telefono.replace(/\D/g, "");
+  const { data: byPhone } = await supabase
+    .from("clientes")
+    .select("id")
+    .or(`telefono.ilike.%${clean}%,telefono.ilike.%${clean.slice(-9)}%,telefono.ilike.%${clean.slice(-8)}%`)
+    .limit(1)
+    .maybeSingle();
+  if (byPhone) {
+    await supabase.from("clientes").update({ nombre_completo: nombre }).eq("id", byPhone.id);
+    await updateConversacion(convId, { cliente_id: byPhone.id, cliente_nombre: nombre });
+    return byPhone.id;
+  }
+  const { data: nuevo } = await supabase.from("clientes").insert({
+    nombre_completo: nombre, telefono: clean, canal_contacto: "whatsapp", tipo: "natural",
+  }).select("id").single();
+  if (nuevo?.id) {
+    await updateConversacion(convId, { cliente_id: nuevo.id, cliente_nombre: nombre });
+    return nuevo.id;
+  }
+  return null;
 }
 
 // ── Horario (calculado en código, no en GPT) ──────────────────────────────────
@@ -496,31 +525,8 @@ Deno.serve(async (req: Request) => {
       const nombre = ai.identificacion!.nombre_completo;
       newCtx.nombre = nombre;
       newCtx.fase   = "necesidad";
-
-      // Teléfono como identificador principal (evita duplicados y falsos matches por nombre)
-      const clean = (conv.telefono ?? telefono).replace(/\D/g, "");
-      const last9  = clean.slice(-9);
-      const last8  = clean.slice(-8);
-      const { data: byPhone } = await supabase
-        .from("clientes")
-        .select("id, nombre_completo")
-        .or(`telefono.ilike.%${clean}%,telefono.ilike.%${last9}%,telefono.ilike.%${last8}%`)
-        .limit(1)
-        .maybeSingle();
-
-      if (byPhone) {
-        newCtx.cliente_id = byPhone.id;
-        await supabase.from("clientes").update({ nombre_completo: nombre }).eq("id", byPhone.id);
-        await updateConversacion(conversacion_id, { cliente_id: byPhone.id, cliente_nombre: nombre });
-      } else {
-        const { data: nuevo } = await supabase.from("clientes").insert({
-          nombre_completo: nombre, telefono: clean, canal_contacto: "whatsapp", tipo: "natural",
-        }).select("id").single();
-        if (nuevo?.id) {
-          newCtx.cliente_id = nuevo.id;
-          await updateConversacion(conversacion_id, { cliente_id: nuevo.id, cliente_nombre: nombre });
-        }
-      }
+      const clienteId = await linkContacto(conversacion_id, conv.telefono ?? telefono, nombre);
+      if (clienteId) newCtx.cliente_id = clienteId;
     }
 
     // 7. Procesar clasificación / handoff
@@ -536,26 +542,8 @@ Deno.serve(async (req: Request) => {
         const nombreFb = extractNombreDeContenido(contenido ?? "");
         if (nombreFb) {
           newCtx.nombre = nombreFb;
-          const cleanFb = (conv.telefono ?? telefono).replace(/\D/g, "");
-          const { data: byPhoneFb } = await supabase
-            .from("clientes")
-            .select("id")
-            .or(`telefono.ilike.%${cleanFb}%,telefono.ilike.%${cleanFb.slice(-9)}%,telefono.ilike.%${cleanFb.slice(-8)}%`)
-            .limit(1)
-            .maybeSingle();
-          if (byPhoneFb) {
-            newCtx.cliente_id = byPhoneFb.id;
-            await supabase.from("clientes").update({ nombre_completo: nombreFb }).eq("id", byPhoneFb.id);
-            await updateConversacion(conversacion_id, { cliente_id: byPhoneFb.id, cliente_nombre: nombreFb });
-          } else {
-            const { data: nuevoFb } = await supabase.from("clientes").insert({
-              nombre_completo: nombreFb, telefono: cleanFb, canal_contacto: "whatsapp", tipo: "natural",
-            }).select("id").single();
-            if (nuevoFb?.id) {
-              newCtx.cliente_id = nuevoFb.id;
-              await updateConversacion(conversacion_id, { cliente_id: nuevoFb.id, cliente_nombre: nombreFb });
-            }
-          }
+          const clienteIdFb = await linkContacto(conversacion_id, conv.telefono ?? telefono, nombreFb);
+          if (clienteIdFb) newCtx.cliente_id = clienteIdFb;
         }
       }
 
@@ -617,9 +605,21 @@ Deno.serve(async (req: Request) => {
     // 8. Respuesta simple
     await sendWhatsApp(telefDest, ai.mensaje_cliente, conversacion_id);
 
-    // Guardia anti-bucle: si el AI no logró identificar al cliente en este turno,
-    // registrar el intento y avanzar a "necesidad" para no insistir indefinidamente.
-    if (ctx.fase === "identificacion" && !debeIdentificar) {
+    // Fallback: si la IA usó accion="responder" sin devolver identificacion,
+    // intentar detectar nombre al inicio del mensaje del cliente
+    if (ctx.fase === "identificacion" && !debeIdentificar && !newCtx.cliente_id) {
+      const nombreFb8 = extractNombreDeContenido(contenido ?? "");
+      if (nombreFb8) {
+        newCtx.nombre = nombreFb8;
+        newCtx.fase   = "necesidad";
+        const clienteIdFb8 = await linkContacto(conversacion_id, conv.telefono ?? telefono, nombreFb8);
+        if (clienteIdFb8) newCtx.cliente_id = clienteIdFb8;
+      }
+    }
+
+    // Guardia anti-bucle: si tampoco el fallback capturó nombre, registrar intento
+    // y avanzar a "necesidad" para no insistir indefinidamente.
+    if (ctx.fase === "identificacion" && !debeIdentificar && !newCtx.nombre) {
       const intentos = (ctx.intentos_identificacion ?? 0) + 1;
       newCtx.intentos_identificacion = intentos;
       if (intentos >= 1) {
