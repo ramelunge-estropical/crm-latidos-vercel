@@ -97,7 +97,7 @@ async function linkContacto(
     return byPhone.id;
   }
   const { data: nuevo, error: insErr } = await supabase.from("clientes").insert({
-    nombre_completo: nombre, telefono: clean, canal_contacto: "whatsapp", tipo: "natural",
+    nombre_completo: nombre, telefono: clean, canal_contacto: "whatsapp",
   }).select("id").single();
   if (insErr) console.error("[bot] clientes.insert error:", JSON.stringify(insErr));
   if (nuevo?.id) {
