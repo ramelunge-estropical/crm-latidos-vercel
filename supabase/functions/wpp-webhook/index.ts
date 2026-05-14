@@ -23,38 +23,6 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const BUCKET = "lat-adjuntos";
 
-// ── Routing engine trigger ────────────────────────────────────────────────────
-// Llama al motor central de enrutamiento (lat-routing-engine).
-// Retorna routing_status para que el webhook decida si invocar el bot.
-
-async function callRoutingEngine(
-  convId:      string,
-  channelType: string,
-  content:     string,
-  metadata:    Record<string, string>,
-): Promise<{ routing_status: string; routing_reason: string | null }> {
-  try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
-      method:  "POST",
-      headers: { "Authorization": `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        conversation_id: convId,
-        channel_type:    channelType,
-        message_content: content,
-        metadata,
-      }),
-    });
-    if (!res.ok) {
-      console.error(`[wpp-webhook] routing-engine HTTP ${res.status}`);
-      return { routing_status: "error", routing_reason: `HTTP ${res.status}` };
-    }
-    return await res.json();
-  } catch (err) {
-    console.error("[wpp-webhook] routing-engine error:", err);
-    return { routing_status: "error", routing_reason: String(err) };
-  }
-}
-
 // ── Bot agent trigger ─────────────────────────────────────────────────────────
 // Fire-and-forget: usa waitUntil para que wpp-webhook devuelva 200 a Gupshup
 // de inmediato sin esperar que lat-bot-agent termine su procesamiento.
@@ -425,14 +393,7 @@ Deno.serve(async (req: Request) => {
       if (insErr) console.error("lat_mensajes insert error (gupshup):", insErr);
       else {
         await touchConversacion(convId, contenido);
-        const routing = await callRoutingEngine(convId, "whatsapp", contenido, {
-          numero_remitente: telefono,
-          texto_mensaje:    contenido,
-          canal_tipo:       "whatsapp",
-        });
-        if (routing.routing_status === "bot_delegado") {
-          triggerBotAgent(convId, telefono, contenido);
-        }
+        triggerBotAgent(convId, telefono, contenido);
       }
 
       return new Response("OK", { status: 200 });
@@ -508,14 +469,7 @@ Deno.serve(async (req: Request) => {
             if (insErrMeta) console.error("lat_mensajes insert error (meta):", insErrMeta);
             else {
               await touchConversacion(convId, contenido);
-              const routing = await callRoutingEngine(convId, "whatsapp", contenido, {
-                numero_remitente: telefono,
-                texto_mensaje:    contenido,
-                canal_tipo:       "whatsapp",
-              });
-              if (routing.routing_status === "bot_delegado") {
-                triggerBotAgent(convId, telefono, contenido);
-              }
+              triggerBotAgent(convId, telefono, contenido);
             }
           }
         }
@@ -551,14 +505,7 @@ Deno.serve(async (req: Request) => {
       if (insErrWati) console.error("lat_mensajes insert error (wati):", insErrWati);
       else {
         await touchConversacion(convId, watiContenido);
-        const routing = await callRoutingEngine(convId, "whatsapp", watiContenido, {
-          numero_remitente: telefono,
-          texto_mensaje:    watiContenido,
-          canal_tipo:       "whatsapp",
-        });
-        if (routing.routing_status === "bot_delegado" && body.text) {
-          triggerBotAgent(convId, telefono, body.text);
-        }
+        triggerBotAgent(convId, telefono, watiContenido);
       }
       return new Response("OK", { status: 200 });
     }
