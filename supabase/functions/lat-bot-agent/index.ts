@@ -61,6 +61,19 @@ function saltarIdentificacion(msg: string): boolean {
   );
 }
 
+// Extrae un nombre de persona del inicio del mensaje del cliente (fallback cuando
+// la IA clasifica sin devolver identificacion.nombre_completo)
+function extractNombreDeContenido(msg: string): string | null {
+  const match = (msg ?? "").match(
+    /^([A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+(?: [A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+){1,3})(?:[,.]|\s|$)/,
+  );
+  if (!match) return null;
+  const candidato = match[1].trim();
+  if (/^(hola|buenos|buenas|buen|gracias|disculp|permis|ok|estimad|bienvenid|tardes|noches|d[ií]as)/i.test(candidato)) return null;
+  if (candidato.split(" ").length < 2) return null;
+  return candidato;
+}
+
 // ── Horario (calculado en código, no en GPT) ──────────────────────────────────
 
 function isWithinHorario(cfg: any): boolean {
@@ -264,7 +277,7 @@ REGLA — IDENTIFICACIÓN (máximo 1 solicitud de nombre por conversación):
 Lati puede pedir nombre UNA sola vez. Si el cliente rechazó dar su nombre, no respondió con datos útiles, pidió asesor, o ya expresó una intención clara, NO volver a pedir nombre. Usar la intención disponible para clasificar y derivar aunque no exista cliente vinculado.
 
 REGLA — CAPTURA OBLIGATORIA DE NOMBRE:
-Si el mensaje del cliente parece ser un nombre de persona (uno o varios nombres y/o apellidos, ej: "Karen Rodriguez", "Juan Carlos Pérez", "María Elena Soto"), USA SIEMPRE accion "identificar" o "identificar_y_clasificar" con ese dato en identificacion.nombre_completo. NUNCA uses accion "responder" cuando el cliente está proporcionando su nombre como dato de identificación.
+Si el mensaje del cliente parece ser un nombre de persona (uno o varios nombres y/o apellidos, ej: "Karen Rodriguez", "Juan Carlos Pérez", "María Elena Soto"), USA SIEMPRE accion "identificar" o "identificar_y_clasificar" con ese dato en identificacion.nombre_completo. NUNCA uses accion "responder" ni "clasificar" cuando el cliente está proporcionando su nombre — si hay nombre en el mensaje, identificacion.nombre_completo DEBE estar presente en el JSON aunque también haya clasificacion.
 
 FLUJO:
 ${ctx.fase === "identificacion"
@@ -484,14 +497,22 @@ Deno.serve(async (req: Request) => {
       newCtx.nombre = nombre;
       newCtx.fase   = "necesidad";
 
-      const { data: existing } = await supabase.from("clientes")
-        .select("id, nombre_completo").ilike("nombre_completo", `%${nombre}%`).limit(1).maybeSingle();
+      // Teléfono como identificador principal (evita duplicados y falsos matches por nombre)
+      const clean = (conv.telefono ?? telefono).replace(/\D/g, "");
+      const last9  = clean.slice(-9);
+      const last8  = clean.slice(-8);
+      const { data: byPhone } = await supabase
+        .from("clientes")
+        .select("id, nombre_completo")
+        .or(`telefono.ilike.%${clean}%,telefono.ilike.%${last9}%,telefono.ilike.%${last8}%`)
+        .limit(1)
+        .maybeSingle();
 
-      if (existing) {
-        newCtx.cliente_id = existing.id;
-        await updateConversacion(conversacion_id, { cliente_id: existing.id, cliente_nombre: existing.nombre_completo });
+      if (byPhone) {
+        newCtx.cliente_id = byPhone.id;
+        await supabase.from("clientes").update({ nombre_completo: nombre }).eq("id", byPhone.id);
+        await updateConversacion(conversacion_id, { cliente_id: byPhone.id, cliente_nombre: nombre });
       } else {
-        const clean = (conv.telefono ?? telefono).replace(/\D/g, "");
         const { data: nuevo } = await supabase.from("clientes").insert({
           nombre_completo: nombre, telefono: clean, canal_contacto: "whatsapp", tipo: "natural",
         }).select("id").single();
@@ -508,6 +529,35 @@ Deno.serve(async (req: Request) => {
 
     if (debeClasificar && ai.clasificacion) {
       const clasi = ai.clasificacion;
+
+      // Fallback: si la IA usó accion="clasificar" sin devolver identificacion (en lugar de
+      // "identificar_y_clasificar"), intentar extraer el nombre del mensaje del cliente
+      if (!newCtx.cliente_id && ctx.fase === "identificacion") {
+        const nombreFb = extractNombreDeContenido(contenido ?? "");
+        if (nombreFb) {
+          newCtx.nombre = nombreFb;
+          const cleanFb = (conv.telefono ?? telefono).replace(/\D/g, "");
+          const { data: byPhoneFb } = await supabase
+            .from("clientes")
+            .select("id")
+            .or(`telefono.ilike.%${cleanFb}%,telefono.ilike.%${cleanFb.slice(-9)}%,telefono.ilike.%${cleanFb.slice(-8)}%`)
+            .limit(1)
+            .maybeSingle();
+          if (byPhoneFb) {
+            newCtx.cliente_id = byPhoneFb.id;
+            await supabase.from("clientes").update({ nombre_completo: nombreFb }).eq("id", byPhoneFb.id);
+            await updateConversacion(conversacion_id, { cliente_id: byPhoneFb.id, cliente_nombre: nombreFb });
+          } else {
+            const { data: nuevoFb } = await supabase.from("clientes").insert({
+              nombre_completo: nombreFb, telefono: cleanFb, canal_contacto: "whatsapp", tipo: "natural",
+            }).select("id").single();
+            if (nuevoFb?.id) {
+              newCtx.cliente_id = nuevoFb.id;
+              await updateConversacion(conversacion_id, { cliente_id: nuevoFb.id, cliente_nombre: nombreFb });
+            }
+          }
+        }
+      }
 
       // Validar cola_id contra lista real; fallback a "no clasificada"
       const colaMatch  = colas.find(c => c.id === clasi.cola_id);
