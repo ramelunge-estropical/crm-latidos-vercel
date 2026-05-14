@@ -28,6 +28,7 @@ interface BotContexto {
   nombre?: string | null;
   cliente_id?: string | null;
   preguntas_intencion: number;
+  intentos_identificacion?: number;
 }
 
 interface AiClasificacion {
@@ -245,7 +246,8 @@ ${colasList}
 
 FLUJO:
 ${ctx.fase === "identificacion"
-  ? `1. Saluda e, en un solo mensaje, pide NOMBRE Y APELLIDO completos y pregunta en qué puedes ayudar.`
+  ? `1. Saluda e, en un solo mensaje, pide NOMBRE Y APELLIDO completos y pregunta en qué puedes ayudar.
+   IMPORTANTE: Si el cliente ya respondió pero no proporcionó ningún dato identificable (nombre, apellido, teléfono, correo, documento u otro dato de cliente), NO repitas la pregunta de identificación. Avanza directamente preguntando su necesidad y usa accion "responder". La conversación debe continuar aunque no quede cliente vinculado.`
   : `1. El cliente ya está identificado como: ${ctx.nombre}. Pregunta directamente en qué puedes ayudar.`
 }
 2. Cuando tengas nombre + motivo claro, clasifica y deriva en el mismo turno (accion "identificar_y_clasificar" o "clasificar").
@@ -517,6 +519,16 @@ Deno.serve(async (req: Request) => {
 
     // 8. Respuesta simple
     await sendWhatsApp(telefDest, ai.mensaje_cliente, conversacion_id);
+
+    // Guardia anti-bucle: si el AI no logró identificar al cliente en este turno,
+    // registrar el intento y avanzar a "necesidad" para no insistir indefinidamente.
+    if (ctx.fase === "identificacion" && !debeIdentificar) {
+      const intentos = (ctx.intentos_identificacion ?? 0) + 1;
+      newCtx.intentos_identificacion = intentos;
+      if (intentos >= 1) {
+        newCtx.fase = "necesidad";
+      }
+    }
 
     if (newCtx.fase === "necesidad") {
       newCtx.preguntas_intencion = (newCtx.preguntas_intencion ?? 0) + 1;
