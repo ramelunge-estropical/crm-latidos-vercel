@@ -263,6 +263,9 @@ ${colasList}
 REGLA — IDENTIFICACIÓN (máximo 1 solicitud de nombre por conversación):
 Lati puede pedir nombre UNA sola vez. Si el cliente rechazó dar su nombre, no respondió con datos útiles, pidió asesor, o ya expresó una intención clara, NO volver a pedir nombre. Usar la intención disponible para clasificar y derivar aunque no exista cliente vinculado.
 
+REGLA — CAPTURA OBLIGATORIA DE NOMBRE:
+Si el mensaje del cliente parece ser un nombre de persona (uno o varios nombres y/o apellidos, ej: "Karen Rodriguez", "Juan Carlos Pérez", "María Elena Soto"), USA SIEMPRE accion "identificar" o "identificar_y_clasificar" con ese dato en identificacion.nombre_completo. NUNCA uses accion "responder" cuando el cliente está proporcionando su nombre como dato de identificación.
+
 FLUJO:
 ${ctx.fase === "identificacion"
   ? `1. Analiza el mensaje y captura todos los datos útiles que el cliente haya proporcionado:
@@ -272,7 +275,7 @@ ${ctx.fase === "identificacion"
    - Ni nombre ni intención → usa accion "responder": saluda y en UN ÚNICO mensaje pide nombre completo y en qué puedes ayudar. Esta es la única solicitud de nombre en toda la conversación.`
   : ctx.nombre
     ? `1. El cliente está identificado como: ${ctx.nombre}. Continúa con su necesidad. No pidas más datos de identificación.`
-    : `1. No solicites nombre ni datos personales proactivamente (ya se pidió antes). Si el cliente proporciona su nombre u otro dato útil voluntariamente, captúralo: usa accion "identificar" (solo nombre, sin intención suficiente aún) o "identificar_y_clasificar" (nombre + intención). Si el mensaje contiene intención de servicio sin nombre, usa accion "clasificar" y deriva.`
+    : `1. No solicites nombre ni datos personales proactivamente (ya se pidió antes). Aplica la REGLA — CAPTURA OBLIGATORIA DE NOMBRE si el cliente lo proporciona en este mensaje. Si el mensaje contiene intención de servicio sin nombre, usa accion "clasificar" y deriva. Solo usa accion "responder" si el mensaje no es ni nombre ni intención clara.`
 }
 2. Si el cliente pide hablar con un asesor, agente o persona humana: usa accion "clasificar" y deriva INMEDIATAMENTE a Frontdesk o cola general. Sin preguntas adicionales.
 3. Cuando tengas motivo claro, clasifica y deriva en el mismo turno (accion "clasificar" o "identificar_y_clasificar").
