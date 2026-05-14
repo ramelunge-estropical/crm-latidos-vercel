@@ -45,6 +45,14 @@ interface BotContexto {
   preguntas_intencion: number;
   intentos_identificacion?: number;
   intencion_preliminar?: string | null;
+  intenciones_secundarias?: IntencionSecundaria[];
+}
+
+interface IntencionSecundaria {
+  intencion: string;
+  cola_sugerida_id: string;
+  urgencia: "baja" | "media" | "alta" | "critica";
+  evidencia: string;
 }
 
 interface AiClasificacion {
@@ -53,6 +61,9 @@ interface AiClasificacion {
   urgencia: "baja" | "media" | "alta" | "critica";
   confianza: number;
   resumen: string;
+  intenciones_secundarias?: IntencionSecundaria[];
+  requiere_aclaracion?: boolean;
+  pregunta_aclaracion?: string | null;
 }
 
 interface AiResponse {
@@ -342,6 +353,7 @@ Lati puede pedir nombre UNA sola vez. Si el cliente rechazó dar su nombre, no r
 
 REGLA — CAPTURA OBLIGATORIA DE NOMBRE:
 Si el mensaje del cliente parece ser un nombre de persona (uno o varios nombres y/o apellidos, ej: "Karen Rodriguez", "Juan Carlos Pérez", "María Elena Soto"), USA SIEMPRE accion "identificar" o "identificar_y_clasificar" con ese dato en identificacion.nombre_completo. NUNCA uses accion "responder" ni "clasificar" cuando el cliente está proporcionando su nombre — si hay nombre en el mensaje, identificacion.nombre_completo DEBE estar presente en el JSON aunque también haya clasificacion.
+Inversamente: si el mensaje NO contiene ningún nombre de persona, NUNCA uses accion "identificar_y_clasificar". Usa "clasificar" si hay intención de servicio clara, o "responder" si no hay intención clara.
 
 FLUJO:
 ${ctx.fase === "identificacion"
@@ -358,8 +370,15 @@ ${ctx.fase === "identificacion"
 3. Cuando tengas motivo claro, clasifica y deriva en el mismo turno (accion "clasificar" o "identificar_y_clasificar").
 4. Puedes hacer máximo ${maxPreguntas} preguntas de clasificación. Si ya alcanzaste el límite, deriva.
 5. Si llegas al turno ${maxTurnos} sin clasificar, deriva a la cola "No Clasificada Revisión Supervisor".
-6. EMERGENCIAS (accidente, hospitalización, vuelo perdido, robo en destino): deriva INMEDIATAMENTE al asesor de Emergencia en Destino. Sin preguntas adicionales.
+6. EMERGENCIAS (accidente, hospitalización, vuelo perdido, robo en destino): deriva INMEDIATAMENTE al asesor de Emergencia en Destino. Sin preguntas adicionales. Las demás necesidades del cliente van en clasificacion.intenciones_secundarias.
 7. Mensajes no-texto (imagen, audio, sticker, documento): pide que escriban su consulta en texto.${reglas}${categorias}${calificacion}
+
+MULTI-INTENCIÓN — cuando el cliente expresa más de una necesidad en el mismo mensaje:
+- Regla 1 (Emergencia primero): Si cualquier intención detectada tiene urgencia "critica" (emergencia, accidente, vuelo perdido, varado, débito sin boleto con vuelo inminente, no puede abordar), esa es la intención principal y cola_id apunta a esa cola. Deriva INMEDIATAMENTE. Las demás intenciones van en intenciones_secundarias.
+- Regla 2 (Jerarquía operativa para no críticas): Si hay varias intenciones no críticas, elige la cola principal según esta prioridad: 1) Soporte Aéreo Interno, 2) Corporativo, 3) Grupos y Bodas, 4) Trámites/Visa, 5) Frontdesk Vacacional, 6) Cobranzas. Las demás intenciones van en intenciones_secundarias.
+- Regla 3 (Aclaración): Usa requiere_aclaracion:true y accion "responder" SOLO si hay ≥2 intenciones de urgencia similar y el mensaje no permite jerarquizar. Ejemplo de pregunta_aclaracion: "Veo que tienes más de una consulta. ¿Qué necesitas resolver primero: la reserva actual, la cotización o el trámite?" — Límite: si preguntas_intencion ya usadas ≥ ${maxPreguntas - 1}, no preguntes; deriva según jerarquía.
+- Regla 4 (Una sola derivación): cola_id es la única cola operativa. intenciones_secundarias son metadata para el asesor, no generan asignaciones adicionales.
+- intenciones_secundarias debe estar SIEMPRE presente en clasificacion cuando accion es "clasificar" o "identificar_y_clasificar" (array vacío [] si no hay secundarias). Solo usa cola_sugerida_id con ids exactos de la lista de colas.
 
 RESPONDE SIEMPRE con este JSON exacto (sin markdown extra ni texto fuera del JSON):
 {
@@ -367,11 +386,21 @@ RESPONDE SIEMPRE con este JSON exacto (sin markdown extra ni texto fuera del JSO
   "mensaje_cliente": "Texto que se envía al cliente. Conciso, máximo 3 oraciones. IMPORTANTE: si accion es 'clasificar' o 'identificar_y_clasificar', el mensaje DEBE terminar informando que la conversación está siendo derivada a un asesor (ej: 'En un momento, uno de nuestros asesores continuará tu atención.').",
   "identificacion": { "nombre_completo": "..." } | null,
   "clasificacion": {
-    "cola_id": "id exacto de la lista",
-    "intencion": "descripción corta de la necesidad",
+    "cola_id": "id exacto de la lista — cola principal",
+    "intencion": "descripción corta de la intención principal",
     "urgencia": "baja" | "media" | "alta" | "critica",
     "confianza": 0.0,
-    "resumen": "resumen para el asesor humano"
+    "resumen": "resumen para el asesor humano",
+    "intenciones_secundarias": [
+      {
+        "intencion": "descripción corta",
+        "cola_sugerida_id": "id exacto de la lista",
+        "urgencia": "baja" | "media" | "alta" | "critica",
+        "evidencia": "frase del cliente que evidencia esta intención"
+      }
+    ],
+    "requiere_aclaracion": false,
+    "pregunta_aclaracion": null
   } | null
 }`;
 }
@@ -574,8 +603,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // 7. Procesar clasificación / handoff
-    const debeClasificar = (ai.accion === "clasificar" || ai.accion === "identificar_y_clasificar")
-      && !!ai.clasificacion;
+    const quisoClasificar = ai.accion === "clasificar" || ai.accion === "identificar_y_clasificar";
+
+    // Safety net: modelo declaró clasificar pero devolvió clasificacion:null (fallo de compliance).
+    // Sin esto el cliente recibe un mensaje de derivación pero la conversación nunca se encola.
+    if (quisoClasificar && !ai.clasificacion && colaFallback) {
+      ai.clasificacion = {
+        cola_id:                 colaFallback.id,
+        intencion:               ctx.intencion_preliminar ?? (contenido ?? "").slice(0, 120),
+        urgencia:                "media",
+        confianza:               0,
+        resumen:                 "Rescate: modelo indicó clasificar sin devolver cola_id. Derivado a supervisión.",
+        intenciones_secundarias: [],
+      };
+    }
+
+    const debeClasificar = quisoClasificar && !!ai.clasificacion;
 
     if (debeClasificar && ai.clasificacion) {
       const clasi = ai.clasificacion;
@@ -601,7 +644,12 @@ Deno.serve(async (req: Request) => {
         ? `cola_id ${clasi.cola_id} no existe`
         : `confianza ${clasi.confianza} < mínima ${confianzaMin}`;
 
-      const finalCtx: BotContexto = { ...newCtx, fase: "finalizado" };
+      // Validar IDs de colas secundarias contra lista real (descartar inventados por el modelo)
+      const secundariasValidas = (clasi.intenciones_secundarias ?? []).filter(
+        s => colas.some(c => c.id === s.cola_sugerida_id),
+      );
+
+      const finalCtx: BotContexto = { ...newCtx, fase: "finalizado", intenciones_secundarias: secundariasValidas };
       await updateConversacion(conversacion_id, {
         bot_estado:          "handed_off",
         bot_contexto:        finalCtx,
