@@ -284,7 +284,7 @@ ${ctx.fase === "identificacion"
 RESPONDE SIEMPRE con este JSON exacto (sin markdown extra ni texto fuera del JSON):
 {
   "accion": "responder" | "identificar" | "clasificar" | "identificar_y_clasificar",
-  "mensaje_cliente": "Texto que se envía al cliente. Conciso, máximo 3 oraciones.",
+  "mensaje_cliente": "Texto que se envía al cliente. Conciso, máximo 3 oraciones. IMPORTANTE: si accion es 'clasificar' o 'identificar_y_clasificar', el mensaje DEBE terminar informando que la conversación está siendo derivada a un asesor (ej: 'En un momento, uno de nuestros asesores continuará tu atención.').",
   "identificacion": { "nombre_completo": "..." } | null,
   "clasificacion": {
     "cola_id": "id exacto de la lista",
@@ -533,6 +533,14 @@ Deno.serve(async (req: Request) => {
       );
 
       await sendWhatsApp(telefDest, ai.mensaje_cliente, conversacion_id);
+
+      // Aviso de derivación explícito — garantiza que el cliente siempre sepa que viene un asesor
+      const nombreCola = colaFinal?.nombre ?? "nuestro equipo";
+      await sendWhatsApp(
+        telefDest,
+        `Tu conversación está siendo transferida a un asesor de ${nombreCola}. En breve alguien te atenderá. ¡Gracias por tu paciencia! 🙏`,
+        conversacion_id,
+      );
 
       await logAudit({
         conversacion_id,
