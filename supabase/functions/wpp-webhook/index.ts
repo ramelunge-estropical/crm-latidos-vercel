@@ -380,6 +380,13 @@ Deno.serve(async (req: Request) => {
         contenido = `[${innerTyp}]`;
       }
 
+      // Deduplicar: si ya existe un mensaje inbound con este wpp_message_id, ignorar
+      if (wppId) {
+        const { data: dup } = await supabase.from("lat_mensajes")
+          .select("id").eq("wpp_message_id", wppId).limit(1).maybeSingle();
+        if (dup) return new Response("OK", { status: 200 });
+      }
+
       const { error: insErr } = await supabase.from("lat_mensajes").insert({
         conversacion_id: convId,
         tipo:            "inbound",
@@ -454,6 +461,13 @@ Deno.serve(async (req: Request) => {
               contenido = JSON.stringify({ __contacts: contactList.length ? contactList : [{ nombre: "Contacto compartido" }] });
             } else {
               contenido = `[${msg.type}]`;
+            }
+
+            // Deduplicar: si ya existe un mensaje inbound con este wpp_message_id, ignorar
+            if (wppId) {
+              const { data: dupMeta } = await supabase.from("lat_mensajes")
+                .select("id").eq("wpp_message_id", wppId).limit(1).maybeSingle();
+              if (dupMeta) continue;
             }
 
             const { error: insErrMeta } = await supabase.from("lat_mensajes").insert({

@@ -82,24 +82,29 @@ async function linkContacto(
   nombre: string,
 ): Promise<string | null> {
   const clean = telefono.replace(/\D/g, "");
-  const { data: byPhone } = await supabase
+  const { data: byPhone, error: searchErr } = await supabase
     .from("clientes")
     .select("id")
     .or(`telefono.ilike.%${clean}%,telefono.ilike.%${clean.slice(-9)}%,telefono.ilike.%${clean.slice(-8)}%`)
     .limit(1)
     .maybeSingle();
+  if (searchErr) console.error("[bot] linkContacto search error:", JSON.stringify(searchErr));
+  console.log("[bot] linkContacto byPhone:", byPhone?.id ?? "null", "clean:", clean, "nombre:", nombre);
   if (byPhone) {
-    await supabase.from("clientes").update({ nombre_completo: nombre }).eq("id", byPhone.id);
+    const { error: updErr } = await supabase.from("clientes").update({ nombre_completo: nombre }).eq("id", byPhone.id);
+    if (updErr) console.error("[bot] clientes.update error:", JSON.stringify(updErr));
     await updateConversacion(convId, { cliente_id: byPhone.id, cliente_nombre: nombre });
     return byPhone.id;
   }
-  const { data: nuevo } = await supabase.from("clientes").insert({
+  const { data: nuevo, error: insErr } = await supabase.from("clientes").insert({
     nombre_completo: nombre, telefono: clean, canal_contacto: "whatsapp", tipo: "natural",
   }).select("id").single();
+  if (insErr) console.error("[bot] clientes.insert error:", JSON.stringify(insErr));
   if (nuevo?.id) {
     await updateConversacion(convId, { cliente_id: nuevo.id, cliente_nombre: nombre });
     return nuevo.id;
   }
+  console.error("[bot] linkContacto FAILED: no id for nombre:", nombre, "telefono:", clean);
   return null;
 }
 
@@ -442,6 +447,15 @@ Deno.serve(async (req: Request) => {
     const colaFallback    = colas.find(c => c.nombre.toLowerCase().includes("no clasificada") || c.nombre.toLowerCase().includes("supervisor"));
     const colaFrontdesk   = colas.find(c => c.nombre.toLowerCase().includes("frontdesk"));
     const colaEmergencia  = colas.find(c => c.nombre.toLowerCase().includes("emergencia"));
+
+    // 2a. Guard anti-duplicación: si el handoff fue hace <15s, ignorar (probable retry de Gupshup)
+    if (conv.bot_estado === "handed_off" && conv.ts_cola_asignada) {
+      const handoffAge = Date.now() - new Date(conv.ts_cola_asignada).getTime();
+      if (handoffAge < 15_000) {
+        console.log("[bot] ← handoff reciente (<15s), ignorando invocación duplicada");
+        return new Response(JSON.stringify({ ok: true, skipped: "handoff_reciente" }), { status: 200 });
+      }
+    }
 
     // 2. Reset sesión si handed_off, pausado o inactiva >3h
     const stale = conv.bot_estado === "activo"
