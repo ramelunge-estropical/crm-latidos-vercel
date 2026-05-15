@@ -252,9 +252,10 @@ function TrazabilidadTab({ conversacionId }: { conversacionId: string }) {
 
 interface ConversacionPanelProps {
   conversacion: LatConversacion;
+  readOnly?: boolean;
 }
 
-export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
+export function ConversacionPanel({ conversacion, readOnly = false }: ConversacionPanelProps) {
   const [inputValue, setInputValue]               = useState('');
   const [showNota, setShowNota]                   = useState(false);
   // Por defecto la primera vista activa es el chat (consola de atención).
@@ -762,7 +763,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
           )}
-          {!isMock && (
+          {!isMock && !readOnly && (
             <button
               onClick={() => setShowDerivar(true)}
               title="Derivar conversación a un usuario o cola de equipo"
@@ -772,7 +773,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               Derivar
             </button>
           )}
-          {!isMock && tieneVinculoGestion && !conversacionEstaLiberada && (
+          {!isMock && !readOnly && tieneVinculoGestion && !conversacionEstaLiberada && (
             <button
               onClick={handleLiberarChat}
               disabled={liberando}
@@ -783,7 +784,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               Liberar
             </button>
           )}
-          {!isMock && conversacionEstaLiberada && (
+          {!isMock && !readOnly && conversacionEstaLiberada && (
             <button
               onClick={handleReactivarChat}
               title="Reactivar al foco de Bandeja"
@@ -795,6 +796,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           )}
         </div>
       </div>
+
+      {/* ── Banner: modo lector ── */}
+      {readOnly && (
+        <div className="px-4 py-2 bg-blue-500/10 border-b border-blue-500/20 flex items-center gap-2 shrink-0">
+          <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          <span className="text-[11px] text-blue-600 flex-1 font-medium">
+            Modo lector · Gestionada por {conversacion.responsable_nombre ?? 'otro asesor'}
+          </span>
+        </div>
+      )}
 
       {/* ── Banner: bot activo ── */}
       {!isMock && (conversacion as any).bot_estado === 'activo' && (
@@ -937,6 +948,11 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           )}
 
           <div className="border-t border-border px-4 py-3 shrink-0">
+            {readOnly ? (
+              <p className="text-[11px] text-center text-muted-foreground py-1">
+                No podés responder · Conversación gestionada por {conversacion.responsable_nombre ?? 'otro asesor'}
+              </p>
+            ) : (<>
             {showNota && (
               <div className="mb-2 flex items-center gap-1.5 text-[10px] text-warning bg-warning/10 px-2 py-1 rounded">
                 <StickyNote className="w-3 h-3" /> Nota interna
@@ -1099,6 +1115,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 </button>
               )}
             </div>
+            </>)}
           </div>
         </>
       )}

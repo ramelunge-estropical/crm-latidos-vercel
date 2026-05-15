@@ -46,6 +46,7 @@ export function LatBandejaView() {
   const [showVincular, setShowVincular]         = useState(false);
   const [vincularSearch, setVincularSearch]     = useState('');
   const [showCrearCliente, setShowCrearCliente] = useState(false);
+  const [readOnlyConv, setReadOnlyConv] = useState<any>(null);
 
   const queryClient = useQueryClient();
 
@@ -162,6 +163,19 @@ export function LatBandejaView() {
     setSelectedConvId(convId);
     setMobileView('chat');
     setFocusFilter('foco');
+  };
+
+  const handleAbrirEnLectura = async (convId: string) => {
+    const { data } = await (supabase as any)
+      .from('lat_conversaciones')
+      .select('*')
+      .eq('id', convId)
+      .single();
+    if (data) {
+      setReadOnlyConv({ ...data, _source: 'db' });
+      setSelectedConvId(null);
+      setMobileView('chat');
+    }
   };
 
   // ── Estado de asignación del chat seleccionado (para badge) ───────────────
@@ -320,9 +334,9 @@ export function LatBandejaView() {
         mobileView === 'chat' ? 'flex' : 'hidden md:flex',
       ].join(' ')}>
 
-        {selectedConv && (
+        {(selectedConv || readOnlyConv) && (
           <button
-            onClick={() => setMobileView('list')}
+            onClick={() => { setMobileView('list'); setReadOnlyConv(null); }}
             className="md:hidden flex items-center gap-1.5 px-3 py-2 text-xs text-primary font-medium border-b border-border bg-card shrink-0"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -353,7 +367,9 @@ export function LatBandejaView() {
           </div>
         )}
 
-        {selectedConv ? (
+        {readOnlyConv ? (
+          <ConversacionPanel key={`ro-${readOnlyConv.id}`} conversacion={readOnlyConv as any} readOnly />
+        ) : selectedConv ? (
           <ConversacionPanel key={selectedConv.id} conversacion={selectedConv} />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -467,6 +483,7 @@ export function LatBandejaView() {
         open={showNuevaConv}
         onOpenChange={setShowNuevaConv}
         onConversacionCreated={handleConvCreated}
+        onAbrirEnLectura={handleAbrirEnLectura}
       />
 
       {selectedConv && isSupervisor && (

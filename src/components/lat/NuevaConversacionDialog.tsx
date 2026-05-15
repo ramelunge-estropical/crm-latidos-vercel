@@ -4,6 +4,7 @@ import { X, Search, MessageSquare, Phone as PhoneIcon, Mail, Loader2, UserPlus, 
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
+import { useCurrentUserRol } from '@/hooks/useSharedQueries';
 
 type Canal = 'whatsapp' | 'phone' | 'email';
 
@@ -12,9 +13,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   /** Callback cuando se crea o reactiva la conversación. */
   onConversacionCreated: (conversacionId: string) => void;
+  /** Callback para abrir en modo lector cuando la conv pertenece a otro asesor. */
+  onAbrirEnLectura?: (conversacionId: string) => void;
 }
 
-export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCreated }: Props) {
+export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCreated, onAbrirEnLectura }: Props) {
   const [step, setStep]               = useState<'cliente' | 'canal'>('cliente');
   const [search, setSearch]           = useState('');
   const [clienteId, setClienteId]     = useState<string | null>(null);
@@ -23,6 +26,8 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
   const [creating, setCreating]       = useState(false);
   const [showCrearCliente, setShowCrearCliente] = useState(false);
   const [convExistente, setConvExistente] = useState<any>(null);
+
+  const { isSupervisor, colaboradorId: currentColabId } = useCurrentUserRol();
 
   const { data: clientes = [], isLoading: searching } = useQuery<any[]>({
     queryKey: ['nueva-conv-search', search],
@@ -72,6 +77,8 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
   // Abre/reutiliza la conversación activa existente encontrada por el check anti-duplicados.
   const handleAbrirExistente = async () => {
     if (!convExistente) return;
+    // Safety: no ejecutar operaciones operativas si la conversación pertenece a otro asesor
+    if (convExistente.responsable_id && convExistente.responsable_id !== currentColabId) return;
     setCreating(true);
     try {
       const colaboradorId = localStorage.getItem('mis_gestiones_colaborador');
@@ -119,6 +126,12 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
     }
   };
 
+  const handleAbrirEnLecturaInterno = () => {
+    if (!convExistente || !onAbrirEnLectura) return;
+    onAbrirEnLectura(convExistente.id);
+    handleClose();
+  };
+
   // Crea una conversación nueva luego de validar que no existe una activa.
   const handleIniciar = async () => {
     if (!clienteId || !clienteData) return;
@@ -138,7 +151,7 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
       // Anti-duplicados: buscar conversación activa del mismo cliente/canal
       const { data: existentes } = await (supabase as any)
         .from('lat_conversaciones')
-        .select('id, estado, estado_asignacion, en_foco, responsable_nombre, cola_area_nombre, ventana_whatsapp')
+        .select('id, estado, estado_asignacion, en_foco, responsable_id, responsable_nombre, cola_area_nombre, ventana_whatsapp')
         .eq('cliente_id', clienteId)
         .eq('canal', canal)
         .not('estado', 'in', '(cerrada,resuelta)')
@@ -362,6 +375,11 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
                               ? `En cola: ${convExistente.cola_area_nombre}`
                               : 'Pendiente de asignación'}
                         </p>
+                        {convExistente.responsable_id && convExistente.responsable_id !== currentColabId && !isSupervisor && (
+                          <p className="text-[10px] text-amber-600 mt-1 font-medium">
+                            No podés intervenir una conversación asignada a otro asesor.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -371,14 +389,25 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
                       >
                         Cancelar
                       </button>
-                      <button
-                        onClick={handleAbrirExistente}
-                        disabled={creating}
-                        className="flex-1 flex items-center justify-center gap-1 text-[11px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                        Abrir existente
-                      </button>
+                      {(!convExistente.responsable_id || convExistente.responsable_id === currentColabId) && (
+                        <button
+                          onClick={handleAbrirExistente}
+                          disabled={creating}
+                          className="flex-1 flex items-center justify-center gap-1 text-[11px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+                          Abrir existente
+                        </button>
+                      )}
+                      {convExistente.responsable_id && convExistente.responsable_id !== currentColabId && isSupervisor && onAbrirEnLectura && (
+                        <button
+                          onClick={handleAbrirEnLecturaInterno}
+                          className="flex-1 flex items-center justify-center gap-1 text-[11px] px-3 py-1.5 rounded-md border border-border hover:bg-accent/50 text-foreground"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                          Ver en modo lector
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
