@@ -23,7 +23,8 @@ import { GitBranch, Hand, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { useClientes } from '@/hooks/useSharedQueries';
+import { useCurrentUserRol, useClientes } from '@/hooks/useSharedQueries';
+import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 // ── Configs ───────────────────────────────────────────────────────────────────
@@ -251,9 +252,10 @@ function TrazabilidadTab({ conversacionId }: { conversacionId: string }) {
 
 interface ConversacionPanelProps {
   conversacion: LatConversacion;
+  readOnly?: boolean;
 }
 
-export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
+export function ConversacionPanel({ conversacion, readOnly = false }: ConversacionPanelProps) {
   const [inputValue, setInputValue]               = useState('');
   const [showNota, setShowNota]                   = useState(false);
   // Por defecto la primera vista activa es el chat (consola de atención).
@@ -285,6 +287,9 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
 
   const isMock = conversacion._source === 'mock';
 
+  const { user: currentUser } = useCurrentUserRol();
+  const autorNombre = currentUser?.nombre ?? undefined;
+
   const mockCliente = isMock ? getCliente(conversacion.id) : null;
   const clienteNombre = conversacion.cliente_nombre ?? conversacion.telefono ?? mockCliente?.nombre ?? 'Sin nombre';
   const clienteId     = conversacion.cliente_id ?? null;
@@ -292,9 +297,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const canal = canalMeta[conversacion.canal] ?? canalMeta.whatsapp;
   const CanalIcon = canal.icon;
 
-  const isOutOfWindow = conversacion.estado === 'fuera_ventana' ||
-    (conversacion.ventana_whatsapp && new Date(conversacion.ventana_whatsapp).getTime() < Date.now());
   const isWhatsapp = conversacion.canal === 'whatsapp';
+  const isOutOfWindow = isWhatsapp && (
+    conversacion.estado === 'fuera_ventana' ||
+    !conversacion.ventana_whatsapp ||
+    new Date(conversacion.ventana_whatsapp).getTime() < Date.now()
+  );
   const isEmail = conversacion.canal === 'email';
 
   // ── Mensajes ──────────────────────────────────────────────────────────────
@@ -430,16 +438,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     try {
       await (supabase as any)
         .from('lat_conversaciones')
-        .update({ en_foco: false, estado: 'liberado' })
+        .update({ en_foco: false, estado: 'resuelta', estado_asignacion: 'cerrada' })
         .eq('id', conversacion.id);
       await (supabase as any).from('lat_mensajes').insert({
         conversacion_id: conversacion.id,
         tipo: 'sistema',
-        contenido: 'Chat liberado del foco. Volverá automáticamente al recibir un nuevo evento.',
+        contenido: 'Chat marcado como atendido.',
         estado: 'enviado',
       });
       invalidateAll();
-      toast.success('Chat liberado del foco');
+      toast.success('Chat marcado como atendido');
     } catch (e: any) {
       toast.error(e.message ?? 'Error al liberar chat');
     } finally {
@@ -646,7 +654,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     for (let i = 0; i < queue.length; i++) {
       const item = queue[i];
       const cap = i === 0 ? caption : '';
-      const result = await sendAdjunto(conversacion.id, item.file, cap, isMock);
+      const result = await sendAdjunto(conversacion.id, item.file, cap, isMock, autorNombre);
       if (result.ok) {
         okCount++;
         // Quitar el item enviado de la cola para feedback progresivo
@@ -676,7 +684,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
     if (pendingItems.length > 0) { await handleSendQueue(); return; }
     if (!inputValue.trim()) return;
     const tipo = showNota ? 'nota_interna' : 'outbound';
-    const result = await send(conversacion.id, inputValue, tipo, isMock);
+    const result = await send(conversacion.id, inputValue, tipo, isMock, autorNombre);
     if (result.ok) {
       setInputValue('');
       setShowNota(false);
@@ -703,6 +711,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           template_language: template.language,
           template_variables: variables,
           template_body_preview: bodyPreview,
+          autor_nombre: autorNombre ?? null,
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -752,7 +761,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               {isOutOfWindow ? 'Fuera de ventana' : 'Ventana activa'}
             </span>
           )}
-          {!isMock && (
+          {!isMock && !readOnly && (
             <button
               onClick={() => setShowDerivar(true)}
               title="Derivar conversación a un usuario o cola de equipo"
@@ -762,7 +771,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               Derivar
             </button>
           )}
-          {!isMock && tieneVinculoGestion && !conversacionEstaLiberada && (
+          {!isMock && !readOnly && tieneVinculoGestion && !conversacionEstaLiberada && (
             <button
               onClick={handleLiberarChat}
               disabled={liberando}
@@ -773,7 +782,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
               Liberar
             </button>
           )}
-          {!isMock && conversacionEstaLiberada && (
+          {!isMock && !readOnly && conversacionEstaLiberada && (
             <button
               onClick={handleReactivarChat}
               title="Reactivar al foco de Bandeja"
@@ -785,6 +794,16 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           )}
         </div>
       </div>
+
+      {/* ── Banner: modo lector ── */}
+      {readOnly && (
+        <div className="px-4 py-2 bg-blue-500/10 border-b border-blue-500/20 flex items-center gap-2 shrink-0">
+          <Info className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          <span className="text-[11px] text-blue-600 flex-1 font-medium">
+            Modo lector · Gestionada por {conversacion.responsable_nombre ?? 'otro asesor'}
+          </span>
+        </div>
+      )}
 
       {/* ── Banner: bot activo ── */}
       {!isMock && (conversacion as any).bot_estado === 'activo' && (
@@ -838,29 +857,50 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       {activeTab === 'chat' && !isEmail && (
         <>
           {/* IA Compact Block */}
-          {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (
-            <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex items-center gap-2 flex-wrap shrink-0">
-              <Zap className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
-              {conversacion.intencion_detectada && (
-                <span className="text-[10px] bg-fuchsia-500/10 text-fuchsia-600 px-2 py-0.5 rounded-full font-medium">
-                  {conversacion.intencion_detectada}
-                </span>
-              )}
-              {conversacion.urgencia_detectada && (
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                  conversacion.urgencia_detectada === 'critica' ? 'bg-red-500/15 text-red-600' :
-                  conversacion.urgencia_detectada === 'alta'    ? 'bg-orange-500/15 text-orange-600' :
-                  conversacion.urgencia_detectada === 'media'   ? 'bg-yellow-500/15 text-yellow-600' :
-                  'bg-muted text-muted-foreground'
-                }`}>
-                  {conversacion.urgencia_detectada === 'critica' ? '🔴' : conversacion.urgencia_detectada === 'alta' ? '🟠' : conversacion.urgencia_detectada === 'media' ? '🟡' : '🟢'} {conversacion.urgencia_detectada}
-                </span>
-              )}
-              {conversacion.resumen_ia && (
-                <span className="text-[10px] text-muted-foreground truncate max-w-xs">{conversacion.resumen_ia}</span>
-              )}
-            </div>
-          )}
+          {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (() => {
+            const secundarias = conversacion.bot_contexto?.intenciones_secundarias ?? [];
+            const urgenciaColor = (u: string) =>
+              u === 'critica' ? 'bg-red-500/15 text-red-600' :
+              u === 'alta'    ? 'bg-orange-500/15 text-orange-600' :
+              u === 'media'   ? 'bg-yellow-500/15 text-yellow-600' :
+                                'bg-muted text-muted-foreground';
+            const urgenciaIcon = (u: string) =>
+              u === 'critica' ? '🔴' : u === 'alta' ? '🟠' : u === 'media' ? '🟡' : '🟢';
+            return (
+              <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex flex-col gap-1.5 shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Zap className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
+                  {conversacion.intencion_detectada && (
+                    <span className="text-[10px] bg-fuchsia-500/10 text-fuchsia-600 px-2 py-0.5 rounded-full font-medium">
+                      {conversacion.intencion_detectada}
+                    </span>
+                  )}
+                  {conversacion.urgencia_detectada && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${urgenciaColor(conversacion.urgencia_detectada)}`}>
+                      {urgenciaIcon(conversacion.urgencia_detectada)} {conversacion.urgencia_detectada}
+                    </span>
+                  )}
+                  {conversacion.resumen_ia && (
+                    <span className="text-[10px] text-muted-foreground truncate max-w-xs">{conversacion.resumen_ia}</span>
+                  )}
+                </div>
+                {secundarias.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pl-5">
+                    <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide font-medium shrink-0">También:</span>
+                    {secundarias.map((s, i) => (
+                      <span
+                        key={i}
+                        title={s.evidencia}
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium border border-current/20 ${urgenciaColor(s.urgencia)}`}
+                      >
+                        {urgenciaIcon(s.urgencia)} {s.intencion}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div
             ref={messagesContainerRef}
             className="flex-1 min-h-0 overflow-y-auto scrollbar-thin relative flex flex-col"
@@ -906,6 +946,11 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
           )}
 
           <div className="border-t border-border px-4 py-3 shrink-0">
+            {readOnly ? (
+              <p className="text-[11px] text-center text-muted-foreground py-1">
+                No podés responder · Conversación gestionada por {conversacion.responsable_nombre ?? 'otro asesor'}
+              </p>
+            ) : (<>
             {showNota && (
               <div className="mb-2 flex items-center gap-1.5 text-[10px] text-warning bg-warning/10 px-2 py-1 rounded">
                 <StickyNote className="w-3 h-3" /> Nota interna
@@ -1068,6 +1113,7 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
                 </button>
               )}
             </div>
+            </>)}
           </div>
         </>
       )}
@@ -1448,14 +1494,25 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
   const isVideo  = !!adjUrl && (adjTipo.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(mensaje.adjunto_nombre ?? ''));
   const isFile   = !!adjUrl && !isImage && !isAudio && !isVideo;
   const trimmedContent = mensaje.contenido?.trim() ?? '';
+
+  // Contactos compartidos: `[contacts]` (legacy) o `{"__contacts":[...]}`
+  type ContactEntry = { nombre: string; telefono?: string | null; email?: string | null; empresa?: string | null };
+  let parsedContacts: ContactEntry[] | null = null;
+  if (trimmedContent === '[contacts]') {
+    parsedContacts = [{ nombre: 'Contacto compartido' }];
+  } else if (trimmedContent.startsWith('{"__contacts":')) {
+    try { parsedContacts = JSON.parse(trimmedContent).__contacts ?? null; } catch { /* noop */ }
+  }
+  const isContacts = parsedContacts !== null;
+
   // Mensajes donde el media existía pero no se pudo guardar la URL (descarga falló en webhook)
-  const isNoUrlMedia = !adjUrl && genericMediaPlaceholderPattern.test(trimmedContent);
+  const isNoUrlMedia = !adjUrl && !isContacts && genericMediaPlaceholderPattern.test(trimmedContent);
   const noUrlMediaKind: 'image' | 'audio' | 'video' | 'document' =
     trimmedContent.match(/📷|imagen/i) ? 'image' :
     trimmedContent.match(/🎤|voz|audio/i) ? 'audio' :
     trimmedContent.match(/🎥|video/i) ? 'video' : 'document';
   const hasMedia = isImage || isAudio || isVideo || isFile || isNoUrlMedia;
-  const showText = !!trimmedContent && !(hasMedia && genericMediaPlaceholderPattern.test(trimmedContent));
+  const showText = !!trimmedContent && !isContacts && !(hasMedia && genericMediaPlaceholderPattern.test(trimmedContent));
   const linkClassName = isOutbound
     ? 'underline underline-offset-2 decoration-primary-foreground/60 font-medium break-all hover:opacity-80'
     : 'underline underline-offset-2 decoration-primary/60 text-primary font-medium break-all hover:opacity-80';
@@ -1570,6 +1627,37 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
           </div>
         )}
 
+        {/* Contacto compartido */}
+        {isContacts && parsedContacts && (
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            {parsedContacts.map((c, i) => (
+              <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-xl ${isOutbound ? 'bg-primary-foreground/10' : 'bg-background/40'}`}>
+                <div className={`mt-0.5 shrink-0 ${isOutbound ? 'text-primary-foreground/70' : 'text-primary'}`}>
+                  <User className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-[12px] font-semibold truncate">{c.nombre}</span>
+                  {c.telefono && (
+                    <span className={`text-[11px] flex items-center gap-1 ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      <Phone className="w-3 h-3 shrink-0" />{c.telefono}
+                    </span>
+                  )}
+                  {c.email && (
+                    <span className={`text-[11px] flex items-center gap-1 ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      <Mail className="w-3 h-3 shrink-0" />{c.email}
+                    </span>
+                  )}
+                  {c.empresa && (
+                    <span className={`text-[11px] flex items-center gap-1 ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      <Building2 className="w-3 h-3 shrink-0" />{c.empresa}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Texto / caption */}
         {showText && (
           <div className={`text-[13px] leading-relaxed whitespace-pre-wrap break-words ${hasMedia ? 'px-2 pt-1.5' : ''}`}>
@@ -1579,6 +1667,9 @@ function MessageBubble({ mensaje }: { mensaje: LatMensaje }) {
 
         {/* Footer: hora + tickets */}
         <div className={`flex items-center justify-end gap-1 ${hasMedia ? 'px-2 pb-1' : 'mt-1'} ${isOutbound ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+          {isOutbound && mensaje.autor_nombre && (
+            <span className="text-[9px] opacity-75">{mensaje.autor_nombre}</span>
+          )}
           <span className="text-[9px]">{format(ts, 'HH:mm', { locale: es })}</span>
           {StatusIcon && (
             <span title={`Estado: ${estadoLabelMap[normalizedStatus]}`} className={`inline-flex items-center gap-1 text-[9px] font-medium ${statusTextClassName}`}>
@@ -1605,36 +1696,32 @@ interface EmailPanelProps {
 }
 
 function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPanelProps) {
-  const { draft, saveDebounced, remove } = useEmailDraft(conversacionId);
+  const { draft, saveDebounced, cancelSave, remove } = useEmailDraft(conversacionId);
   const queryClient = useQueryClient();
-  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerOpen, setComposerOpen]     = useState(false);
   const [composerInitial, setComposerInitial] = useState<ComposerInitial | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // pendingDraft: draft found in DB but not yet opened. Shown as a banner instead of auto-opening.
+  const [pendingDraft, setPendingDraft]     = useState<typeof draft>(null);
+  const scrollRef     = useRef<HTMLDivElement>(null);
+  const justClosedRef = useRef(false);
 
-  // Si hay borrador previo, abrir composer con él
+  // When a saved draft is found, show banner — don't auto-open the composer
   useEffect(() => {
-    if (draft && !composerOpen) {
-      setComposerInitial({
-        reply_type: (draft.reply_type as any) ?? 'reply',
-        to: draft.email_to ?? [],
-        cc: draft.email_cc ?? [],
-        bcc: draft.email_bcc ?? [],
-        subject: draft.subject ?? '',
-        body_html: draft.body_html ?? '',
-        in_reply_to_message_id: draft.in_reply_to_message_id,
-      });
-      setComposerOpen(true);
+    if (draft && !composerOpen && !justClosedRef.current) {
+      setPendingDraft(draft);
     }
   }, [draft?.id]); // eslint-disable-line
 
-  const lastMsg = mensajes[mensajes.length - 1];
-
   const buildReply = (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward'): ComposerInitial => {
     const ownAccounts = new Set<string>(
-      ['info@estropical.com.bo', 'reservas@estropical.com.bo', 'contacto@estropical.com.bo']
-        .map((s) => s.toLowerCase())
+      mensajes
+        .filter(m => m.tipo === 'outbound' && (m as any).email_from_email)
+        .map(m => String((m as any).email_from_email).toLowerCase())
+        .concat(['microvoz@estropical.com', 'aplataforma@estropical.com',
+                 'info@estropical.com.bo', 'reservas@estropical.com.bo'])
     );
 
+    // Extract only the email address from various formats
     const toEmail = (v: any): string => {
       if (!v) return '';
       if (typeof v === 'string') {
@@ -1644,33 +1731,59 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
       if (typeof v === 'object' && v.email) return String(v.email).trim().toLowerCase();
       return '';
     };
-    const listToEmails = (raw: any): string[] => {
-      if (!raw) return [];
-      const arr = Array.isArray(raw) ? raw : String(raw).split(/[,;]/);
-      return arr.map(toEmail).filter(Boolean);
+
+    // Build "Name <email>" string (preserves display name for chips)
+    const toNameEmail = (name: string | null | undefined, email: string): string => {
+      const e = email.trim().toLowerCase();
+      const n = name?.trim();
+      return (n && n !== e) ? `${n} <${e}>` : e;
     };
 
-    const fromEmail = toEmail((msg as any).email_from_email ?? (msg as any).email_from_name ?? '');
-    const to = type === 'forward' ? [] : (fromEmail ? [fromEmail] : []);
+    const listToNameEmails = (rawAddrs: any, rawNames?: any): string[] => {
+      if (!rawAddrs) return [];
+      const addrs = Array.isArray(rawAddrs) ? rawAddrs : String(rawAddrs).split(/[,;]/);
+      const names = Array.isArray(rawNames) ? rawNames : [];
+      return addrs.map((v: any, i: number) => {
+        const email = toEmail(v);
+        if (!email) return '';
+        // If the address already has a name embedded, keep it; otherwise use rawNames if provided
+        if (typeof v === 'string' && v.includes('<')) return v.trim();
+        return names[i] ? toNameEmail(names[i], email) : email;
+      }).filter(Boolean);
+    };
+
+    const fromEmail = toEmail((msg as any).email_from_email ?? '');
+    const fromName  = (msg as any).email_from_name as string | null | undefined;
+
+    // Reply-To header takes precedence over From for the reply destination
+    const replyToRaw  = (msg as any).email_reply_to as string | null | undefined;
+    const replyTarget = replyToRaw
+      ? toNameEmail(null, toEmail(replyToRaw))
+      : (fromEmail ? toNameEmail(fromName, fromEmail) : '');
+
+    const to: string[] = type === 'forward' ? [] : (replyTarget ? [replyTarget] : []);
+
     let cc: string[] = [];
     if (type === 'reply_all') {
-      const orig = listToEmails((msg as any).email_to);
-      const origCc = listToEmails((msg as any).email_cc);
-      const seen = new Set<string>([...to, ...ownAccounts]);
-      cc = [...orig, ...origCc].filter((e) => {
+      const orig   = listToNameEmails((msg as any).email_to);
+      const origCc = listToNameEmails((msg as any).email_cc);
+      const seen   = new Set<string>([toEmail(replyTarget), ...ownAccounts]);
+      cc = [...orig, ...origCc].filter((entry) => {
+        const e = toEmail(entry);
         if (!e || seen.has(e)) return false;
         seen.add(e);
         return true;
       });
     }
-    const subj = (msg as any).email_subject ?? '';
-    const prefix = type === 'forward' ? 'Fwd: ' : 'Re: ';
+
+    const subj     = (msg as any).email_subject ?? '';
+    const prefix   = type === 'forward' ? 'Fwd: ' : 'Re: ';
     const cleanSubj = subj.replace(/^(Re:|Fwd:)\s*/i, '');
-    const subject = prefix + cleanSubj;
+    const subject  = prefix + cleanSubj;
 
     const origBody = (msg as any).email_body_html ?? msg.contenido ?? '';
-    const quoted = type === 'forward'
-      ? `<br><br><div style="border-left:3px solid #ccc;padding-left:8px;color:#666"><b>--- Mensaje reenviado ---</b><br>De: ${(msg as any).email_from_name ?? fromEmail}<br>Asunto: ${subj}<br><br>${origBody}</div>`
+    const quoted   = type === 'forward'
+      ? `<br><br><div style="border-left:3px solid #ccc;padding-left:8px;color:#666"><b>--- Mensaje reenviado ---</b><br>De: ${fromName ?? fromEmail}<br>Asunto: ${subj}<br><br>${origBody}</div>`
       : '';
 
     return {
@@ -1685,26 +1798,77 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
     };
   };
 
-  const openCompose = (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward') => {
+  const openCompose = async (msg: LatMensaje, type: 'reply' | 'reply_all' | 'forward') => {
+    cancelSave();
+    setPendingDraft(null);
+    // If a draft already exists for THIS exact reply, restore it instead of deleting
+    if (draft && draft.in_reply_to_message_id === msg.id && draft.reply_type === type) {
+      justClosedRef.current = false;
+      setComposerInitial({
+        reply_type: (draft.reply_type as any) ?? type,
+        to:  draft.email_to  ?? [],
+        cc:  draft.email_cc  ?? [],
+        bcc: draft.email_bcc ?? [],
+        subject:  draft.subject  ?? '',
+        body_html: draft.body_html ?? '',
+        in_reply_to_message_id: draft.in_reply_to_message_id,
+        isDraft: true,
+      });
+      setComposerOpen(true);
+      return;
+    }
+    // Otherwise start fresh: delete old draft and build new initial state
+    await remove();
+    justClosedRef.current = false;
     setComposerInitial(buildReply(msg, type));
     setComposerOpen(true);
   };
 
+  const restorePendingDraft = () => {
+    if (!pendingDraft) return;
+    setComposerInitial({
+      reply_type: (pendingDraft.reply_type as any) ?? 'reply',
+      to:  pendingDraft.email_to  ?? [],
+      cc:  pendingDraft.email_cc  ?? [],
+      bcc: pendingDraft.email_bcc ?? [],
+      subject:   pendingDraft.subject   ?? '',
+      body_html: pendingDraft.body_html ?? '',
+      in_reply_to_message_id: pendingDraft.in_reply_to_message_id,
+      isDraft: true,
+    });
+    setPendingDraft(null);
+    justClosedRef.current = false;
+    setComposerOpen(true);
+  };
+
+  const discardPendingDraft = async () => {
+    cancelSave();
+    await remove();
+    setPendingDraft(null);
+  };
+
   const handleSent = async () => {
+    justClosedRef.current = true;
+    cancelSave();
     await remove();
     setComposerOpen(false);
     setComposerInitial(null);
+    setPendingDraft(null);
     queryClient.invalidateQueries({ queryKey: ['lat_mensajes', conversacionId] });
     queryClient.invalidateQueries({ queryKey: ['lat_conversaciones'] });
+    setTimeout(() => { justClosedRef.current = false; }, 2000);
   };
 
   const handleDiscard = async () => {
+    justClosedRef.current = true;
+    cancelSave();
     await remove();
     setComposerOpen(false);
     setComposerInitial(null);
+    setTimeout(() => { justClosedRef.current = false; }, 2000);
   };
 
-  // Auto-scroll al fondo cuando se abre el composer (igual que Gmail)
+  // Auto-scroll al fondo cuando se abre el composer
   useEffect(() => {
     if (!composerOpen || !scrollRef.current) return;
     const el = scrollRef.current;
@@ -1728,8 +1892,23 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
             scrollable={false}
           />
 
-          {/* Caja de respuesta embebida al final del hilo */}
-          {composerOpen && composerInitial ? (
+          {/* Banner: borrador pendiente — no abre el compositor automáticamente */}
+          {pendingDraft && !composerOpen && (
+            <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm">
+              <span className="text-amber-800 font-medium">Tienes un borrador guardado para este hilo</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={restorePendingDraft}>
+                  Continuar borrador
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:text-destructive" onClick={discardPendingDraft}>
+                  Descartar
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Composer embebido al fondo del hilo (se abre solo desde los botones del mensaje) */}
+          {composerOpen && composerInitial && (
             <div className="border-t bg-background">
               <EmailComposer
                 conversacionId={conversacionId}
@@ -1746,18 +1925,7 @@ function EmailPanel({ conversacionId, mensajes, loading, autorNombre }: EmailPan
                 })}
               />
             </div>
-          ) : lastMsg ? (
-            <div className="border-t bg-muted/30 px-4 py-3 shrink-0">
-              <button
-                onClick={() => openCompose(lastMsg, 'reply')}
-                className="w-full text-left text-sm text-muted-foreground bg-background border rounded-lg px-4 py-2.5 hover:bg-muted/50 transition shadow-sm"
-              >
-                {draft
-                  ? <span className="text-warning font-medium">Borrador guardado — continuar redacción…</span>
-                  : "Escribe tu respuesta por correo..."}
-              </button>
-            </div>
-          ) : null}
+          )}
         </div>
       )}
     </div>

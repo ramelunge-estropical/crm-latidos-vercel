@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -6,7 +6,7 @@ import {
   Check, X, ChevronDown, ChevronUp, ToggleLeft, ToggleRight,
   AlertCircle, Zap, DollarSign, Star, HelpCircle, Bus, Plane,
   FileText, Users, Briefcase, BarChart3, Bot, Activity, MessageSquare,
-  Mail, Wifi, WifiOff, ChevronRight,
+  Mail, Wifi, WifiOff, ChevronRight, RefreshCw, LogOut, ChevronLeft, Search,
 } from "lucide-react";
 import { LatBotConfig } from "./LatBotConfig";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "canales" | "colas" | "reglas" | "horarios" | "agentes-ia";
+type Tab = "overview" | "canales" | "colas" | "horarios" | "agentes-ia";
 
 interface Troncal {
   id: string; nombre: string; proveedor: string; tipo: string;
@@ -25,14 +25,58 @@ interface Troncal {
 interface Canal {
   id: string; troncal_id: string | null; nombre: string; tipo: string;
   numero_origen: string | null; activo: boolean; descripcion: string | null;
+  cola_default_id: string | null; bot_default_id: string | null;
+  // Phase 1: routing normalization
+  identificador: string | null;
+  proveedor: string | null;
+  estado: "conectado" | "desconectado" | "error" | "pendiente" | null;
+}
+
+interface Accion {
+  tipo: "asignar_cola" | "asignar_bot" | "ignorar" | "asignar_prioridad" | "etiquetar";
+  cola_id?: string | null;
+  cola_nombre?: string;
+  prioridad?: string;
+  etiqueta?: string;
 }
 
 interface Cola {
   id: string; nombre: string; descripcion: string | null; area: string | null;
-  canal_id: string | null; estrategia_asignacion: string;
-  max_conversaciones_agente: number; activa: boolean;
-  orden: number; color: string; icono: string | null;
+  canal_id: string | null; canal_saliente_id: string | null;
+  estrategia_asignacion: string; max_conversaciones_agente: number;
+  activa: boolean; orden: number; color: string; icono: string | null;
+  horario_id: string | null;
+  tiempo_reserva_comunicacion: number; tiempo_reserva_mensajes: number;
+  tiempo_redistribucion: number; redistribuir_ausentes: boolean;
+  auto_tipificacion_ausentes: boolean;
+  desborde_activo: boolean; desborde_cola_id: string | null;
+  desborde_tiempo_espera: number; desborde_condiciones: string[];
+  desborde_registrar: boolean;
+  // Owner e intervención
+  owner_auto_asignar: boolean;
+  owner_nivel: "por_cliente" | "por_conversacion";
+  owner_last_user_activo: boolean;
+  owner_last_user_dias: number;
+  supervisor_puede_intervenir: boolean;
+  supervisor_puede_transferir: boolean;
+  permite_reasignacion_manual: boolean;
+  owner_registrar_trazabilidad: boolean;
+  // Phase 1: canales permitidos como arrays (retrocompat con canal_id FK)
+  canales_entrantes_ids: string[];
+  canales_salientes_ids: string[];
 }
+
+interface ColaMiembro {
+  id: string; cola_id: string; colaborador_id: string; rol: "agente" | "supervisor";
+  colaboradores: { id: string; nombre: string; color: string } | null;
+  // Phase 1: estado y capacidad individual del miembro en la cola
+  activo: boolean;
+  max_conversaciones: number | null;
+  peso: number;
+}
+
+interface ColaIndicador { cola_id: string; en_cola: number; en_atencion: number; }
+interface Colaborador   { id: string; nombre: string; color: string; activo: boolean; }
 
 interface Horario {
   id: string; nombre: string; zona_horaria: string;
@@ -46,7 +90,8 @@ interface Condicion {
 interface Regla {
   id: string; nombre: string; descripcion: string | null;
   activa: boolean; prioridad: number;
-  condiciones: Condicion[]; accion: { tipo: string; cola_nombre: string };
+  canal_id: string | null;
+  condiciones: Condicion[]; accion: Accion;
 }
 
 // ─── Icon map ─────────────────────────────────────────────────────────────────
@@ -64,22 +109,67 @@ const DIAS_LABELS: Record<string, string> = {
 };
 
 const TIPO_COLORS: Record<string, string> = {
-  whatsapp: "bg-green-500/10 text-green-600 border-green-200",
+  whatsapp:  "bg-green-500/10 text-green-600 border-green-200",
   instagram: "bg-purple-500/10 text-purple-600 border-purple-200",
-  facebook: "bg-blue-500/10 text-blue-600 border-blue-200",
-  email: "bg-amber-500/10 text-amber-600 border-amber-200",
-  web: "bg-cyan-500/10 text-cyan-600 border-cyan-200",
-  interno: "bg-slate-500/10 text-slate-600 border-slate-200",
+  facebook:  "bg-blue-500/10 text-blue-600 border-blue-200",
+  email:     "bg-amber-500/10 text-amber-600 border-amber-200",
+  web:       "bg-cyan-500/10 text-cyan-600 border-cyan-200",
+  telefonia: "bg-rose-500/10 text-rose-600 border-rose-200",
+  interno:   "bg-slate-500/10 text-slate-600 border-slate-200",
 };
 
 const TIPO_ICONS: Record<string, React.ElementType> = {
-  whatsapp: MessageSquare,
+  whatsapp:  MessageSquare,
   instagram: Globe,
-  facebook: Globe,
-  email: Mail,
-  web: Globe,
-  interno: Layers,
+  facebook:  Globe,
+  email:     Mail,
+  web:       Globe,
+  telefonia: Phone,
+  interno:   Layers,
 };
+
+// ─── Constantes de reglas ─────────────────────────────────────────────────────
+
+const CAMPOS_WA = [
+  { value: "numero_remitente", label: "Número remitente" },
+  { value: "texto_mensaje",    label: "Texto del mensaje" },
+  { value: "palabras_clave",   label: "Palabras clave" },
+  { value: "mensaje_inicial",  label: "Mensaje inicial contiene" },
+  { value: "etiqueta_origen",  label: "Etiqueta / campaña / origen" },
+];
+
+const CAMPOS_EMAIL = [
+  { value: "remitente",          label: "Remitente" },
+  { value: "destinatario",       label: "Destinatario" },
+  { value: "alias_destinatario", label: "Alias destinatario" },
+  { value: "asunto",             label: "Asunto" },
+  { value: "cuerpo",             label: "Cuerpo del correo" },
+  { value: "mensaje_inicial",    label: "Mensaje inicial contiene" },
+  { value: "nombre_adjunto",     label: "Nombre del archivo adjunto" },
+];
+
+const CAMPOS_COMUNES = [
+  { value: "mensaje_inicial", label: "Mensaje inicial" },
+  { value: "canal_tipo",      label: "Canal tipo" },
+  { value: "hora_ingreso",    label: "Hora de ingreso" },
+  { value: "cliente_area",    label: "Área del cliente" },
+];
+
+const OPERADORES = [
+  { value: "contiene",     label: "contiene" },
+  { value: "no_contiene",  label: "no contiene" },
+  { value: "es",           label: "es igual a" },
+  { value: "empieza_con",  label: "empieza con" },
+  { value: "termina_con",  label: "termina con" },
+];
+
+const TIPOS_ACCION = [
+  { value: "asignar_cola",      label: "Derivar a cola" },
+  { value: "asignar_bot",       label: "Derivar a bot / Agente IA" },
+  { value: "ignorar",           label: "No sincronizar / ignorar" },
+  { value: "asignar_prioridad", label: "Asignar prioridad" },
+  { value: "etiquetar",         label: "Etiquetar comunicación" },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -189,10 +279,7 @@ function VistaGeneralTab() {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {canal.activo
-                    ? <><Wifi className="w-3.5 h-3.5 text-emerald-500" /><span className="text-[10px] text-emerald-600 font-medium">Activo</span></>
-                    : <><WifiOff className="w-3.5 h-3.5 text-muted-foreground" /><span className="text-[10px] text-muted-foreground">Inactivo</span></>
-                  }
+                  <ConnStatus activo={canal.activo} estado={canal.estado} />
                 </div>
               </div>
             );
@@ -219,21 +306,444 @@ function VistaGeneralTab() {
   );
 }
 
-// ─── CANALES TAB (con Troncales integrado) ────────────────────────────────────
+// ─── CANAL REGLAS PANEL ───────────────────────────────────────────────────────
+
+interface BotCfg { id: string; nombre: string | null; canal: string | null; }
+
+function CanalReglasPanel({
+  canalId, canalTipo = "whatsapp", colas, readonly,
+  fallbackTipo, fallbackId, onSaveFallback,
+}: {
+  canalId: string | null; canalTipo?: string; colas: Cola[]; readonly: boolean;
+  fallbackTipo?: "cola" | "bot" | null;
+  fallbackId?: string | null;
+  onSaveFallback?: (tipo: "cola" | "bot" | null, id: string | null) => Promise<void>;
+}) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState<Partial<Regla> | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [fallbackDraft, setFallbackDraft] = useState<string>(
+    fallbackTipo && fallbackId ? `${fallbackTipo}:${fallbackId}` : ""
+  );
+  const [savingFallback, setSavingFallback] = useState(false);
+
+  const { data: botsIA = [] } = useQuery<BotCfg[]>({
+    queryKey: ["lat_bot_config_list"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_bot_config").select("id, nombre, canal").eq("activo", true);
+      return data || [];
+    },
+  });
+
+  const isGlobalMode = canalId === null;
+  const isEmail = canalTipo === "email";
+  const CAMPOS = isGlobalMode ? CAMPOS_COMUNES : isEmail ? CAMPOS_EMAIL : CAMPOS_WA;
+
+  const { data: reglas = [], isLoading } = useQuery<Regla[]>({
+    queryKey: ["lat_reglas_canal", canalId ?? "global"],
+    queryFn: async () => {
+      const q = db().from("lat_reglas_asignacion").select("*").order("prioridad");
+      const { data } = isGlobalMode ? await q.is("canal_id", null) : await q.eq("canal_id", canalId);
+      return (data || []).map((r: any) => ({
+        ...r,
+        condiciones: Array.isArray(r.condiciones) ? r.condiciones : [],
+        accion: typeof r.accion === "object" ? r.accion : { tipo: "asignar_cola" },
+      }));
+    },
+  });
+
+  const save = async () => {
+    if (!editing?.nombre?.trim()) return;
+    const payload = {
+      nombre: editing.nombre,
+      descripcion: editing.descripcion || null,
+      activa: editing.activa ?? true,
+      prioridad: editing.prioridad ?? 50,
+      canal_id: canalId,
+      condiciones: editing.condiciones || [],
+      accion: editing.accion || { tipo: "asignar_cola" },
+    };
+    if (isNew) {
+      await db().from("lat_reglas_asignacion").insert(payload);
+      toast.success("Regla creada");
+    } else {
+      await db().from("lat_reglas_asignacion").update(payload).eq("id", editing.id);
+      toast.success("Regla actualizada");
+    }
+    qc.invalidateQueries({ queryKey: ["lat_reglas_canal", canalId] });
+    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
+    setEditing(null);
+  };
+
+  const remove = async (id: string) => {
+    await db().from("lat_reglas_asignacion").delete().eq("id", id);
+    toast.success("Regla eliminada");
+    qc.invalidateQueries({ queryKey: ["lat_reglas_canal", canalId] });
+    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
+  };
+
+  const toggle = async (r: Regla) => {
+    await db().from("lat_reglas_asignacion").update({ activa: !r.activa }).eq("id", r.id);
+    qc.invalidateQueries({ queryKey: ["lat_reglas_canal", canalId] });
+  };
+
+  const addCondicion = () => {
+    const defaultCampo = CAMPOS[0]?.value ?? "texto_mensaje";
+    setEditing(p => ({
+      ...p,
+      condiciones: [...(p?.condiciones || []), { campo: defaultCampo, operador: "contiene", valor: "" }],
+    }));
+  };
+
+  const removeCondicion = (idx: number) => {
+    setEditing(p => ({ ...p, condiciones: (p?.condiciones || []).filter((_, i) => i !== idx) }));
+  };
+
+  const updateCondicion = (idx: number, key: keyof Condicion, val: string) => {
+    setEditing(p => ({
+      ...p,
+      condiciones: (p?.condiciones || []).map((c, i) => i === idx ? { ...c, [key]: val } : c),
+    }));
+  };
+
+  if (isLoading) return <div className="text-xs text-muted-foreground py-6 text-center">Cargando reglas...</div>;
+
+  // ── Form view ───────────────────────────────────────────────────────────────
+  if (editing) {
+    const accion: Accion = (editing.accion as Accion) || { tipo: "asignar_cola" };
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setEditing(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <h4 className="text-sm font-semibold">{isNew ? "Nueva regla" : "Editar regla"}</h4>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Prioridad</label>
+            <input type="number" min={1} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+              value={editing.prioridad ?? 50} onChange={e => setEditing(p => ({ ...p, prioridad: parseInt(e.target.value) || 50 }))} />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium">Condiciones <span className="text-muted-foreground font-normal">(todas deben cumplirse)</span></label>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-border"
+                  checked={(editing.condiciones || []).length === 0}
+                  onChange={e => {
+                    if (e.target.checked) setEditing(p => ({ ...p, condiciones: [] }));
+                    else addCondicion();
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">Regla por defecto</span>
+              </label>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
+                <Plus className="w-3 h-3" />Agregar condición
+              </Button>
+            </div>
+          </div>
+          {(editing.condiciones || []).length === 0 && (
+            <p className="text-xs text-amber-700 bg-amber-500/10 border border-amber-200 p-3 rounded-lg">
+              Sin condiciones — se aplica como fallback cuando ninguna otra regla coincide
+            </p>
+          )}
+          {(editing.condiciones || []).map((cond, idx) => (
+            <div key={idx} className="flex items-center gap-2 mb-2">
+              <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none flex-1 min-w-0"
+                value={cond.campo} onChange={e => updateCondicion(idx, "campo", e.target.value)}>
+                {CAMPOS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+              <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none shrink-0"
+                value={cond.operador} onChange={e => updateCondicion(idx, "operador", e.target.value)}>
+                {OPERADORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <input className="flex-1 border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none min-w-0"
+                placeholder="valor..." value={cond.valor} onChange={e => updateCondicion(idx, "valor", e.target.value)} />
+              <button onClick={() => removeCondicion(idx)} className="p-1.5 rounded hover:bg-destructive/10 shrink-0">
+                <X className="w-3.5 h-3.5 text-destructive/70" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-xs font-medium block">Acción</label>
+          <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+            value={accion.tipo || "asignar_cola"}
+            onChange={e => setEditing(p => ({ ...p, accion: { ...p?.accion, tipo: e.target.value as Accion["tipo"] } }))}>
+            {TIPOS_ACCION.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+          </select>
+          {(!accion.tipo || accion.tipo === "asignar_cola") && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Cola destino</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={accion.cola_id || ""}
+                onChange={e => {
+                  const c = colas.find(c => c.id === e.target.value);
+                  setEditing(p => ({ ...p, accion: { ...p?.accion, tipo: "asignar_cola", cola_id: e.target.value || null, cola_nombre: c?.nombre || "" } }));
+                }}>
+                <option value="">Seleccionar cola...</option>
+                {colas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+          )}
+          {accion.tipo === "asignar_prioridad" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Nivel de prioridad</label>
+              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                value={accion.prioridad || "alta"}
+                onChange={e => setEditing(p => ({ ...p, accion: { ...p?.accion, prioridad: e.target.value } }))}>
+                <option value="urgente">Urgente</option>
+                <option value="alta">Alta</option>
+                <option value="media">Media</option>
+                <option value="baja">Baja</option>
+              </select>
+            </div>
+          )}
+          {accion.tipo === "etiquetar" && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Etiqueta</label>
+              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                placeholder="ej. vip, urgente..." value={accion.etiqueta || ""}
+                onChange={e => setEditing(p => ({ ...p, accion: { ...p?.accion, etiqueta: e.target.value } }))} />
+            </div>
+          )}
+          {accion.tipo === "ignorar" && (
+            <p className="text-xs text-amber-600 bg-amber-500/10 border border-amber-200 rounded-lg p-3">
+              Las comunicaciones que coincidan no se sincronizarán ni aparecerán en LAT.
+            </p>
+          )}
+          {accion.tipo === "asignar_bot" && (
+            <p className="text-xs text-blue-600 bg-blue-500/10 border border-blue-200 rounded-lg p-3">
+              Las comunicaciones que coincidan se derivarán al Agente IA configurado para este canal.
+            </p>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── List view ───────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-4">
+      {onSaveFallback && !isGlobalMode && (
+        <div className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium">Fallback</p>
+            <p className="text-[10px] text-muted-foreground">Destino cuando ninguna regla coincide</p>
+          </div>
+          <select
+            className="border border-border rounded-lg px-2.5 py-1.5 text-xs bg-background focus:outline-none min-w-0 flex-shrink-0 max-w-[200px]"
+            value={fallbackDraft}
+            onChange={e => setFallbackDraft(e.target.value)}
+            disabled={readonly}
+          >
+            <option value="">Sin fallback</option>
+            {colas.length > 0 && <option disabled value="__sep_cola">── Colas ──</option>}
+            {colas.map(c => <option key={c.id} value={`cola:${c.id}`}>{c.nombre}</option>)}
+            {botsIA.length > 0 && <option disabled value="__sep_bot">── Agentes IA ──</option>}
+            {botsIA.map(b => <option key={b.id} value={`bot:${b.id}`}>{b.nombre || `Bot ${b.canal || b.id.slice(0, 6)}`}</option>)}
+          </select>
+          {!readonly && (
+            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1" disabled={savingFallback}
+              onClick={async () => {
+                setSavingFallback(true);
+                const [tipo, id] = fallbackDraft ? fallbackDraft.split(":") as ["cola"|"bot", string] : [null, null];
+                await onSaveFallback(tipo ?? null, id ?? null);
+                setSavingFallback(false);
+                toast.success("Fallback guardado");
+              }}>
+              <Check className="w-3 h-3" />
+            </Button>
+          )}
+        </div>
+      )}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {reglas.length} regla{reglas.length !== 1 ? "s" : ""} · evaluadas en orden de prioridad
+        </p>
+        {!readonly && (
+          <Button size="sm" className="gap-1.5 h-8"
+            onClick={() => { setIsNew(true); setEditing({ activa: true, prioridad: 50, canal_id: canalId, condiciones: [], accion: { tipo: "asignar_cola" } }); }}>
+            <Plus className="w-3.5 h-3.5" />Nueva regla
+          </Button>
+        )}
+      </div>
+      {reglas.length === 0 && (
+        <div className="text-xs text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">
+          No hay reglas para este canal.{!readonly && " Crea la primera regla para controlar cómo se asignan las comunicaciones."}
+        </div>
+      )}
+      <div className="space-y-2">
+        {reglas.map(r => {
+          const cola = colas.find(c => c.id === r.accion?.cola_id || c.nombre === r.accion?.cola_nombre);
+          const accionLabel = TIPOS_ACCION.find(a => a.value === r.accion?.tipo)?.label ?? "Acción";
+          return (
+            <div key={r.id} className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-3 p-3.5 hover:bg-accent/20 cursor-pointer"
+                onClick={() => setExpanded(expanded === r.id ? null : r.id)}>
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{r.prioridad}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{r.nombre}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {r.condiciones.length > 0 ? `${r.condiciones.length} condición${r.condiciones.length > 1 ? "es" : ""}` : "Regla por defecto"}
+                    {" → "}{r.accion?.tipo === "asignar_cola" && cola ? cola.nombre : accionLabel}
+                  </p>
+                </div>
+                {r.accion?.tipo === "asignar_cola" && cola
+                  ? <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />
+                  : <Badge variant="outline" className={`text-[10px] shrink-0 ${r.accion?.tipo === "ignorar" ? "border-amber-300 text-amber-600" : r.accion?.tipo === "asignar_bot" ? "border-blue-300 text-blue-600" : ""}`}>{accionLabel}</Badge>
+                }
+                {!r.activa && <Badge variant="secondary" className="text-[10px] shrink-0">Inactiva</Badge>}
+                {expanded === r.id ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+              </div>
+              {expanded === r.id && (
+                <div className="border-t border-border px-4 py-3 bg-accent/10 space-y-2">
+                  {r.condiciones.length === 0 && <p className="text-xs text-muted-foreground italic">Sin condiciones — se aplica a cualquier comunicación del canal</p>}
+                  {r.condiciones.map((c, i) => {
+                    const campoLabel = [...CAMPOS_WA, ...CAMPOS_EMAIL, ...CAMPOS_COMUNES].find(f => f.value === c.campo)?.label ?? c.campo;
+                    const opLabel = OPERADORES.find(o => o.value === c.operador)?.label ?? c.operador;
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-xs">
+                        <span className="px-2 py-0.5 rounded bg-muted font-mono">{campoLabel}</span>
+                        <span className="text-muted-foreground">{opLabel}</span>
+                        <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-mono">{c.valor}</span>
+                      </div>
+                    );
+                  })}
+                  {!readonly && (
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => toggle(r)}>
+                        {r.activa ? <ToggleRight className="w-3.5 h-3.5 text-emerald-500" /> : <ToggleLeft className="w-3.5 h-3.5 text-muted-foreground" />}
+                        {r.activa ? "Desactivar" : "Activar"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => { setIsNew(false); setEditing(r); }}>
+                        <Pencil className="w-3.5 h-3.5" />Editar
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => remove(r.id)}>
+                        <Trash2 className="w-3.5 h-3.5" />Eliminar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── CANALES TAB ─────────────────────────────────────────────────────────────
+
+interface CanalConTroncal extends Canal {
+  lat_troncales?: { nombre: string; proveedor: string; numero: string | null } | null;
+}
+
+interface GmailBotCfg {
+  id: string;
+  activo: boolean;
+  nombre: string | null;
+  gmail_email: string | null;
+  gmail_refresh_token: string | null;
+  gmail_token_expiry: string | null;
+  updated_at: string | null;
+}
+
+type CanalEditTab = "detalles" | "reglas" | "conexion";
+type EditMode = { kind: "canal"; id: string | null } | { kind: "gmail" } | null;
+
+const GMAIL_INBOUND_ALIAS = "microvoz@estropical.com";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+async function fetchGmailOAuthUrl(): Promise<string | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-gmail-oauth-url`, {
+      headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
+    });
+    const json = await res.json();
+    return json.url ?? null;
+  } catch { return null; }
+}
+
+function ConnStatus({ activo, hasToken, estado }: { activo: boolean; hasToken?: boolean; estado?: string | null }) {
+  const effectiveEstado = estado ?? (activo ? "conectado" : "desconectado");
+  const noToken = hasToken === false;
+
+  const colorClass = noToken
+    ? "text-amber-600"
+    : effectiveEstado === "conectado" ? "text-emerald-600"
+    : effectiveEstado === "error"     ? "text-red-600"
+    : effectiveEstado === "pendiente" ? "text-blue-600"
+    : "text-muted-foreground";
+
+  const label = noToken
+    ? "Sin token"
+    : effectiveEstado === "conectado" ? "Conectado"
+    : effectiveEstado === "error"     ? "Error"
+    : effectiveEstado === "pendiente" ? "Pendiente"
+    : "Inactivo";
+
+  const Icon = !noToken && effectiveEstado === "conectado" ? Wifi : WifiOff;
+
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${colorClass}`}>
+      <Icon className="w-3 h-3" />
+      {label}
+    </span>
+  );
+}
 
 function CanalesTab({ readonly }: { readonly: boolean }) {
   const qc = useQueryClient();
-  const [editingCanal, setEditingCanal] = useState<Partial<Canal> | null>(null);
+  const [editMode, setEditMode] = useState<EditMode>(null);
+  const [canalDraft, setCanalDraft] = useState<Partial<CanalConTroncal>>({});
   const [isNewCanal, setIsNewCanal] = useState(false);
+  const [canalTab, setCanalTab] = useState<CanalEditTab>("detalles");
   const [editingTroncal, setEditingTroncal] = useState<Partial<Troncal> | null>(null);
   const [isNewTroncal, setIsNewTroncal] = useState(false);
   const [showTroncales, setShowTroncales] = useState(false);
+  const [connectingGmail, setConnectingGmail] = useState(false);
+  const [disconnectingGmail, setDisconnectingGmail] = useState(false);
+  const [newCanalType, setNewCanalType] = useState<string | null>(null);
+  const [gmailCanalId, setGmailCanalId] = useState<string | null>(null);
+  const [gmailFallbackTipo, setGmailFallbackTipo] = useState<"cola"|"bot"|null>(null);
+  const [gmailFallbackId, setGmailFallbackId] = useState<string | null>(null);
 
-  const { data: canales = [], isLoading } = useQuery<Canal[]>({
+  const { data: canales = [], isLoading } = useQuery<CanalConTroncal[]>({
     queryKey: ["lat_canales"],
     queryFn: async () => {
       const { data } = await db().from("lat_canales").select("*, lat_troncales(nombre, proveedor, numero)").order("nombre");
       return data || [];
+    },
+  });
+
+  const { data: gmailCfg } = useQuery<GmailBotCfg | null>({
+    queryKey: ["lat_bot_config", "email"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_bot_config")
+        .select("id, activo, nombre, gmail_email, gmail_refresh_token, gmail_token_expiry, updated_at")
+        .eq("canal", "email").maybeSingle();
+      return data ?? null;
     },
   });
 
@@ -245,25 +755,141 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     },
   });
 
+  const { data: colas = [] } = useQuery<Cola[]>({
+    queryKey: ["lat_colas"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_colas").select("*").order("orden");
+      return data || [];
+    },
+  });
+
+  // ── Canal CRUD ────────────────────────────────────────────────────────────────
+
+  const openNewCanal = (tipo = "whatsapp") => {
+    setIsNewCanal(true);
+    setCanalDraft({ activo: true, tipo, estado: "conectado" });
+    setCanalTab("detalles");
+    setNewCanalType(null);
+    setEditMode({ kind: "canal", id: null });
+  };
+
+  const openEditCanal = (canal: CanalConTroncal) => {
+    setIsNewCanal(false);
+    setCanalDraft(canal);
+    setCanalTab("detalles");
+    setEditMode({ kind: "canal", id: canal.id });
+  };
+
+  const openEditGmail = async () => {
+    const gmailEmail = (gmailCfg?.gmail_email || "").trim().toLowerCase();
+    const gmailIdentifiers = [gmailEmail, GMAIL_INBOUND_ALIAS].filter(Boolean);
+    const { data: emailCanales } = await db().from("lat_canales")
+      .select("id, nombre, numero_origen, identificador, cola_default_id, bot_default_id")
+      .eq("tipo", "email");
+    let data = ((emailCanales || []) as any[]).find(c =>
+      [c.numero_origen, c.identificador, c.nombre]
+        .some(v => gmailIdentifiers.includes(String(v || "").trim().toLowerCase()))
+    ) || null;
+    if (!data && gmailCfg) {
+      const { data: created } = await db().from("lat_canales").insert({
+        nombre: gmailCfg.nombre || "Gmail Microvoz",
+        tipo: "email",
+        numero_origen: gmailCfg.gmail_email,
+        identificador: GMAIL_INBOUND_ALIAS,
+        proveedor: "gmail",
+        estado: gmailCfg.activo ? "conectado" : "desconectado",
+        activo: gmailCfg.activo ?? true,
+      }).select("id, cola_default_id, bot_default_id").single();
+      data = created;
+    }
+    setGmailCanalId(data?.id ?? null);
+    if (data?.bot_default_id) { setGmailFallbackTipo("bot"); setGmailFallbackId(data.bot_default_id); }
+    else if (data?.cola_default_id) { setGmailFallbackTipo("cola"); setGmailFallbackId(data.cola_default_id); }
+    else { setGmailFallbackTipo(null); setGmailFallbackId(null); }
+    setCanalTab("detalles");
+    setEditMode({ kind: "gmail" });
+  };
+
+  const saveGmailFallback = async (tipo: "cola" | "bot" | null, id: string | null) => {
+    const patch = {
+      cola_default_id: tipo === "cola" ? id : null,
+      bot_default_id:  tipo === "bot"  ? id : null,
+      numero_origen: gmailCfg?.gmail_email || null,
+      identificador: GMAIL_INBOUND_ALIAS,
+      proveedor: "gmail",
+      estado: gmailCfg?.activo ? "conectado" : "desconectado",
+      activo: gmailCfg?.activo ?? true,
+    };
+    let effectiveCanalId = gmailCanalId;
+    if (gmailCanalId) {
+      await db().from("lat_canales").update(patch).eq("id", gmailCanalId);
+    } else if (gmailCfg) {
+      const { data } = await db().from("lat_canales").insert({
+        nombre: gmailCfg.nombre || "Gmail Microvoz",
+        tipo: "email",
+        numero_origen: gmailCfg.gmail_email,
+        identificador: GMAIL_INBOUND_ALIAS,
+        proveedor: "gmail",
+        estado: gmailCfg.activo ? "conectado" : "desconectado",
+        activo: gmailCfg.activo,
+        ...patch,
+      }).select("id").single();
+      if (data) {
+        effectiveCanalId = data.id;
+        setGmailCanalId(data.id);
+      }
+    }
+    if (tipo === "cola" && id && effectiveCanalId) {
+      await db().from("lat_colas").update({
+        canal_id: effectiveCanalId,
+        canales_entrantes_ids: colas.find((c: any) => c.id === id)?.canales_entrantes_ids?.includes(effectiveCanalId)
+          ? colas.find((c: any) => c.id === id)?.canales_entrantes_ids
+          : [...(colas.find((c: any) => c.id === id)?.canales_entrantes_ids ?? []), effectiveCanalId],
+      }).eq("id", id);
+      qc.invalidateQueries({ queryKey: ["lat_colas"] });
+    }
+    setGmailFallbackTipo(tipo);
+    setGmailFallbackId(id);
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+  };
+
+  const quickToggleCanal = async (canal: CanalConTroncal) => {
+    const newEstado = canal.estado === "conectado" ? "desconectado" : "conectado";
+    await db().from("lat_canales").update({ estado: newEstado }).eq("id", canal.id);
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+    toast.success(newEstado === "conectado" ? "Canal activado" : "Canal desactivado");
+  };
+
+  const closeEdit = () => {
+    setEditMode(null);
+    setCanalDraft({});
+    setIsNewCanal(false);
+  };
+
   const saveCanal = async () => {
-    if (!editingCanal || !editingCanal.nombre?.trim()) return;
+    if (!canalDraft.nombre?.trim()) return;
+    const estado = canalDraft.estado ?? (canalDraft.activo ? "conectado" : "desconectado");
     const payload = {
-      nombre: editingCanal.nombre,
-      tipo: editingCanal.tipo || "whatsapp",
-      troncal_id: editingCanal.troncal_id || null,
-      numero_origen: editingCanal.numero_origen || null,
-      descripcion: editingCanal.descripcion || null,
-      activo: editingCanal.activo ?? true,
+      nombre: canalDraft.nombre,
+      tipo: canalDraft.tipo || "whatsapp",
+      troncal_id: canalDraft.troncal_id || null,
+      numero_origen: canalDraft.numero_origen || null,
+      identificador: canalDraft.identificador || canalDraft.numero_origen || null,
+      proveedor: canalDraft.proveedor || null,
+      estado,
+      activo: estado === "conectado",
+      descripcion: canalDraft.descripcion || null,
+      cola_default_id: canalDraft.cola_default_id || null,
     };
     if (isNewCanal) {
       await db().from("lat_canales").insert(payload);
       toast.success("Canal creado");
     } else {
-      await db().from("lat_canales").update(payload).eq("id", editingCanal.id);
+      await db().from("lat_canales").update(payload).eq("id", canalDraft.id);
       toast.success("Canal actualizado");
     }
     qc.invalidateQueries({ queryKey: ["lat_canales"] });
-    setEditingCanal(null);
+    closeEdit();
   };
 
   const removeCanal = async (id: string) => {
@@ -271,6 +897,16 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     toast.success("Canal eliminado");
     qc.invalidateQueries({ queryKey: ["lat_canales"] });
   };
+
+  const toggleCanalActivo = async () => {
+    const newEstado = canalDraft.estado === "conectado" ? "desconectado" : "conectado";
+    await db().from("lat_canales").update({ estado: newEstado }).eq("id", canalDraft.id);
+    setCanalDraft(p => ({ ...p, estado: newEstado, activo: newEstado === "conectado" }));
+    qc.invalidateQueries({ queryKey: ["lat_canales"] });
+    toast.success(newEstado === "conectado" ? "Canal activado" : "Canal desactivado");
+  };
+
+  // ── Troncal CRUD ──────────────────────────────────────────────────────────────
 
   const saveTroncal = async () => {
     if (!editingTroncal || !editingTroncal.nombre?.trim()) return;
@@ -300,81 +936,42 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     qc.invalidateQueries({ queryKey: ["lat_troncales"] });
   };
 
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
+  // ── Gmail actions ─────────────────────────────────────────────────────────────
 
-  if (editingCanal) {
-    return (
-      <div className="p-6 max-w-lg space-y-5">
-        <h3 className="font-semibold text-sm">{isNewCanal ? "Nuevo canal" : "Editar canal"}</h3>
+  const handleGmailConnect = async () => {
+    setConnectingGmail(true);
+    const url = await fetchGmailOAuthUrl();
+    setConnectingGmail(false);
+    if (url) {
+      window.open(url, "_blank");
+    } else {
+      toast.error("No se pudo obtener el URL de autorización de Gmail");
+    }
+  };
 
-        {/* Identificación */}
-        <div className="space-y-3">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Identificación</p>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-            <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={editingCanal.nombre || ""} onChange={e => setEditingCanal(p => ({ ...p, nombre: e.target.value }))} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editingCanal.tipo || "whatsapp"} onChange={e => setEditingCanal(p => ({ ...p, tipo: e.target.value }))}>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="instagram">Instagram</option>
-                <option value="facebook">Facebook</option>
-                <option value="email">Email</option>
-                <option value="web">Web Chat</option>
-                <option value="interno">Interno</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
-              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                placeholder="+591..." value={editingCanal.numero_origen || ""} onChange={e => setEditingCanal(p => ({ ...p, numero_origen: e.target.value }))} />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
-            <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
-              value={editingCanal.descripcion || ""} onChange={e => setEditingCanal(p => ({ ...p, descripcion: e.target.value }))} />
-          </div>
-        </div>
+  const handleGmailDisconnect = async () => {
+    if (!gmailCfg) return;
+    setDisconnectingGmail(true);
+    await db().from("lat_bot_config").update({
+      gmail_access_token: null,
+      gmail_refresh_token: null,
+      gmail_token_expiry: null,
+      activo: false,
+      updated_at: new Date().toISOString(),
+    }).eq("id", gmailCfg.id);
+    qc.invalidateQueries({ queryKey: ["lat_bot_config", "email"] });
+    setDisconnectingGmail(false);
+    toast.success("Sesión de Gmail cerrada");
+  };
 
-        {/* Conexión / Proveedor */}
-        <div className="space-y-3">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Conexión / Proveedor</p>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Proveedor de conexión</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editingCanal.troncal_id || ""} onChange={e => setEditingCanal(p => ({ ...p, troncal_id: e.target.value || null }))}>
-              <option value="">Sin proveedor asignado</option>
-              {troncales.map(t => (
-                <option key={t.id} value={t.id}>{t.nombre} — {t.proveedor}{t.numero ? ` · ${t.numero}` : ""}</option>
-              ))}
-            </select>
-          </div>
-          {troncales.length === 0 && (
-            <p className="text-[10px] text-muted-foreground">
-              No hay proveedores configurados. Agregalos en la sección "Proveedores" más abajo.
-            </p>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <Button size="sm" onClick={saveCanal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditingCanal(null)}><X className="w-3.5 h-3.5" /></Button>
-        </div>
-      </div>
-    );
-  }
+  // ── Troncal form ──────────────────────────────────────────────────────────────
 
   if (editingTroncal) {
     return (
       <div className="p-6 max-w-lg space-y-4">
         <div className="flex items-center gap-2">
-          <button onClick={() => setEditingTroncal(null)} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
+          <button onClick={() => setEditingTroncal(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground">
+            <ChevronLeft className="w-4 h-4" />
           </button>
           <h3 className="font-semibold text-sm">{isNewTroncal ? "Nuevo proveedor" : "Editar proveedor"}</h3>
         </div>
@@ -426,6 +1023,417 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
     );
   }
 
+  // ── Canal / Gmail edit view ───────────────────────────────────────────────────
+
+  if (editMode !== null) {
+    const isGmail = editMode.kind === "gmail";
+    const currentTroncal = troncales.find(t => t.id === canalDraft.troncal_id);
+    const tokenExpiry = gmailCfg?.gmail_token_expiry ? new Date(gmailCfg.gmail_token_expiry) : null;
+    const isTokenExpired = tokenExpiry ? tokenExpiry < new Date() : false;
+    const webhookUrl = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/wpp-webhook` : null;
+
+    const editHeader = (
+      <>
+        <div className="flex items-center gap-3 px-6 pt-5 pb-0 shrink-0">
+          <button onClick={closeEdit} className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${isGmail ? TIPO_COLORS["email"] : TIPO_COLORS[canalDraft.tipo || "whatsapp"] || "bg-muted text-muted-foreground border-border"}`}>
+              {isGmail ? "email" : canalDraft.tipo || "whatsapp"}
+            </span>
+            <span className="text-sm font-semibold truncate">
+              {isGmail
+                ? (gmailCfg?.nombre || gmailCfg?.gmail_email || "Gmail")
+                : (canalDraft.nombre || (isNewCanal ? "Nuevo canal" : "Canal"))}
+            </span>
+          </div>
+          <div className="shrink-0">
+            {isGmail
+              ? <ConnStatus activo={gmailCfg?.activo ?? false} hasToken={!!gmailCfg?.gmail_refresh_token} />
+              : <ConnStatus activo={canalDraft.activo ?? false} estado={canalDraft.estado} />}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 px-6 pt-3 pb-0 border-b border-border shrink-0">
+          {(["detalles", "reglas", "conexion"] as CanalEditTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setCanalTab(t)}
+              className={[
+                "px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-colors",
+                canalTab === t
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50",
+              ].join(" ")}
+            >
+              {t === "detalles" ? "Detalles" : t === "reglas" ? "Reglas" : "Conexión"}
+            </button>
+          ))}
+        </div>
+      </>
+    );
+
+    const renderTabContent = () => {
+      // ── Detalles ────────────────────────────────────────────────────────────
+      if (canalTab === "detalles") {
+        if (isGmail) {
+          const tokenBadge = gmailCfg?.gmail_refresh_token
+            ? <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isTokenExpired ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-600"}`}>{isTokenExpired ? "Expirado" : "Válido"}</span>
+            : <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600">Sin token</span>;
+          const rows: [string, ReactNode][] = [
+            ["Correo", gmailCfg?.gmail_email ?? "—"],
+            ["Estado del token", tokenBadge],
+            ...(tokenExpiry ? [["Vence", tokenExpiry.toLocaleString("es-BO")] as [string, ReactNode]] : []),
+            ...(gmailCfg?.updated_at ? [["Última sync", new Date(gmailCfg.updated_at).toLocaleString("es-BO")] as [string, ReactNode]] : []),
+            ["Tipo de canal", "Gmail / Google Workspace"],
+            ["Proveedor", "Google"],
+          ];
+          const mid = Math.ceil(rows.length / 2);
+          return (
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="grid grid-cols-2 divide-x divide-border">
+                {[rows.slice(0, mid), rows.slice(mid)].map((col, ci) => (
+                  <div key={ci} className="p-4 space-y-3">
+                    {col.map(([label, value]) => (
+                      <div key={label}>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
+                        <p className="text-xs font-medium">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        // Regular canal
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+                <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={canalDraft.nombre || ""} onChange={e => setCanalDraft(p => ({ ...p, nombre: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Tipo</label>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={canalDraft.tipo || "whatsapp"} onChange={e => setCanalDraft(p => ({ ...p, tipo: e.target.value }))}>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="telefonia">Telefonía</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="facebook">Facebook</option>
+                  <option value="email">Email</option>
+                  <option value="web">Web Chat</option>
+                  <option value="interno">Interno</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Número / Dirección</label>
+                <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  placeholder="+591..." value={canalDraft.numero_origen || ""} onChange={e => setCanalDraft(p => ({ ...p, numero_origen: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground mb-1 block">Proveedor de conexión</label>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={canalDraft.troncal_id || ""} onChange={e => setCanalDraft(p => ({ ...p, troncal_id: e.target.value || null }))}>
+                  <option value="">Sin proveedor asignado</option>
+                  {troncales.map(t => (
+                    <option key={t.id} value={t.id}>{t.nombre} — {t.proveedor}{t.numero ? ` · ${t.numero}` : ""}</option>
+                  ))}
+                </select>
+              </div>
+              {currentTroncal && (
+                <div className="col-span-2 grid grid-cols-3 gap-2 p-3 rounded-xl border border-border bg-card/50">
+                  <div><p className="text-[10px] text-muted-foreground">Proveedor</p><p className="text-xs font-medium">{currentTroncal.proveedor}</p></div>
+                  {currentTroncal.numero && <div><p className="text-[10px] text-muted-foreground">Número</p><p className="text-xs font-medium">{currentTroncal.numero}</p></div>}
+                  <div><p className="text-[10px] text-muted-foreground">Estado</p><ConnStatus activo={currentTroncal.activo} /></div>
+                </div>
+              )}
+              {!canalDraft.troncal_id && (
+                <div className="col-span-2">
+                  <label className="text-xs text-muted-foreground mb-1 block">Proveedor directo</label>
+                  <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                    placeholder="Ej: Gupshup, Google, PBX, Twilio..."
+                    value={canalDraft.proveedor || ""}
+                    onChange={e => setCanalDraft(p => ({ ...p, proveedor: e.target.value }))} />
+                </div>
+              )}
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground mb-1 block">Estado de conexión</label>
+                <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={canalDraft.estado || "conectado"}
+                  onChange={e => setCanalDraft(p => ({ ...p, estado: e.target.value as Canal["estado"] }))}>
+                  <option value="conectado">Conectado</option>
+                  <option value="pendiente">Pendiente (en configuración)</option>
+                  <option value="desconectado">Desconectado</option>
+                  <option value="error">Error / Falla</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
+                <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
+                  value={canalDraft.descripcion || ""} onChange={e => setCanalDraft(p => ({ ...p, descripcion: e.target.value }))} />
+              </div>
+            </div>
+            {!readonly && (
+              <div className="flex gap-2">
+                <Button size="sm" onClick={saveCanal} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
+                <Button size="sm" variant="ghost" onClick={closeEdit}><X className="w-3.5 h-3.5" /></Button>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      // ── Reglas ──────────────────────────────────────────────────────────────
+      if (canalTab === "reglas") {
+        if (isNewCanal) {
+          return (
+            <p className="text-xs text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">
+              Guarda el canal primero para configurar sus reglas.
+            </p>
+          );
+        }
+        const canalIdForRules = isGmail ? gmailCanalId : (canalDraft.id ?? null);
+        const canalTipoForRules = isGmail ? "email" : (canalDraft.tipo || "whatsapp");
+        if (!canalIdForRules) {
+          return (
+            <p className="text-xs text-muted-foreground text-center py-8 border border-dashed border-border rounded-xl">
+              {isGmail ? "No se encontró el canal Gmail. Abre Detalles para inicializarlo." : "No se pudo determinar el ID del canal."}
+            </p>
+          );
+        }
+        const fbTipo = isGmail ? gmailFallbackTipo : (canalDraft.bot_default_id ? "bot" : canalDraft.cola_default_id ? "cola" : null);
+        const fbId   = isGmail ? gmailFallbackId   : (canalDraft.bot_default_id ?? canalDraft.cola_default_id ?? null);
+        const saveFallback = isGmail
+          ? saveGmailFallback
+          : async (tipo: "cola" | "bot" | null, id: string | null) => {
+              await db().from("lat_canales").update({
+                cola_default_id: tipo === "cola" ? id : null,
+                bot_default_id:  tipo === "bot"  ? id : null,
+              }).eq("id", canalDraft.id);
+              // Sync: si se asigna una cola como fallback, actualizar canal_id en esa cola
+              if (tipo === "cola" && id) {
+                await db().from("lat_colas").update({ canal_id: canalDraft.id }).eq("id", id);
+                qc.invalidateQueries({ queryKey: ["lat_colas"] });
+              }
+              setCanalDraft(p => ({
+                ...p,
+                cola_default_id: tipo === "cola" ? id : null,
+                bot_default_id:  tipo === "bot"  ? id : null,
+              }));
+              qc.invalidateQueries({ queryKey: ["lat_canales"] });
+            };
+        return (
+          <CanalReglasPanel
+            canalId={canalIdForRules}
+            canalTipo={canalTipoForRules}
+            colas={colas}
+            readonly={readonly}
+            fallbackTipo={fbTipo as "cola"|"bot"|null}
+            fallbackId={fbId}
+            onSaveFallback={saveFallback}
+          />
+        );
+      }
+
+      // ── Conexión ────────────────────────────────────────────────────────────
+      if (isGmail) {
+        return (
+          <div className="space-y-5">
+            <div className="p-4 rounded-xl border border-border bg-card space-y-2">
+              <p className="text-xs font-semibold">Estado de la conexión</p>
+              <div className="flex items-center gap-2">
+                <ConnStatus activo={gmailCfg?.activo ?? false} hasToken={!!gmailCfg?.gmail_refresh_token} />
+                {gmailCfg?.gmail_email && (
+                  <span className="text-xs text-muted-foreground">· {gmailCfg.gmail_email}</span>
+                )}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Acciones</p>
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                onClick={handleGmailConnect}
+                disabled={connectingGmail || readonly}
+              >
+                <RefreshCw className={`w-4 h-4 ${connectingGmail ? "animate-spin" : ""}`} />
+                {connectingGmail ? "Obteniendo URL..." : "Reconectar cuenta de Gmail"}
+              </Button>
+              {gmailCfg?.gmail_refresh_token && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2 text-destructive hover:text-destructive border-destructive/30 hover:border-destructive"
+                  onClick={handleGmailDisconnect}
+                  disabled={disconnectingGmail || readonly}
+                >
+                  <LogOut className={`w-4 h-4 ${disconnectingGmail ? "animate-pulse" : ""}`} />
+                  {disconnectingGmail ? "Cerrando sesión..." : "Cerrar sesión de Gmail"}
+                </Button>
+              )}
+              <p className="text-[10px] text-muted-foreground">
+                Al reconectar se abrirá la ventana de autorización de Google. Al cerrar sesión se eliminan los tokens de acceso.
+              </p>
+            </div>
+          </div>
+        );
+      }
+
+      // WhatsApp / otros
+      return (
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Estado del canal</p>
+            <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-card">
+              <div>
+                <p className="text-sm font-medium">{canalDraft.activo ? "Canal activo" : "Canal inactivo"}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {canalDraft.activo ? "Recibiendo y enviando mensajes" : "No recibe ni envía mensajes"}
+                </p>
+              </div>
+              {!readonly && (
+                <button
+                  onClick={toggleCanalActivo}
+                  className={`shrink-0 transition-colors ${canalDraft.activo ? "text-emerald-500 hover:text-emerald-700" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {canalDraft.activo ? <ToggleRight className="w-7 h-7" /> : <ToggleLeft className="w-7 h-7" />}
+                </button>
+              )}
+            </div>
+          </div>
+          {canalDraft.tipo === "whatsapp" && webhookUrl && (
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Webhook de entrada</p>
+              <div className="p-4 rounded-xl border border-border bg-card space-y-2">
+                <p className="text-xs text-muted-foreground">URL a configurar en el panel de Gupshup:</p>
+                <div className="flex items-center gap-2">
+                  <code className="text-[10px] bg-muted px-2 py-1.5 rounded-md font-mono break-all flex-1">{webhookUrl}</code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success("URL copiada"); }}
+                    className="shrink-0 p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                    title="Copiar"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Proveedor asignado</p>
+            {currentTroncal ? (
+              <div className="p-4 rounded-xl border border-border bg-card space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Nombre</span>
+                  <span className="text-xs font-medium">{currentTroncal.nombre}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Proveedor</span>
+                  <span className="text-xs font-medium capitalize">{currentTroncal.proveedor}</span>
+                </div>
+                {currentTroncal.numero && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Número</span>
+                    <span className="text-xs font-medium">{currentTroncal.numero}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Estado del proveedor</span>
+                  <ConnStatus activo={currentTroncal.activo} />
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl border border-dashed border-border text-center">
+                <p className="text-xs text-muted-foreground">Sin proveedor asignado. Configúralo en la pestaña Detalles.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="flex flex-col h-full">
+        {editHeader}
+        <div className="flex-1 overflow-auto p-6">
+          {renderTabContent()}
+        </div>
+      </div>
+    );
+  }
+
+  // ── List view ─────────────────────────────────────────────────────────────────
+
+  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
+
+  const totalActivos = canales.filter(c => c.activo).length + (gmailCfg?.activo ? 1 : 0);
+  const total = canales.length + (gmailCfg ? 1 : 0);
+
+  // ── Type selector overlay ──────────────────────────────────────────────────
+  if (newCanalType === "select") {
+    return (
+      <div className="p-6 space-y-5 max-w-lg">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setNewCanalType(null)} className="p-1.5 rounded hover:bg-accent text-muted-foreground">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div>
+            <p className="text-sm font-semibold">Nuevo canal</p>
+            <p className="text-[10px] text-muted-foreground">Elige el tipo de canal a configurar</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => openNewCanal("whatsapp")}
+            className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-border hover:border-green-400 hover:bg-green-500/5 transition-colors text-left">
+            <div className="w-9 h-9 rounded-lg bg-green-500/10 flex items-center justify-center">
+              <MessageSquare className="w-4 h-4 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">WhatsApp</p>
+              <p className="text-[10px] text-muted-foreground">Vía Gupshup, Meta o WATI</p>
+            </div>
+          </button>
+          <button
+            onClick={gmailCfg ? () => { setNewCanalType(null); openEditGmail(); } : handleGmailConnect}
+            className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-border hover:border-amber-400 hover:bg-amber-500/5 transition-colors text-left">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center">
+              <Mail className="w-4 h-4 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Gmail / Email</p>
+              <p className="text-[10px] text-muted-foreground">{gmailCfg ? "Ya configurado — ver detalles" : "Conectar cuenta Google"}</p>
+            </div>
+          </button>
+          <button
+            onClick={() => { setNewCanalType(null); openNewCanal("telefonia"); }}
+            className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-border hover:border-rose-400 hover:bg-rose-500/5 transition-colors text-left">
+            <div className="w-9 h-9 rounded-lg bg-rose-500/10 flex items-center justify-center">
+              <Phone className="w-4 h-4 text-rose-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Telefonía</p>
+              <p className="text-[10px] text-muted-foreground">Línea fija o celular</p>
+            </div>
+          </button>
+          {(["Instagram", "Facebook", "SMS", "Web Chat"] as const).map(tipo => (
+            <div key={tipo} className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 border-dashed border-border opacity-50 cursor-not-allowed text-left">
+              <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
+                <Globe className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{tipo}</p>
+                <p className="text-[10px] text-muted-foreground">Próximamente</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Canales */}
@@ -433,16 +1441,49 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold">Canales de comunicación</p>
-            <p className="text-[10px] text-muted-foreground">{canales.length} canales · {canales.filter(c => c.activo).length} activos</p>
+            <p className="text-[10px] text-muted-foreground">{total} canales · {totalActivos} activos</p>
           </div>
           {!readonly && (
-            <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNewCanal(true); setEditingCanal({ activo: true, tipo: "whatsapp" }); }}>
+            <Button size="sm" className="gap-1.5 h-8" onClick={() => setNewCanalType("select")}>
               <Plus className="w-3.5 h-3.5" />Nuevo canal
             </Button>
           )}
         </div>
         <div className="space-y-2">
-          {canales.map((canal: any) => {
+          {/* Gmail row */}
+          {gmailCfg && (
+            <div className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
+              <div className={`px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1.5 ${TIPO_COLORS["email"]}`}>
+                <Mail className="w-3 h-3" />
+                email
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{gmailCfg.nombre || gmailCfg.gmail_email || "Gmail"}</p>
+                <p className="text-[10px] text-muted-foreground truncate">
+                  Google · {gmailCfg.gmail_email ?? "No disponible"}
+                  {gmailCfg.updated_at ? ` · Últ. sync ${new Date(gmailCfg.updated_at).toLocaleDateString("es-BO")}` : ""}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <ConnStatus activo={gmailCfg.activo} hasToken={!!gmailCfg.gmail_refresh_token} />
+              </div>
+              {!readonly && (
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                  {!gmailCfg.gmail_refresh_token && (
+                    <button onClick={handleGmailConnect} className="p-1.5 rounded hover:bg-accent" title="Conectar Gmail">
+                      <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                  )}
+                  <button onClick={openEditGmail} className="p-1.5 rounded hover:bg-accent">
+                    <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* WhatsApp / other channels */}
+          {canales.map((canal: CanalConTroncal) => {
             const TipoIcon = TIPO_ICONS[canal.tipo] || Globe;
             return (
               <div key={canal.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
@@ -461,14 +1502,14 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {canal.activo
-                    ? <Wifi className="w-3.5 h-3.5 text-emerald-500" />
-                    : <WifiOff className="w-3.5 h-3.5 text-muted-foreground" />
-                  }
+                  <ConnStatus activo={canal.activo} estado={canal.estado} />
                 </div>
                 {!readonly && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                    <button onClick={() => { setIsNewCanal(false); setEditingCanal(canal); }} className="p-1.5 rounded hover:bg-accent">
+                    <button onClick={() => quickToggleCanal(canal)} className="p-1.5 rounded hover:bg-accent" title={canal.activo ? "Desactivar" : "Activar"}>
+                      {canal.activo ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
+                    </button>
+                    <button onClick={() => openEditCanal(canal)} className="p-1.5 rounded hover:bg-accent">
                       <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                     </button>
                     <button onClick={() => removeCanal(canal.id)} className="p-1.5 rounded hover:bg-destructive/10">
@@ -482,76 +1523,134 @@ function CanalesTab({ readonly }: { readonly: boolean }) {
         </div>
       </div>
 
-      {/* Separator */}
-      <div className="border-t border-border" />
-
-      {/* Proveedores / Troncales */}
-      <div className="space-y-3">
-        <button
-          className="flex items-center justify-between w-full group"
-          onClick={() => setShowTroncales(v => !v)}
-        >
-          <div>
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-              Proveedores de conexión
-            </p>
-            <p className="text-[10px] text-muted-foreground text-left">{troncales.length} proveedores · credenciales y webhooks</p>
-          </div>
-          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showTroncales ? "rotate-180" : ""}`} />
-        </button>
-
-        {showTroncales && (
-          <div className="space-y-3">
-            {!readonly && (
-              <div className="flex justify-end">
-                <Button size="sm" variant="outline" className="gap-1.5 h-8" onClick={() => { setIsNewTroncal(true); setEditingTroncal({ activo: true, tipo: "whatsapp", proveedor: "gupshup" }); }}>
-                  <Plus className="w-3.5 h-3.5" />Nuevo proveedor
-                </Button>
-              </div>
-            )}
-            <div className="space-y-2">
-              {troncales.map(t => (
-                <div key={t.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 group">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Phone className="w-3.5 h-3.5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{t.nombre}</p>
-                    <p className="text-[10px] text-muted-foreground">{t.proveedor} · {t.tipo}{t.numero ? ` · ${t.numero}` : ""}</p>
-                  </div>
-                  <Badge variant={t.activo ? "default" : "secondary"} className="text-[10px] shrink-0">
-                    {t.activo ? "Activo" : "Inactivo"}
-                  </Badge>
-                  {!readonly && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                      <button onClick={() => { setIsNewTroncal(false); setEditingTroncal(t); }} className="p-1.5 rounded hover:bg-accent">
-                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
-                      <button onClick={() => removeTroncal(t.id)} className="p-1.5 rounded hover:bg-destructive/10">
-                        <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {troncales.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-4">No hay proveedores configurados</p>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
 
 // ─── COLAS TAB ───────────────────────────────────────────────────────────────
 
+const ESTRATEGIA_LABELS: Record<string, string> = {
+  round_robin:        "Round Robin",
+  menos_carga:        "Menor carga",
+  prioridad_usuario:  "Prioridad por usuario",
+  ultimo_asesor:      "Last user / Último asesor",
+  owner_asignado:     "Owner asignado",
+  manual_supervisor:  "Manual por supervisor",
+  bot_primero:        "Bot / Agente IA antes de asesor",
+};
+
+const DESBORDE_CONDICIONES = [
+  { value: "sin_asesores",     label: "Cola sin asesores disponibles" },
+  { value: "tiempo_espera",    label: "Tiempo máximo de espera superado" },
+  { value: "capacidad_maxima", label: "Capacidad máxima alcanzada" },
+  { value: "fuera_horario",    label: "Fuera de horario" },
+  { value: "prioridad_alta",   label: "Prioridad alta" },
+];
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest pb-1.5 border-b border-border/50">
+      {children}
+    </p>
+  );
+}
+
+function UserMenuSelector({
+  colaboradores, selected, onChangeSelected, placeholder, badgeClass,
+}: {
+  colaboradores: Colaborador[];
+  selected: Set<string>;
+  onChangeSelected: (next: Set<string>) => void;
+  placeholder: string;
+  badgeClass: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filtered = colaboradores.filter(c =>
+    c.nombre.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const toggle = (id: string, checked: boolean) => {
+    const n = new Set(selected);
+    checked ? n.add(id) : n.delete(id);
+    onChangeSelected(n);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className="w-full flex items-start justify-between border border-border rounded-lg px-3 py-2 text-sm bg-background hover:bg-accent/20 text-left min-h-[38px]"
+      >
+        <span className="flex flex-wrap gap-1 flex-1 mr-2">
+          {selected.size === 0
+            ? <span className="text-muted-foreground/60 text-xs self-center">{placeholder}</span>
+            : [...selected].map(id => {
+                const col = colaboradores.find(c => c.id === id);
+                return col ? (
+                  <span key={id} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border ${badgeClass}`}>
+                    {col.nombre}
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); toggle(id, false); }}
+                      className="leading-none hover:opacity-60"
+                    >×</button>
+                  </span>
+                ) : null;
+              })
+          }
+        </span>
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+      </button>
+      {open && (
+        <div className="absolute z-20 top-full left-0 right-0 mt-1 border border-border rounded-lg bg-background shadow-lg">
+          <div className="p-2 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+              <input
+                autoFocus
+                className="w-full pl-6 pr-2 py-1 text-xs border border-border rounded bg-muted focus:outline-none"
+                placeholder="Buscar..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto max-h-48">
+            {filtered.map(col => (
+              <label key={col.id} className="flex items-center gap-2 px-3 py-2 hover:bg-accent/30 cursor-pointer text-xs">
+                <input
+                  type="checkbox"
+                  checked={selected.has(col.id)}
+                  onChange={e => toggle(col.id, e.target.checked)}
+                />
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                  style={{ backgroundColor: col.color }}
+                >
+                  {col.nombre.slice(0, 2).toUpperCase()}
+                </span>
+                <span className="flex-1 truncate">{col.nombre}</span>
+              </label>
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-3">Sin resultados</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ColasTab({ readonly }: { readonly: boolean }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<Partial<Cola> | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const [draftAgentes, setDraftAgentes] = useState<Set<string>>(new Set());
+  const [draftSupervisores, setDraftSupervisores] = useState<Set<string>>(new Set());
 
   const { data: colas = [], isLoading } = useQuery<Cola[]>({
     queryKey: ["lat_colas"],
@@ -564,32 +1663,217 @@ function ColasTab({ readonly }: { readonly: boolean }) {
   const { data: canales = [] } = useQuery<Canal[]>({
     queryKey: ["lat_canales"],
     queryFn: async () => {
-      const { data } = await db().from("lat_canales").select("id, nombre, tipo").order("nombre");
+      const { data } = await db().from("lat_canales").select("id, nombre, tipo, activo").order("nombre");
       return data || [];
     },
   });
 
+  const { data: horarios = [] } = useQuery<{ id: string; nombre: string }[]>({
+    queryKey: ["lat_horarios_names"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_horarios").select("id, nombre").order("nombre");
+      return data || [];
+    },
+  });
+
+  const { data: colaboradores = [] } = useQuery<Colaborador[]>({
+    queryKey: ["lat_colaboradores"],
+    queryFn: async () => {
+      const { data } = await db().from("colaboradores").select("id, nombre, color, activo").eq("activo", true).order("nombre");
+      return data || [];
+    },
+  });
+
+  const { data: miembros = [] } = useQuery<ColaMiembro[]>({
+    queryKey: ["lat_cola_miembros"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_cola_miembros").select("*, colaboradores(id, nombre, color)");
+      return (data || []) as ColaMiembro[];
+    },
+  });
+
+  const { data: convActivas = [] } = useQuery<{ cola_id: string; estado: string }[]>({
+    queryKey: ["lat_conv_indicadores"],
+    queryFn: async () => {
+      const { data } = await db().from("lat_conversaciones")
+        .select("cola_id, estado")
+        .in("estado", ["en_cola", "en_atencion"])
+        .not("cola_id", "is", null);
+      return (data || []) as { cola_id: string; estado: string }[];
+    },
+    refetchInterval: 30000,
+  });
+
+  const miembrosByCola = useMemo<Record<string, ColaMiembro[]>>(() => {
+    const map: Record<string, ColaMiembro[]> = {};
+    for (const m of miembros) {
+      if (!map[m.cola_id]) map[m.cola_id] = [];
+      map[m.cola_id].push(m);
+    }
+    return map;
+  }, [miembros]);
+
+  const indicadoresByCola = useMemo<Record<string, ColaIndicador>>(() => {
+    const map: Record<string, ColaIndicador> = {};
+    for (const c of convActivas) {
+      if (!c.cola_id) continue;
+      if (!map[c.cola_id]) map[c.cola_id] = { cola_id: c.cola_id, en_cola: 0, en_atencion: 0 };
+      if (c.estado === "en_cola") map[c.cola_id].en_cola++;
+      else if (c.estado === "en_atencion") map[c.cola_id].en_atencion++;
+    }
+    return map;
+  }, [convActivas]);
+
+  const canalesById = useMemo(() => Object.fromEntries(canales.map(c => [c.id, c])), [canales]);
+  const horariosById = useMemo(() => Object.fromEntries(horarios.map(h => [h.id, h])), [horarios]);
+
+  const openEdit = (cola?: Cola) => {
+    if (cola) {
+      setIsNew(false);
+      setEditing(cola);
+      const existing = miembrosByCola[cola.id] || [];
+      setDraftAgentes(new Set(existing.filter(m => m.rol === "agente").map(m => m.colaborador_id)));
+      setDraftSupervisores(new Set(existing.filter(m => m.rol === "supervisor").map(m => m.colaborador_id)));
+    } else {
+      setIsNew(true);
+      setEditing({
+        activa: true, estrategia_asignacion: "round_robin", max_conversaciones_agente: 5, color: "#6366f1",
+        tiempo_reserva_comunicacion: 0, tiempo_reserva_mensajes: 0, tiempo_redistribucion: 0,
+        redistribuir_ausentes: false, auto_tipificacion_ausentes: false,
+        desborde_activo: false, desborde_cola_id: null, desborde_tiempo_espera: 5,
+        desborde_condiciones: [], desborde_registrar: true,
+        owner_auto_asignar: false, owner_nivel: "por_conversacion",
+        owner_last_user_activo: false, owner_last_user_dias: 30,
+        supervisor_puede_intervenir: true, supervisor_puede_transferir: true,
+        permite_reasignacion_manual: true, owner_registrar_trazabilidad: true,
+      });
+      setDraftAgentes(new Set());
+      setDraftSupervisores(new Set());
+    }
+  };
+
   const save = async () => {
-    if (!editing || !editing.nombre?.trim()) return;
+    if (!editing) return;
+
+    // ── Validaciones ────────────────────────────────────────────────────────
+    if (!editing.nombre?.trim()) {
+      toast.error("El nombre de la cola es obligatorio");
+      return;
+    }
+    const maxConv = editing.max_conversaciones_agente ?? 0;
+    if (!Number.isInteger(maxConv) || maxConv < 1) {
+      toast.error("La capacidad máxima por usuario debe ser un número entero mayor a cero");
+      return;
+    }
+    const tiempos = [
+      { campo: "Reserva de comunicación", valor: editing.tiempo_reserva_comunicacion },
+      { campo: "Reserva de mensajes", valor: editing.tiempo_reserva_mensajes },
+      { campo: "Tiempo de redistribución", valor: editing.tiempo_redistribucion },
+    ];
+    for (const t of tiempos) {
+      if (t.valor !== undefined && t.valor !== null && (!Number.isInteger(t.valor) || t.valor < 0)) {
+        toast.error(`${t.campo}: debe ser un número entero en minutos (≥ 0)`);
+        return;
+      }
+    }
+    if (editing.desborde_activo) {
+      if (!editing.desborde_cola_id) {
+        toast.error("Desborde activo: debe seleccionar una cola destino");
+        return;
+      }
+      if (editing.desborde_cola_id === editing.id) {
+        toast.error("La cola de desborde no puede ser la misma cola");
+        return;
+      }
+      const tiempoDesborde = editing.desborde_tiempo_espera ?? 0;
+      if (!Number.isInteger(tiempoDesborde) || tiempoDesborde < 1) {
+        toast.error("El tiempo de espera antes de desborde debe ser mayor a cero");
+        return;
+      }
+    }
+    const tieneBotDestino = editing.estrategia_asignacion === "bot_primero";
+    if (editing.activa && draftAgentes.size === 0 && !tieneBotDestino) {
+      toast.error("No se puede activar la cola sin usuarios asignados (a menos que use Bot / Agente IA como estrategia)");
+      return;
+    }
+    const canalConectadosIds = new Set(
+      canales.filter(c => c.estado === "conectado" || (!c.estado && c.activo)).map(c => c.id)
+    );
+    if (editing.canal_id && !canalConectadosIds.has(editing.canal_id)) {
+      toast.error("El canal entrante seleccionado no está conectado");
+      return;
+    }
+    if (editing.canal_saliente_id && !canalConectadosIds.has(editing.canal_saliente_id)) {
+      toast.error("El canal saliente seleccionado no está conectado");
+      return;
+    }
+    if (editing.owner_last_user_activo) {
+      const dias = editing.owner_last_user_dias ?? 0;
+      if (!Number.isInteger(dias) || dias < 1) {
+        toast.error("Los días de vigencia del last user deben ser un número entero mayor a cero");
+        return;
+      }
+    }
+    // ── Payload ─────────────────────────────────────────────────────────────
     const payload = {
       nombre: editing.nombre,
       descripcion: editing.descripcion || null,
       area: editing.area || null,
       canal_id: editing.canal_id || null,
+      canal_saliente_id: editing.canal_saliente_id || null,
+      horario_id: editing.horario_id || null,
       estrategia_asignacion: editing.estrategia_asignacion || "round_robin",
-      max_conversaciones_agente: editing.max_conversaciones_agente || 5,
+      max_conversaciones_agente: maxConv,
       activa: editing.activa ?? true,
       color: editing.color || "#6366f1",
       icono: editing.icono || null,
+      tiempo_reserva_comunicacion: editing.tiempo_reserva_comunicacion ?? 0,
+      tiempo_reserva_mensajes: editing.tiempo_reserva_mensajes ?? 0,
+      tiempo_redistribucion: editing.tiempo_redistribucion ?? 0,
+      redistribuir_ausentes: editing.redistribuir_ausentes ?? false,
+      auto_tipificacion_ausentes: editing.auto_tipificacion_ausentes ?? false,
+      desborde_activo: editing.desborde_activo ?? false,
+      desborde_cola_id: editing.desborde_activo ? (editing.desborde_cola_id || null) : null,
+      desborde_tiempo_espera: editing.desborde_tiempo_espera ?? 5,
+      desborde_condiciones: editing.desborde_condiciones ?? [],
+      desborde_registrar: editing.desborde_registrar ?? true,
+      owner_auto_asignar: editing.owner_auto_asignar ?? false,
+      owner_nivel: editing.owner_nivel ?? "por_conversacion",
+      owner_last_user_activo: editing.owner_last_user_activo ?? false,
+      owner_last_user_dias: editing.owner_last_user_activo ? (editing.owner_last_user_dias ?? 30) : 30,
+      supervisor_puede_intervenir: editing.supervisor_puede_intervenir ?? true,
+      supervisor_puede_transferir: editing.supervisor_puede_transferir ?? true,
+      permite_reasignacion_manual: editing.permite_reasignacion_manual ?? true,
+      owner_registrar_trazabilidad: editing.owner_registrar_trazabilidad ?? true,
+      // Phase 1: arrays de canales permitidos (derivados de los FKs mientras la UI no los exponga directamente)
+      canales_entrantes_ids: editing.canal_id
+        ? [editing.canal_id]
+        : (editing.canales_entrantes_ids ?? []),
+      canales_salientes_ids: editing.canal_saliente_id
+        ? [editing.canal_saliente_id]
+        : (editing.canales_salientes_ids ?? []),
     };
+    let colaId = editing.id;
     if (isNew) {
-      await db().from("lat_colas").insert({ ...payload, orden: colas.length + 1 });
+      const { data, error } = await db().from("lat_colas").insert({ ...payload, orden: colas.length + 1 }).select("id").single();
+      if (error) { toast.error("Error al crear la cola: " + error.message); return; }
+      colaId = data?.id;
       toast.success("Cola creada");
     } else {
-      await db().from("lat_colas").update(payload).eq("id", editing.id);
+      const { error } = await db().from("lat_colas").update(payload).eq("id", colaId);
+      if (error) { toast.error("Error al guardar: " + error.message); return; }
       toast.success("Cola actualizada");
     }
+    if (colaId) {
+      await db().from("lat_cola_miembros").delete().eq("cola_id", colaId);
+      const members = [
+        ...[...draftAgentes].map(id => ({ cola_id: colaId!, colaborador_id: id, rol: "agente" as const })),
+        ...[...draftSupervisores].map(id => ({ cola_id: colaId!, colaborador_id: id, rol: "supervisor" as const })),
+      ];
+      if (members.length > 0) await db().from("lat_cola_miembros").insert(members);
+    }
     qc.invalidateQueries({ queryKey: ["lat_colas"] });
+    qc.invalidateQueries({ queryKey: ["lat_cola_miembros"] });
     setEditing(null);
   };
 
@@ -602,97 +1886,304 @@ function ColasTab({ readonly }: { readonly: boolean }) {
     await db().from("lat_colas").delete().eq("id", id);
     toast.success("Cola eliminada");
     qc.invalidateQueries({ queryKey: ["lat_colas"] });
+    qc.invalidateQueries({ queryKey: ["lat_cola_miembros"] });
   };
 
   if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
 
+  // ── FORM ──────────────────────────────────────────────────────────────────
   if (editing) {
+    const inp = "w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30";
     return (
-      <div className="p-6 max-w-lg space-y-4">
-        <h3 className="font-semibold text-sm">{isNew ? "Nueva cola" : "Editar cola"}</h3>
+      <div className="p-6 space-y-6 max-w-3xl overflow-y-auto">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setEditing(null)} className="p-1.5 rounded hover:bg-accent transition-colors">
+            <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <h3 className="font-semibold text-sm">{isNew ? "Nueva cola" : `Editar: ${editing.nombre}`}</h3>
+        </div>
+
+        {/* ── Datos básicos */}
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-            <input
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              value={editing.nombre || ""}
-              onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))}
-            />
-          </div>
+          <SectionTitle>Datos básicos</SectionTitle>
           <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
+              <input className={inp} value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
+            </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Área</label>
-              <input
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                value={editing.area || ""}
-                onChange={e => setEditing(p => ({ ...p, area: e.target.value }))}
-              />
+              <input className={inp} value={editing.area || ""} onChange={e => setEditing(p => ({ ...p, area: e.target.value }))} />
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Color</label>
               <div className="flex gap-2">
-                <input
-                  type="color"
-                  className="w-10 h-9 border border-border rounded-lg cursor-pointer"
-                  value={editing.color || "#6366f1"}
-                  onChange={e => setEditing(p => ({ ...p, color: e.target.value }))}
-                />
-                <input
-                  className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                  value={editing.color || "#6366f1"}
-                  onChange={e => setEditing(p => ({ ...p, color: e.target.value }))}
-                />
+                <input type="color" className="w-10 h-9 border border-border rounded-lg cursor-pointer"
+                  value={editing.color || "#6366f1"} onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
+                <input className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
+                  value={editing.color || "#6366f1"} onChange={e => setEditing(p => ({ ...p, color: e.target.value }))} />
               </div>
             </div>
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
+              <textarea rows={2} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
+                value={editing.descripcion || ""} onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))} />
+            </div>
           </div>
+        </div>
+
+        {/* ── Canales */}
+        <div className="space-y-3">
+          <SectionTitle>Canales</SectionTitle>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Estrategia</label>
-              <select
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.estrategia_asignacion || "round_robin"}
-                onChange={e => setEditing(p => ({ ...p, estrategia_asignacion: e.target.value }))}
-              >
-                <option value="round_robin">Round Robin</option>
-                <option value="menos_carga">Menos Carga</option>
-                <option value="primero_disponible">Primer Disponible</option>
-                <option value="manual">Manual</option>
+              <label className="text-xs text-muted-foreground mb-1 block">Canal entrante</label>
+              <select className={inp} value={editing.canal_id || ""}
+                onChange={e => setEditing(p => ({ ...p, canal_id: e.target.value || null }))}>
+                <option value="">Sin canal</option>
+                {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Máx. conv/agente</label>
-              <input
-                type="number" min={1} max={50}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.max_conversaciones_agente || 5}
-                onChange={e => setEditing(p => ({ ...p, max_conversaciones_agente: parseInt(e.target.value) || 5 }))}
-              />
+              <label className="text-xs text-muted-foreground mb-1 block">Canal saliente</label>
+              <select className={inp} value={editing.canal_saliente_id || ""}
+                onChange={e => setEditing(p => ({ ...p, canal_saliente_id: e.target.value || null }))}>
+                <option value="">Sin canal</option>
+                {canales.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
             </div>
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Canal</label>
-            <select
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.canal_id || ""}
-              onChange={e => setEditing(p => ({ ...p, canal_id: e.target.value || null }))}
-            >
-              <option value="">Sin canal</option>
-              {canales.map(c => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
-              ))}
-            </select>
+        </div>
+
+        {/* ── Usuarios asignados */}
+        <div className="space-y-3">
+          <SectionTitle>Usuarios asignados</SectionTitle>
+          <UserMenuSelector
+            colaboradores={colaboradores}
+            selected={draftAgentes}
+            onChangeSelected={setDraftAgentes}
+            placeholder="Seleccionar agentes..."
+            badgeClass="bg-primary/10 text-primary border-primary/20"
+          />
+        </div>
+
+        {/* ── Supervisores */}
+        <div className="space-y-3">
+          <SectionTitle>Supervisores</SectionTitle>
+          <UserMenuSelector
+            colaboradores={colaboradores}
+            selected={draftSupervisores}
+            onChangeSelected={setDraftSupervisores}
+            placeholder="Seleccionar supervisores..."
+            badgeClass="bg-amber-50 text-amber-700 border-amber-200"
+          />
+        </div>
+
+        {/* ── Horario */}
+        <div className="space-y-3">
+          <SectionTitle>Horario</SectionTitle>
+          <select className={inp} value={editing.horario_id || ""}
+            onChange={e => setEditing(p => ({ ...p, horario_id: e.target.value || null }))}>
+            <option value="">Sin horario</option>
+            {horarios.map(h => <option key={h.id} value={h.id}>{h.nombre}</option>)}
+          </select>
+        </div>
+
+        {/* ── Estrategia de asignación */}
+        <div className="space-y-3">
+          <SectionTitle>Estrategia de asignación</SectionTitle>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs text-muted-foreground mb-1 block">Estrategia</label>
+              <select className={inp} value={editing.estrategia_asignacion || "round_robin"}
+                onChange={e => setEditing(p => ({ ...p, estrategia_asignacion: e.target.value }))}>
+                {Object.entries(ESTRATEGIA_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Máx. conv por usuario</label>
+              <input type="number" min={1} max={50} className={inp}
+                value={editing.max_conversaciones_agente || 5}
+                onChange={e => setEditing(p => ({ ...p, max_conversaciones_agente: parseInt(e.target.value) || 5 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Reserva de comunicación (min)</label>
+              <input type="number" min={0} className={inp}
+                value={editing.tiempo_reserva_comunicacion ?? 0}
+                onChange={e => setEditing(p => ({ ...p, tiempo_reserva_comunicacion: parseInt(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Reserva de mensajes (min)</label>
+              <input type="number" min={0} className={inp}
+                value={editing.tiempo_reserva_mensajes ?? 0}
+                onChange={e => setEditing(p => ({ ...p, tiempo_reserva_mensajes: parseInt(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Redistribución si ausente (min)</label>
+              <input type="number" min={0} className={inp}
+                value={editing.tiempo_redistribucion ?? 0}
+                onChange={e => setEditing(p => ({ ...p, tiempo_redistribucion: parseInt(e.target.value) || 0 }))} />
+            </div>
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Descripción</label>
-            <textarea
-              rows={2}
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none resize-none"
-              value={editing.descripcion || ""}
-              onChange={e => setEditing(p => ({ ...p, descripcion: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={editing.redistribuir_ausentes ?? false}
+                onChange={e => setEditing(p => ({ ...p, redistribuir_ausentes: e.target.checked }))} />
+              <span className="text-xs leading-relaxed">
+                <span className="font-medium block">Redistribuir ausentes</span>
+                <span className="text-muted-foreground">Reasignar conv. de usuarios ausentes automáticamente</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={editing.auto_tipificacion_ausentes ?? false}
+                onChange={e => setEditing(p => ({ ...p, auto_tipificacion_ausentes: e.target.checked }))} />
+              <span className="text-xs leading-relaxed">
+                <span className="font-medium block">Notificación por ausencia</span>
+                <span className="text-muted-foreground">Notificar / auto-tipificar cuando llegue mensaje a usuario ausente</span>
+              </span>
+            </label>
           </div>
         </div>
-        <div className="flex gap-2">
+
+        {/* ── Desborde */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <SectionTitle>Desborde</SectionTitle>
+            <label className="flex items-center gap-2 cursor-pointer ml-2 pb-1.5">
+              <input type="checkbox" checked={editing.desborde_activo ?? false}
+                onChange={e => setEditing(p => ({ ...p, desborde_activo: e.target.checked }))} />
+              <span className={`text-xs font-medium ${editing.desborde_activo ? "text-orange-600" : "text-muted-foreground"}`}>
+                {editing.desborde_activo ? "Activo" : "Inactivo"}
+              </span>
+            </label>
+          </div>
+          {editing.desborde_activo && (
+            <div className="space-y-3 pl-3 border-l-2 border-orange-300/60">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Cola destino de desborde</label>
+                  <select className={inp} value={editing.desborde_cola_id || ""}
+                    onChange={e => setEditing(p => ({ ...p, desborde_cola_id: e.target.value || null }))}>
+                    <option value="">Sin cola destino</option>
+                    {colas.filter(c => c.id !== editing.id).map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Tiempo de espera antes de desborde (min)</label>
+                  <input type="number" min={1} className={inp}
+                    value={editing.desborde_tiempo_espera ?? 5}
+                    onChange={e => setEditing(p => ({ ...p, desborde_tiempo_espera: parseInt(e.target.value) || 5 }))} />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Condiciones que activan el desborde</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {DESBORDE_CONDICIONES.map(cond => (
+                    <label key={cond.value} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer text-xs">
+                      <input type="checkbox"
+                        checked={(editing.desborde_condiciones ?? []).includes(cond.value)}
+                        onChange={e => setEditing(p => {
+                          const curr = p.desborde_condiciones ?? [];
+                          return { ...p, desborde_condiciones: e.target.checked ? [...curr, cond.value] : curr.filter(v => v !== cond.value) };
+                        })} />
+                      {cond.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs">
+                <input type="checkbox" checked={editing.desborde_registrar ?? true}
+                  onChange={e => setEditing(p => ({ ...p, desborde_registrar: e.target.checked }))} />
+                <span>Registrar en la comunicación si fue desbordada y desde qué cola</span>
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* ── Owner e intervención */}
+        <div className="space-y-3">
+          <SectionTitle>Owner e intervención</SectionTitle>
+
+          {/* Asignación automática de owner */}
+          <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+            <input type="checkbox" className="mt-0.5" checked={editing.owner_auto_asignar ?? false}
+              onChange={e => setEditing(p => ({ ...p, owner_auto_asignar: e.target.checked }))} />
+            <span className="text-xs leading-relaxed">
+              <span className="font-medium block">Asignación automática de owner</span>
+              <span className="text-muted-foreground">El primer asesor que atiende la comunicación queda como owner</span>
+            </span>
+          </label>
+
+          {/* Nivel de owner */}
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Mantener owner por</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["por_conversacion", "por_cliente"] as const).map(nivel => (
+                <label key={nivel} className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer text-xs transition-colors ${
+                  (editing.owner_nivel ?? "por_conversacion") === nivel
+                    ? "border-primary/40 bg-primary/5"
+                    : "border-border hover:bg-accent/20"
+                }`}>
+                  <input type="radio" name="owner_nivel" className="mt-0.5"
+                    checked={(editing.owner_nivel ?? "por_conversacion") === nivel}
+                    onChange={() => setEditing(p => ({ ...p, owner_nivel: nivel }))} />
+                  <span>
+                    <span className="font-medium block">{nivel === "por_conversacion" ? "Por conversación" : "Por cliente"}</span>
+                    <span className="text-muted-foreground">
+                      {nivel === "por_conversacion"
+                        ? "Cada conversación puede tener un owner distinto"
+                        : "El owner del cliente se mantiene en todas sus conversaciones"}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Last user */}
+          <div className="space-y-2">
+            <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={editing.owner_last_user_activo ?? false}
+                onChange={e => setEditing(p => ({ ...p, owner_last_user_activo: e.target.checked }))} />
+              <span className="text-xs leading-relaxed">
+                <span className="font-medium block">Regla de last user</span>
+                <span className="text-muted-foreground">Asignar automáticamente al último asesor que atendió al cliente</span>
+              </span>
+            </label>
+            {editing.owner_last_user_activo && (
+              <div className="pl-3 border-l-2 border-primary/30">
+                <label className="text-xs text-muted-foreground mb-1 block">Vigencia del last user (días)</label>
+                <input type="number" min={1} className={inp}
+                  value={editing.owner_last_user_dias ?? 30}
+                  onChange={e => setEditing(p => ({ ...p, owner_last_user_dias: parseInt(e.target.value) || 30 }))} />
+              </div>
+            )}
+          </div>
+
+          {/* Intervención y reasignación */}
+          <div className="grid grid-cols-1 gap-2">
+            {([
+              { key: "supervisor_puede_intervenir",  label: "Permitir intervención de supervisor",   desc: "El supervisor puede unirse o tomar el control de una conversación activa" },
+              { key: "supervisor_puede_transferir",  label: "Permitir transferencia entre asesores", desc: "Los asesores pueden transferir conversaciones a otro asesor de la cola" },
+              { key: "permite_reasignacion_manual",  label: "Permitir reasignación manual",          desc: "Un supervisor o administrador puede cambiar el asesor asignado manualmente" },
+              { key: "owner_registrar_trazabilidad", label: "Registrar trazabilidad de owner",       desc: "Guarda owner original, owner actual y usuario que intervino o reasignó" },
+            ] as const).map(({ key, label, desc }) => (
+              <label key={key} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border hover:bg-accent/20 cursor-pointer">
+                <input type="checkbox" className="mt-0.5"
+                  checked={(editing as any)[key] ?? true}
+                  onChange={e => setEditing(p => ({ ...p, [key]: e.target.checked }))} />
+                <span className="text-xs leading-relaxed">
+                  <span className="font-medium block">{label}</span>
+                  <span className="text-muted-foreground">{desc}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-1">
           <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
           <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
         </div>
@@ -700,282 +2191,151 @@ function ColasTab({ readonly }: { readonly: boolean }) {
     );
   }
 
+  // ── LIST ──────────────────────────────────────────────────────────────────
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">{colas.length} colas configuradas</p>
         {!readonly && (
-          <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNew(true); setEditing({ activa: true, estrategia_asignacion: "round_robin", max_conversaciones_agente: 5, color: "#6366f1" }); }}>
+          <Button size="sm" className="gap-1.5 h-8" onClick={() => openEdit()}>
             <Plus className="w-3.5 h-3.5" />Nueva cola
           </Button>
         )}
       </div>
-      <div className="space-y-2">
-        {colas.map(cola => (
-          <div key={cola.id} className="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-card hover:bg-accent/30 transition-colors group">
-            <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />
-            <div className="flex-1 min-w-0">
-              {cola.area && <span className="text-[10px] text-muted-foreground">{cola.area}</span>}
-            </div>
-            <Badge variant="outline" className="text-[10px] hidden sm:inline-flex shrink-0">
-              {cola.estrategia_asignacion.replace("_", " ")}
-            </Badge>
-            <span className="text-[10px] text-muted-foreground shrink-0">máx {cola.max_conversaciones_agente}</span>
-            {!readonly && (
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => toggle(cola)}
-                  className="p-1.5 rounded hover:bg-accent transition-colors"
-                  title={cola.activa ? "Desactivar" : "Activar"}
-                >
-                  {cola.activa
-                    ? <ToggleRight className="w-4 h-4 text-emerald-500" />
-                    : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
-                </button>
-                <button onClick={() => { setIsNew(false); setEditing(cola); }} className="p-1.5 rounded hover:bg-accent transition-colors">
-                  <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
-                <button onClick={() => remove(cola.id)} className="p-1.5 rounded hover:bg-destructive/10 transition-colors">
-                  <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
-                </button>
-              </div>
-            )}
-            {!cola.activa && <Badge variant="secondary" className="text-[10px] shrink-0">Inactiva</Badge>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── REGLAS TAB ───────────────────────────────────────────────────────────────
-
-const CAMPOS = [
-  { value: "mensaje_inicial", label: "Mensaje inicial" },
-  { value: "canal_tipo", label: "Canal tipo" },
-  { value: "hora_ingreso", label: "Hora de ingreso" },
-  { value: "cliente_area", label: "Área del cliente" },
-];
-
-const OPERADORES = [
-  { value: "contiene", label: "contiene" },
-  { value: "no_contiene", label: "no contiene" },
-  { value: "es", label: "es igual a" },
-  { value: "empieza_con", label: "empieza con" },
-];
-
-function ReglasTab({ readonly }: { readonly: boolean }) {
-  const qc = useQueryClient();
-  const [editing, setEditing] = useState<Partial<Regla> | null>(null);
-  const [isNew, setIsNew] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  const { data: reglas = [], isLoading } = useQuery<Regla[]>({
-    queryKey: ["lat_reglas"],
-    queryFn: async () => {
-      const { data } = await db().from("lat_reglas_asignacion").select("*").order("prioridad");
-      return (data || []).map((r: any) => ({
-        ...r,
-        condiciones: Array.isArray(r.condiciones) ? r.condiciones : [],
-        accion: typeof r.accion === "object" ? r.accion : {},
-      }));
-    },
-  });
-
-  const { data: colas = [] } = useQuery<Cola[]>({
-    queryKey: ["lat_colas"],
-    queryFn: async () => {
-      const { data } = await db().from("lat_colas").select("id, nombre, color, icono").order("orden");
-      return data || [];
-    },
-  });
-
-  const save = async () => {
-    if (!editing || !editing.nombre?.trim()) return;
-    const payload = {
-      nombre: editing.nombre,
-      descripcion: editing.descripcion || null,
-      activa: editing.activa ?? true,
-      prioridad: editing.prioridad ?? 50,
-      condiciones: editing.condiciones || [],
-      accion: editing.accion || { tipo: "asignar_cola", cola_nombre: "" },
-    };
-    if (isNew) {
-      await db().from("lat_reglas_asignacion").insert(payload);
-      toast.success("Regla creada");
-    } else {
-      await db().from("lat_reglas_asignacion").update(payload).eq("id", editing.id);
-      toast.success("Regla actualizada");
-    }
-    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
-    setEditing(null);
-  };
-
-  const remove = async (id: string) => {
-    await db().from("lat_reglas_asignacion").delete().eq("id", id);
-    toast.success("Regla eliminada");
-    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
-  };
-
-  const toggle = async (r: Regla) => {
-    await db().from("lat_reglas_asignacion").update({ activa: !r.activa }).eq("id", r.id);
-    qc.invalidateQueries({ queryKey: ["lat_reglas"] });
-  };
-
-  const addCondicion = () => {
-    setEditing(p => ({
-      ...p,
-      condiciones: [...(p?.condiciones || []), { campo: "mensaje_inicial", operador: "contiene", valor: "" }]
-    }));
-  };
-
-  const removeCondicion = (idx: number) => {
-    setEditing(p => ({
-      ...p,
-      condiciones: (p?.condiciones || []).filter((_, i) => i !== idx)
-    }));
-  };
-
-  const updateCondicion = (idx: number, key: keyof Condicion, val: string) => {
-    setEditing(p => ({
-      ...p,
-      condiciones: (p?.condiciones || []).map((c, i) => i === idx ? { ...c, [key]: val } : c)
-    }));
-  };
-
-  if (isLoading) return <div className="p-6 text-sm text-muted-foreground">Cargando...</div>;
-
-  if (editing) {
-    return (
-      <div className="p-6 max-w-2xl space-y-4">
-        <h3 className="font-semibold text-sm">{isNew ? "Nueva regla" : "Editar regla"}</h3>
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
-              <label className="text-xs text-muted-foreground mb-1 block">Nombre *</label>
-              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                value={editing.nombre || ""} onChange={e => setEditing(p => ({ ...p, nombre: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Prioridad (menor = antes)</label>
-              <input type="number" min={1} className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-                value={editing.prioridad ?? 50} onChange={e => setEditing(p => ({ ...p, prioridad: parseInt(e.target.value) || 50 }))} />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium">Condiciones <span className="text-muted-foreground font-normal">(todas deben cumplirse)</span></label>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={addCondicion}>
-                <Plus className="w-3 h-3" />Agregar
-              </Button>
-            </div>
-            {(editing.condiciones || []).length === 0 && (
-              <div className="text-xs text-muted-foreground p-3 rounded-lg border border-dashed border-border text-center">
-                Sin condiciones — la regla se aplica a todas las conversaciones (regla por defecto)
-              </div>
-            )}
-            {(editing.condiciones || []).map((cond, idx) => (
-              <div key={idx} className="flex items-center gap-2 mb-2">
-                <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
-                  value={cond.campo} onChange={e => updateCondicion(idx, "campo", e.target.value)}>
-                  {CAMPOS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-                <select className="border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
-                  value={cond.operador} onChange={e => updateCondicion(idx, "operador", e.target.value)}>
-                  {OPERADORES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <input className="flex-1 border border-border rounded-lg px-2 py-1.5 text-xs bg-background focus:outline-none"
-                  placeholder="valor..." value={cond.valor} onChange={e => updateCondicion(idx, "valor", e.target.value)} />
-                <button onClick={() => removeCondicion(idx)} className="p-1 rounded hover:bg-destructive/10">
-                  <X className="w-3.5 h-3.5 text-destructive/70" />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div>
-            <label className="text-xs font-medium mb-2 block">Acción — asignar a cola</label>
-            <select className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-background focus:outline-none"
-              value={editing.accion?.cola_nombre || ""}
-              onChange={e => setEditing(p => ({ ...p, accion: { tipo: "asignar_cola", cola_nombre: e.target.value } }))}>
-              <option value="">Seleccionar cola...</option>
-              {colas.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={save} className="gap-1.5"><Check className="w-3.5 h-3.5" />Guardar</Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-3.5 h-3.5" /></Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{reglas.length} reglas · se evalúan en orden de prioridad</p>
-        {!readonly && (
-          <Button size="sm" className="gap-1.5 h-8" onClick={() => { setIsNew(true); setEditing({ activa: true, prioridad: 50, condiciones: [], accion: { tipo: "asignar_cola", cola_nombre: "" } }); }}>
-            <Plus className="w-3.5 h-3.5" />Nueva regla
-          </Button>
-        )}
-      </div>
-      <div className="space-y-2">
-        {reglas.map(r => {
-          const cola = colas.find(c => c.nombre === r.accion?.cola_nombre);
+      <div className="space-y-3">
+        {colas.map(cola => {
+          const miembrosCola = miembrosByCola[cola.id] || [];
+          const agentes = miembrosCola.filter(m => m.rol === "agente");
+          const supervisores = miembrosCola.filter(m => m.rol === "supervisor");
+          const ind = indicadoresByCola[cola.id];
+          const enCola = ind?.en_cola ?? 0;
+          const enAtencion = ind?.en_atencion ?? 0;
+          const maxCapacidad = cola.max_conversaciones_agente * Math.max(agentes.length, 1);
+          const desborde = enCola > maxCapacidad;
+          const canalEnt = cola.canal_id ? canalesById[cola.canal_id] : null;
+          const canalSal = cola.canal_saliente_id ? canalesById[cola.canal_saliente_id] : null;
+          const horario = cola.horario_id ? horariosById[cola.horario_id] : null;
+          const CanalEntIcon = canalEnt ? (TIPO_ICONS[canalEnt.tipo] || Globe) : null;
+          const CanalSalIcon = canalSal ? (TIPO_ICONS[canalSal.tipo] || Globe) : null;
           return (
-            <div key={r.id} className="rounded-xl border border-border bg-card overflow-hidden">
-              <div
-                className="flex items-center gap-3 p-3.5 hover:bg-accent/20 cursor-pointer"
-                onClick={() => setExpanded(expanded === r.id ? null : r.id)}
-              >
-                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
-                  {r.prioridad}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{r.nombre}</p>
-                  {r.condiciones.length > 0 ? (
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      {r.condiciones.length} condición(es) → {r.accion?.cola_nombre || "?"}
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-muted-foreground">Regla por defecto → {r.accion?.cola_nombre || "?"}</p>
-                  )}
-                </div>
-                {cola && <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />}
-                {!r.activa && <Badge variant="secondary" className="text-[10px]">Inactiva</Badge>}
-                {expanded === r.id ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+            <div key={cola.id} className="rounded-xl border border-border bg-card overflow-hidden">
+              {/* identity + status + actions */}
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
+                <ColaBadge color={cola.color} nombre={cola.nombre} icono={cola.icono} />
+                {cola.area && <span className="text-[10px] text-muted-foreground">{cola.area}</span>}
+                <div className="flex-1" />
+                {desborde && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-600 border border-red-200">
+                    <AlertCircle className="w-3 h-3" />Desborde
+                  </span>
+                )}
+                {!cola.activa && <Badge variant="secondary" className="text-[10px]">Inactiva</Badge>}
+                {!readonly && (
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => toggle(cola)} className="p-1.5 rounded hover:bg-accent transition-colors" title={cola.activa ? "Desactivar" : "Activar"}>
+                      {cola.activa ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
+                    </button>
+                    <button onClick={() => openEdit(cola)} className="p-1.5 rounded hover:bg-accent transition-colors">
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                    <button onClick={() => remove(cola.id)} className="p-1.5 rounded hover:bg-destructive/10 transition-colors">
+                      <Trash2 className="w-3.5 h-3.5 text-destructive/70" />
+                    </button>
+                  </div>
+                )}
               </div>
-              {expanded === r.id && (
-                <div className="border-t border-border px-4 py-3 bg-accent/10 space-y-2">
-                  {r.condiciones.length === 0 && (
-                    <p className="text-xs text-muted-foreground italic">Sin condiciones — se aplica a cualquier conversación</p>
-                  )}
-                  {r.condiciones.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="px-2 py-0.5 rounded bg-muted font-mono">{c.campo}</span>
-                      <span className="text-muted-foreground">{c.operador}</span>
-                      <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-mono">{c.valor}</span>
-                    </div>
-                  ))}
-                  {!readonly && (
-                    <div className="flex gap-2 pt-1">
-                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => toggle(r)}>
-                        {r.activa ? <ToggleRight className="w-3.5 h-3.5 text-emerald-500" /> : <ToggleLeft className="w-3.5 h-3.5 text-muted-foreground" />}
-                        {r.activa ? "Desactivar" : "Activar"}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => { setIsNew(false); setEditing(r); }}>
-                        <Pencil className="w-3.5 h-3.5" />Editar
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => remove(r.id)}>
-                        <Trash2 className="w-3.5 h-3.5" />Eliminar
-                      </Button>
-                    </div>
-                  )}
+              {/* canales + horario */}
+              <div className="flex items-center gap-4 px-4 py-2 border-b border-border/50 text-[11px] text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1">
+                  {CanalEntIcon && <CanalEntIcon className="w-3 h-3" />}
+                  <span className="font-medium text-foreground/70">Entrante:</span>
+                  {canalEnt ? canalEnt.nombre : <span className="italic">sin canal</span>}
+                </span>
+                <span className="text-border">·</span>
+                <span className="flex items-center gap-1">
+                  {CanalSalIcon && <CanalSalIcon className="w-3 h-3" />}
+                  <span className="font-medium text-foreground/70">Saliente:</span>
+                  {canalSal ? canalSal.nombre : <span className="italic">sin canal</span>}
+                </span>
+                {horario && (
+                  <>
+                    <span className="text-border">·</span>
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{horario.nombre}</span>
+                  </>
+                )}
+              </div>
+              {/* config tags */}
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-border/50 flex-wrap">
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary/5 text-primary border border-primary/20">
+                  {ESTRATEGIA_LABELS[cola.estrategia_asignacion] ?? cola.estrategia_asignacion}
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-muted text-muted-foreground border border-border">
+                  Máx {cola.max_conversaciones_agente} conv/agente
+                </span>
+                {cola.owner_auto_asignar && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-violet-500/10 text-violet-600 border border-violet-200">
+                    Owner auto
+                  </span>
+                )}
+                {cola.owner_last_user_activo && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-sky-500/10 text-sky-600 border border-sky-200">
+                    Last user {cola.owner_last_user_dias}d
+                  </span>
+                )}
+                {cola.owner_nivel === "por_cliente" && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-teal-500/10 text-teal-600 border border-teal-200">
+                    Owner por cliente
+                  </span>
+                )}
+                {!cola.supervisor_puede_intervenir && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-500/10 text-red-600 border border-red-200">
+                    Sin intervención
+                  </span>
+                )}
+              </div>
+              {/* people */}
+              <div className="flex items-start gap-4 px-4 py-2 border-b border-border/50 text-[11px] flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-muted-foreground font-medium">Agentes</span>
+                  {agentes.length === 0
+                    ? <span className="italic text-muted-foreground/60">sin asignar</span>
+                    : agentes.map(m => m.colaboradores && (
+                        <span key={m.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-border"
+                          style={{ backgroundColor: m.colaboradores.color + "22", color: m.colaboradores.color }}>
+                          {m.colaboradores.nombre}
+                        </span>
+                      ))
+                  }
                 </div>
-              )}
+                {supervisores.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-muted-foreground font-medium">Supervisores</span>
+                    {supervisores.map(m => m.colaboradores && (
+                      <span key={m.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border border-amber-200 bg-amber-50 text-amber-700">
+                        {m.colaboradores.nombre}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* indicators */}
+              <div className="flex items-center gap-4 px-4 py-2 text-[11px]">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span className="text-muted-foreground">En cola:</span>
+                  <span className="font-medium">{enCola}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="text-muted-foreground">En atención:</span>
+                  <span className="font-medium">{enAtencion}</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3 h-3 text-muted-foreground" />
+                  <span className="text-muted-foreground">Asesores:</span>
+                  <span className="font-medium">{agentes.length}</span>
+                </span>
+              </div>
             </div>
           );
         })}
@@ -1210,7 +2570,6 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "overview",   label: "Vista General", icon: Activity },
   { id: "canales",    label: "Canales",        icon: Globe },
   { id: "colas",      label: "Colas",          icon: Layers },
-  { id: "reglas",     label: "Reglas",         icon: Zap },
   { id: "horarios",   label: "Horarios",       icon: Clock },
   { id: "agentes-ia", label: "Agentes IA",     icon: Bot },
 ];
@@ -1252,7 +2611,6 @@ export function LatOmnicanalConfig({ readonly = false }: Props) {
         {tab === "overview"   && <VistaGeneralTab />}
         {tab === "canales"    && <CanalesTab    readonly={readonly} />}
         {tab === "colas"      && <ColasTab      readonly={readonly} />}
-        {tab === "reglas"     && <ReglasTab     readonly={readonly} />}
         {tab === "horarios"   && <HorariosTab   readonly={readonly} />}
         {tab === "agentes-ia" && <AgentesIATab  readonly={readonly} />}
       </div>

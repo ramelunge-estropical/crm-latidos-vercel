@@ -1,1 +1,0 @@
-ALTER TABLE activities ALTER COLUMN gestion_id DROP NOT NULL;

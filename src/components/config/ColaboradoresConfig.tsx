@@ -12,7 +12,9 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const ROL_CONFIG: Record<string, { label: string; className: string }> = {
+  sadmin:      { label: "Super Admin", className: "bg-rose-500/10 text-rose-600 border-rose-300" },
   admin:       { label: "Admin",       className: "bg-red-500/10 text-red-600 border-red-300" },
+  supervisor:  { label: "Supervisor",  className: "bg-violet-500/10 text-violet-600 border-violet-300" },
   gerente:     { label: "Gerente",     className: "bg-amber-500/10 text-amber-600 border-amber-300" },
   colaborador: { label: "Colaborador", className: "bg-primary/10 text-primary border-primary/30" },
   viewer:      { label: "Viewer",      className: "bg-muted text-muted-foreground border-border" },

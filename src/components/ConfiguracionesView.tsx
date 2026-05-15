@@ -5,7 +5,7 @@ import {
   Settings, Shield, Users,
   MapPin, MessageSquare, BarChart3, Puzzle, Sliders,
   ChevronLeft, ChevronRight, Lock, EyeOff,
-  GitBranch, LayoutGrid, Layers
+  GitBranch, LayoutGrid, Layers, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,8 @@ import { PipelinesConfig }     from "./config/PipelinesConfig";
 import { AreasConfig }         from "./config/AreasConfig";
 import { ColaboradoresConfig } from "./config/ColaboradoresConfig";
 import { LatOmnicanalConfig }  from "./lat/LatOmnicanalConfig";
+import { AgenteIAConfig }      from "./config/AgenteIAConfig";
+import { PermisosConfig }      from "./config/PermisosConfig";
 
 type Section =
   | "gestiones"
@@ -22,15 +24,17 @@ type Section =
   | "colaboradores"
   | "permisos"
   | "lat-omnicanal"
+  | "agentes-ia"
   | null;
 
 const SECTION_PERMS: Record<string, { canView: string[]; canEdit: string[] }> = {
-  gestiones:       { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  pipelines:       { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  areas:           { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  colaboradores:   { canView: ["admin", "gerente"], canEdit: ["admin"] },
-  permisos:        { canView: ["admin"],            canEdit: ["admin"] },
-  "lat-omnicanal": { canView: ["admin", "gerente"], canEdit: ["admin"] },
+  gestiones:       { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  pipelines:       { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  areas:           { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  colaboradores:   { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  permisos:        { canView: ["sadmin", "admin"],            canEdit: ["sadmin", "admin"] },
+  "lat-omnicanal": { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
+  "agentes-ia":    { canView: ["sadmin", "admin", "gerente"], canEdit: ["sadmin", "admin"] },
 };
 
 const CARDS = [
@@ -97,6 +101,13 @@ const CARDS = [
     title: "Integraciones",
     desc: "Conectar con sistemas externos",
   },
+  {
+    id: "agentes-ia" as Section,
+    icon: Sparkles,
+    color: "bg-violet-500/10 text-violet-600",
+    title: "Agentes IA",
+    desc: "Configurar asistente IA, permisos por rol y parámetros del modelo",
+  },
 ];
 
 const SECTION_TITLES: Record<string, string> = {
@@ -106,14 +117,26 @@ const SECTION_TITLES: Record<string, string> = {
   colaboradores:   "Colaboradores",
   permisos:        "Permisos y Accesos",
   "lat-omnicanal": "LAT Omnicanal",
+  "agentes-ia":    "Agentes IA",
 };
 
 const ROL_LABELS: Record<string, string> = {
-  admin: "Admin", gerente: "Gerente", colaborador: "Colaborador", viewer: "Viewer",
+  sadmin: "Super Admin", admin: "Admin", gerente: "Gerente", colaborador: "Colaborador", viewer: "Viewer",
 };
 
 function PermisosInfo() {
   const roles = [
+    {
+      rol: "Super Admin",
+      color: "bg-rose-500/10 text-rose-600",
+      permisos: [
+        "Ve absolutamente todos los chats de la bandeja",
+        "Acceso total a Configuraciones",
+        "Crear/editar/eliminar colaboradores y roles",
+        "Asignaciones y reasignaciones manuales",
+        "Gestionar colas, canales y reglas LAT",
+      ],
+    },
     {
       rol: "Admin",
       color: "bg-red-500/10 text-red-600",
@@ -205,9 +228,10 @@ export function ConfiguracionesView() {
 
   // Wait for query to resolve before gating — avoids false "sin acceso" during load
   const userRol = loadingUser ? null : (currentUser?.rol || "colaborador");
+  const isSadmin = userRol === "sadmin";
 
-  const canView = (sectionId: string) => SECTION_PERMS[sectionId]?.canView.includes(userRol ?? "") ?? false;
-  const canEdit = (sectionId: string) => SECTION_PERMS[sectionId]?.canEdit.includes(userRol ?? "") ?? false;
+  const canView = (_sectionId: string) => isSadmin || SECTION_PERMS[_sectionId]?.canView.includes(userRol ?? "") === true;
+  const canEdit = (_sectionId: string) => isSadmin || SECTION_PERMS[_sectionId]?.canEdit.includes(userRol ?? "") === true;
 
   if (loadingUser || userRol === null) {
     return (
@@ -328,8 +352,9 @@ export function ConfiguracionesView() {
         {active === "pipelines"       && <PipelinesConfig     readonly={!canEdit("pipelines")} />}
         {active === "areas"           && <AreasConfig         readonly={!canEdit("areas")} />}
         {active === "colaboradores"   && <ColaboradoresConfig readonly={!canEdit("colaboradores")} />}
-        {active === "permisos"        && <PermisosInfo />}
+        {active === "permisos"        && <PermisosConfig readonly={!canEdit("permisos")} />}
         {active === "lat-omnicanal"   && <LatOmnicanalConfig  readonly={!canEdit("lat-omnicanal")} />}
+        {active === "agentes-ia"      && <AgenteIAConfig      readonly={!canEdit("agentes-ia")} />}
       </div>
     </div>
   );

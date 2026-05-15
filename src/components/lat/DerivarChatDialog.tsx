@@ -1,18 +1,16 @@
 // ============================================================================
 // DerivarChatDialog
 // ----------------------------------------------------------------------------
-// Derivación inteligente de chats con fallback automático a cola.
+// Derivación manual de conversaciones con validación de disponibilidad.
 //
 // Reglas de negocio:
-//  - Si destino es USUARIO: validar presencia (disponible / ocupado / pausa /
-//    desconectado) y capacidad (chats_abiertos < capacidad_maxima).
-//  - Si el usuario NO es elegible → fallback automático a la cola del área
-//    del usuario (o, si no tiene área, se le pide al usuario elegir cola).
-//  - Si destino es EQUIPO/COLA: la conversación queda visible para el equipo,
-//    sin asignación nominal.
-//  - Cada derivación queda registrada en `chat_derivaciones` (auditoría).
-//  - Además se inserta un mensaje de sistema en el hilo del chat para que
-//    quede VISIBLE en la conversación y en Cliente 360.
+//  - Tab USUARIO: valida presencia (disponible / ocupado / pausa / desconectado)
+//    y capacidad (chats_abiertos < max_conversaciones_agente de la cola).
+//    Si el usuario NO es elegible → fallback automático a la cola del usuario.
+//  - Tab COLA: la conversación queda en lat_colas sin asignación nominal;
+//    el motor lat-assign-engine intentará asignar agente disponible.
+//  - Cada derivación se registra en lat_trazabilidad (vía assign-engine).
+//  - Se inserta un mensaje de sistema en el hilo para auditoría visible.
 // ============================================================================
 
 import { useState, useMemo, useEffect } from "react";
@@ -26,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   User, Users, AlertTriangle, CheckCircle2, Clock, Coffee, WifiOff,
-  Loader2, Info, GitBranch,
+  Loader2, Info, GitBranch, Layers,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -40,7 +38,6 @@ interface Colaborador {
   nombre: string;
   cargo: string | null;
   color: string;
-  area_id: string | null;
   activo: boolean;
 }
 
@@ -53,10 +50,20 @@ interface Presencia {
   motivo_pausa: string | null;
 }
 
-interface Area {
+interface Cola {
   id: string;
   nombre: string;
   color: string;
+  area: string | null;
+  icono: string | null;
+  max_conversaciones_agente: number;
+  activa: boolean;
+}
+
+interface ColaMiembro {
+  colaborador_id: string;
+  cola_id: string;
+  rol: string;
 }
 
 interface DerivarChatDialogProps {
@@ -65,7 +72,6 @@ interface DerivarChatDialogProps {
   conversacionId: string;
   conversacionAsunto?: string | null;
   clienteNombre?: string;
-  // Quién está derivando — opcional; si no, se rotula como "Sistema"
   actorId?: string | null;
   actorNombre?: string;
 }
@@ -73,11 +79,32 @@ interface DerivarChatDialogProps {
 // ---------- Meta de presencia ---------------------------------------------
 
 const presenciaMeta: Record<EstadoPresencia, { label: string; icon: typeof User; className: string; eligible: boolean }> = {
-  disponible:    { label: "Disponible",   icon: CheckCircle2, className: "text-success",          eligible: true  },
-  ocupado:       { label: "Ocupado",      icon: Clock,        className: "text-warning",          eligible: false },
-  pausa:         { label: "En pausa",     icon: Coffee,       className: "text-muted-foreground", eligible: false },
-  desconectado:  { label: "Desconectado", icon: WifiOff,      className: "text-destructive",      eligible: false },
+  disponible:   { label: "Disponible",  icon: CheckCircle2, className: "text-success",          eligible: true  },
+  ocupado:      { label: "Ocupado",     icon: Clock,        className: "text-warning",          eligible: false },
+  pausa:        { label: "En pausa",    icon: Coffee,       className: "text-muted-foreground", eligible: false },
+  desconectado: { label: "Desconectado",icon: WifiOff,      className: "text-destructive",      eligible: false },
 };
+
+// ---------- Trigger assign-engine -----------------------------------------
+
+async function triggerAssignEngine(conversacionId: string, actorId?: string | null, actorNombre?: string) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const anonKey    = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  await fetch(`${supabaseUrl}/functions/v1/lat-assign-engine`, {
+    method: "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${anonKey}`,
+      "apikey":        anonKey,
+    },
+    body: JSON.stringify({
+      conversacion_id: conversacionId,
+      actor_id:        actorId ?? null,
+      actor_nombre:    actorNombre ?? "Manual",
+      es_reasignacion_manual: true,
+    }),
+  }).catch(e => console.error("assign-engine trigger:", e));
+}
 
 // ---------- Componente ----------------------------------------------------
 
@@ -91,29 +118,29 @@ export function DerivarChatDialog({
   actorNombre = "Sistema",
 }: DerivarChatDialogProps) {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"usuario" | "equipo">("usuario");
+  const [tab, setTab] = useState<"usuario" | "cola">("usuario");
   const [selUsuarioId, setSelUsuarioId] = useState<string>("");
-  const [selAreaId, setSelAreaId] = useState<string>("");
+  const [selColaId, setSelColaId] = useState<string>("");
   const [nota, setNota] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Reset al abrir
   useEffect(() => {
     if (open) {
       setSelUsuarioId("");
-      setSelAreaId("");
+      setSelColaId("");
       setNota("");
       setTab("usuario");
     }
   }, [open]);
 
-  // ---- Cargar colaboradores + presencia + áreas ---------------------------
+  // ---- Cargar datos -------------------------------------------------------
+
   const { data: colaboradores = [], isLoading: loadingCol } = useQuery<Colaborador[]>({
     queryKey: ["derivar-colaboradores"],
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from("colaboradores")
-        .select("id, nombre, cargo, color, area_id, activo")
+        .select("id, nombre, cargo, color, activo")
         .eq("activo", true)
         .order("nombre");
       return data ?? [];
@@ -130,31 +157,71 @@ export function DerivarChatDialog({
       return data ?? [];
     },
     enabled: open,
-    refetchInterval: open ? 15000 : false, // refresco cada 15s mientras está abierto
+    refetchInterval: open ? 15000 : false,
   });
 
-  const { data: areas = [] } = useQuery<Area[]>({
-    queryKey: ["derivar-areas"],
+  const { data: colas = [], isLoading: loadingColas } = useQuery<Cola[]>({
+    queryKey: ["derivar-lat-colas"],
     queryFn: async () => {
       const { data } = await (supabase as any)
-        .from("areas_empresa")
-        .select("id, nombre, color")
-        .order("nombre");
+        .from("lat_colas")
+        .select("id, nombre, color, area, icono, max_conversaciones_agente, activa")
+        .eq("activa", true)
+        .order("orden");
       return data ?? [];
     },
     enabled: open,
   });
 
-  // Map presencia por colaborador
+  // Membresías: qué agente pertenece a qué cola
+  const { data: memberships = [] } = useQuery<ColaMiembro[]>({
+    queryKey: ["derivar-cola-miembros"],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("lat_cola_miembros")
+        .select("colaborador_id, cola_id, rol");
+      return data ?? [];
+    },
+    enabled: open,
+  });
+
+  // Maps
   const presenciaMap = useMemo(() => {
     const m = new Map<string, Presencia>();
     presencias.forEach(p => m.set(p.colaborador_id, p));
     return m;
   }, [presencias]);
 
-  // Helper: presencia de un colaborador (o por defecto desconectado)
-  const getPresencia = (colaboradorId: string): Presencia => {
-    return presenciaMap.get(colaboradorId) ?? {
+  // cola_id[] por colaborador
+  const colasDeColaborador = useMemo(() => {
+    const m = new Map<string, string[]>();
+    memberships.forEach(mb => {
+      const arr = m.get(mb.colaborador_id) ?? [];
+      arr.push(mb.cola_id);
+      m.set(mb.colaborador_id, arr);
+    });
+    return m;
+  }, [memberships]);
+
+  // Número de miembros disponibles por cola
+  const colaDisponibles = useMemo(() => {
+    const m = new Map<string, number>();
+    colas.forEach(c => m.set(c.id, 0));
+    memberships.forEach(mb => {
+      if (mb.rol !== "agente") return;
+      const p = presenciaMap.get(mb.colaborador_id);
+      const cola = colas.find(c => c.id === mb.cola_id);
+      if (!p || !cola) return;
+      const max = cola.max_conversaciones_agente ?? 5;
+      if (p.estado === "disponible" && (p.chats_abiertos ?? 0) < max) {
+        m.set(mb.cola_id, (m.get(mb.cola_id) ?? 0) + 1);
+      }
+    });
+    return m;
+  }, [colas, memberships, presenciaMap]);
+
+  const getPresencia = (colaboradorId: string): Presencia =>
+    presenciaMap.get(colaboradorId) ?? {
       colaborador_id: colaboradorId,
       estado: "desconectado",
       capacidad_maxima: 5,
@@ -162,93 +229,96 @@ export function DerivarChatDialog({
       ultima_actividad: new Date().toISOString(),
       motivo_pausa: null,
     };
-  };
 
-  // ¿Es elegible? (disponible + tiene capacidad)
   const isUsuarioElegible = (colId: string) => {
     const p = getPresencia(colId);
-    return p.estado === "disponible" && p.chats_abiertos < p.capacidad_maxima;
+    // Use max from any of their queues (or fallback 5)
+    const colaIds = colasDeColaborador.get(colId) ?? [];
+    const maxConv = colaIds.length > 0
+      ? Math.max(...colaIds.map(cid => colas.find(c => c.id === cid)?.max_conversaciones_agente ?? 5))
+      : 5;
+    return p.estado === "disponible" && (p.chats_abiertos ?? 0) < maxConv;
   };
 
-  // ---- Determinar resultado al confirmar -----------------------------------
   const selectedUsuario = colaboradores.find(c => c.id === selUsuarioId) ?? null;
-  const selectedArea    = areas.find(a => a.id === selAreaId) ?? null;
+  const selectedCola    = colas.find(c => c.id === selColaId) ?? null;
   const presenciaSelUsuario = selectedUsuario ? getPresencia(selectedUsuario.id) : null;
   const elegible = selectedUsuario ? isUsuarioElegible(selectedUsuario.id) : false;
 
-  // Si elige usuario y NO es elegible, vamos a hacer fallback. Resolvemos a qué cola.
-  const colaFallback = useMemo<Area | null>(() => {
-    if (tab !== "usuario" || !selectedUsuario) return null;
-    if (elegible) return null;
-    // Cola = área del usuario destino, si tiene
-    if (selectedUsuario.area_id) {
-      return areas.find(a => a.id === selectedUsuario.area_id) ?? null;
-    }
-    return null;
-  }, [tab, selectedUsuario, elegible, areas]);
+  // Fallback queue: first queue the user belongs to
+  const colaFallbackId = useMemo<string | null>(() => {
+    if (!selectedUsuario || elegible) return null;
+    return colasDeColaborador.get(selectedUsuario.id)?.[0] ?? null;
+  }, [selectedUsuario, elegible, colasDeColaborador]);
+
+  const colaFallback = useMemo<Cola | null>(() => {
+    if (!colaFallbackId) return null;
+    return colas.find(c => c.id === colaFallbackId) ?? null;
+  }, [colaFallbackId, colas]);
 
   // ---- Submit -------------------------------------------------------------
+
   const handleConfirm = async () => {
     if (tab === "usuario" && !selectedUsuario) {
       toast.error("Elegí un usuario destino");
       return;
     }
-    if (tab === "equipo" && !selectedArea) {
-      toast.error("Elegí un equipo / cola destino");
+    if (tab === "cola" && !selectedCola) {
+      toast.error("Elegí una cola destino");
       return;
     }
-    if (tab === "usuario" && !elegible && !colaFallback && !selectedArea) {
-      toast.error("El usuario no está disponible y no tiene equipo asignado. Elegí una cola en la pestaña Equipo.");
+    if (tab === "usuario" && !elegible && !colaFallback) {
+      toast.error("El usuario no está disponible y no pertenece a ninguna cola configurada. Derivá directamente a una cola.");
       return;
     }
 
     setSubmitting(true);
-
     try {
-      // 1) Decidir destino efectivo
+      const now = new Date().toISOString();
       let efectivo_tipo: "usuario" | "cola";
       let efectivo_usuario: Colaborador | null = null;
-      let efectivo_area: Area | null = null;
+      let efectivo_cola: Cola | null = null;
       let hubo_fallback = false;
       let motivo_fallback: string | null = null;
 
-      if (tab === "equipo") {
+      if (tab === "cola") {
         efectivo_tipo = "cola";
-        efectivo_area = selectedArea;
+        efectivo_cola = selectedCola;
       } else if (selectedUsuario && elegible) {
         efectivo_tipo = "usuario";
         efectivo_usuario = selectedUsuario;
       } else {
-        // Fallback a cola
         efectivo_tipo = "cola";
-        efectivo_area = colaFallback ?? selectedArea;
+        efectivo_cola = colaFallback;
         hubo_fallback = true;
         const p = presenciaSelUsuario!;
-        const pm = presenciaMeta[p.estado];
-        if (p.estado !== "disponible") {
-          motivo_fallback = `${selectedUsuario!.nombre} está ${pm.label.toLowerCase()}.`;
-        } else {
-          motivo_fallback = `${selectedUsuario!.nombre} alcanzó su capacidad máxima (${p.chats_abiertos}/${p.capacidad_maxima}).`;
-        }
+        motivo_fallback = p.estado !== "disponible"
+          ? `${selectedUsuario!.nombre} está ${presenciaMeta[p.estado as EstadoPresencia].label.toLowerCase()}.`
+          : `${selectedUsuario!.nombre} alcanzó su capacidad máxima (${p.chats_abiertos}/${p.capacidad_maxima}).`;
       }
 
-      // 2) Actualizar la conversación
-      const updateConv: any = {
-        en_foco: true,
-        estado: "abierto",
+      // 1) Actualizar conversación
+      const updateConv: Record<string, unknown> = {
+        en_foco:          true,
+        estado:           efectivo_tipo === "usuario" ? "asignada" : "en_cola",
+        estado_asignacion: efectivo_tipo === "usuario" ? "asignada" : "en_cola",
+        ts_cola_asignada: now,
       };
-      if (efectivo_tipo === "usuario") {
-        updateConv.responsable_id     = efectivo_usuario!.id;
-        updateConv.responsable_nombre = efectivo_usuario!.nombre;
+
+      if (efectivo_tipo === "usuario" && efectivo_usuario) {
+        updateConv.responsable_id     = efectivo_usuario.id;
+        updateConv.responsable_nombre = efectivo_usuario.nombre;
+        updateConv.owner_actual_id    = efectivo_usuario.id;
+        updateConv.ts_agente_asignado = now;
         updateConv.en_cola            = false;
-        updateConv.cola_area_id       = null;
-        updateConv.cola_area_nombre   = null;
-      } else {
+        // keep cola_id from the user's first queue for traceability
+        if (colaFallbackId) updateConv.cola_id = colaFallbackId;
+      } else if (efectivo_cola) {
+        updateConv.cola_id            = efectivo_cola.id;
         updateConv.responsable_id     = null;
         updateConv.responsable_nombre = null;
         updateConv.en_cola            = true;
-        updateConv.cola_area_id       = efectivo_area?.id ?? null;
-        updateConv.cola_area_nombre   = efectivo_area?.nombre ?? null;
+        updateConv.motivo_no_asignada = motivo_fallback ?? null;
       }
 
       const { error: errConv } = await (supabase as any)
@@ -257,86 +327,67 @@ export function DerivarChatDialog({
         .eq("id", conversacionId);
       if (errConv) throw errConv;
 
-      // 3) Registrar en bitácora
-      const presenciaSnap = presenciaSelUsuario;
-      const { error: errBit } = await (supabase as any)
-        .from("chat_derivaciones")
-        .insert({
-          conversacion_id: conversacionId,
-          derivado_por_id: actorId ?? null,
-          derivado_por_nombre: actorNombre,
-
-          destino_tipo: tab === "usuario" ? "usuario" : "equipo",
-          destino_usuario_id: tab === "usuario" ? selectedUsuario?.id ?? null : null,
-          destino_usuario_nombre: tab === "usuario" ? selectedUsuario?.nombre ?? null : null,
-          destino_area_id: tab === "equipo" ? selectedArea?.id ?? null : (selectedUsuario?.area_id ?? null),
-          destino_area_nombre: tab === "equipo"
-            ? selectedArea?.nombre ?? null
-            : (areas.find(a => a.id === selectedUsuario?.area_id)?.nombre ?? null),
-
-          efectivo_tipo,
-          efectivo_usuario_id: efectivo_usuario?.id ?? null,
-          efectivo_usuario_nombre: efectivo_usuario?.nombre ?? null,
-          efectivo_area_id: efectivo_area?.id ?? null,
-          efectivo_area_nombre: efectivo_area?.nombre ?? null,
-
-          hubo_fallback,
-          motivo_fallback,
-
-          presencia_destino: presenciaSnap?.estado ?? null,
-          capacidad_destino: presenciaSnap?.capacidad_maxima ?? null,
-          chats_abiertos_destino: presenciaSnap?.chats_abiertos ?? null,
-
-          nota: nota.trim() || null,
-        });
-      if (errBit) throw errBit;
-
-      // 4) Mensaje de sistema visible en el hilo del chat
-      const sysMsg =
-        efectivo_tipo === "usuario"
-          ? `🔀 ${actorNombre} derivó la conversación a ${efectivo_usuario!.nombre}${nota.trim() ? ` — “${nota.trim()}”` : ""}.`
-          : hubo_fallback
-            ? `🔀 ${actorNombre} intentó derivar a ${selectedUsuario!.nombre}, pero ${motivo_fallback} La conversación se envió a la cola general de ${efectivo_area?.nombre ?? "el equipo"}.`
-            : `🔀 ${actorNombre} envió la conversación a la cola general de ${efectivo_area?.nombre ?? "el equipo"}${nota.trim() ? ` — “${nota.trim()}”` : ""}.`;
+      // 2) Mensaje de sistema en el hilo
+      const sysMsg = efectivo_tipo === "usuario"
+        ? `🔀 ${actorNombre} derivó la conversación a ${efectivo_usuario!.nombre}${nota.trim() ? ` — "${nota.trim()}"` : ""}.`
+        : hubo_fallback
+          ? `🔀 ${actorNombre} intentó derivar a ${selectedUsuario!.nombre}, pero ${motivo_fallback} Derivada a cola ${efectivo_cola?.nombre ?? "desconocida"}.`
+          : `🔀 ${actorNombre} envió la conversación a la cola ${efectivo_cola?.nombre ?? "desconocida"}${nota.trim() ? ` — "${nota.trim()}"` : ""}.`;
 
       await (supabase as any).from("lat_mensajes").insert({
         conversacion_id: conversacionId,
-        tipo: "sistema",
-        contenido: sysMsg,
-        estado: "enviado",
+        tipo:            "sistema",
+        contenido:       sysMsg,
+        estado:          "enviado",
       });
 
-      // 5) Actualizar contador de chats_abiertos del usuario efectivo (best-effort)
+      // 3) Si se derivó a usuario directamente: actualizar capacidad y registrar trazabilidad
       if (efectivo_tipo === "usuario" && efectivo_usuario) {
         const p = getPresencia(efectivo_usuario.id);
         await (supabase as any)
           .from("colaborador_presencia")
           .upsert({
-            colaborador_id: efectivo_usuario.id,
-            estado: p.estado,
+            colaborador_id:  efectivo_usuario.id,
+            estado:          p.estado,
             capacidad_maxima: p.capacidad_maxima,
-            chats_abiertos: (p.chats_abiertos ?? 0) + 1,
-            ultima_actividad: new Date().toISOString(),
-            motivo_pausa: p.motivo_pausa,
+            chats_abiertos:  (p.chats_abiertos ?? 0) + 1,
+            ultima_actividad: now,
+            motivo_pausa:    p.motivo_pausa,
           }, { onConflict: "colaborador_id" });
+
+        await (supabase as any).from("lat_trazabilidad").insert({
+          conversacion_id: conversacionId,
+          tipo_evento:     "reasignacion_manual",
+          cola_id:         updateConv.cola_id ?? null,
+          owner_nuevo_id:  efectivo_usuario.id,
+          intervencion:    true,
+          motivo:          nota.trim() || "Reasignación manual directa a usuario",
+          detalle: {
+            actor_id:    actorId,
+            actor_nombre: actorNombre,
+            agente_nombre: efectivo_usuario.nombre,
+            disponibilidad_snap: p.estado,
+          },
+        });
       }
 
-      // 6) Toast + invalidar
+      // 4) Si se derivó a cola: lanzar assign-engine para que seleccione agente
+      if (efectivo_tipo === "cola" && efectivo_cola) {
+        await triggerAssignEngine(conversacionId, actorId, actorNombre);
+      }
+
+      // 5) Toast
       if (efectivo_tipo === "usuario") {
         toast.success(`Conversación derivada a ${efectivo_usuario!.nombre}`);
       } else if (hubo_fallback) {
-        toast.warning(`Fallback a cola: ${efectivo_area?.nombre ?? "equipo"}`, {
-          description: motivo_fallback ?? undefined,
-        });
+        toast.warning(`Fallback a cola: ${efectivo_cola?.nombre ?? ""}`, { description: motivo_fallback ?? undefined });
       } else {
-        toast.success(`Conversación enviada a cola de ${efectivo_area?.nombre ?? "equipo"}`);
+        toast.success(`Conversación enviada a cola ${efectivo_cola?.nombre ?? ""}`);
       }
 
       qc.invalidateQueries({ queryKey: ["lat_conversaciones"] });
       qc.invalidateQueries({ queryKey: ["lat-conversaciones"] });
       qc.invalidateQueries({ queryKey: ["lat_mensajes", conversacionId] });
-      qc.invalidateQueries({ queryKey: ["chat-derivaciones", conversacionId] });
-
       onOpenChange(false);
     } catch (e: any) {
       console.error("derivar:", e);
@@ -347,6 +398,7 @@ export function DerivarChatDialog({
   };
 
   // ---- Render -------------------------------------------------------------
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -362,13 +414,13 @@ export function DerivarChatDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={v => setTab(v as "usuario" | "equipo")} className="mt-1">
+        <Tabs value={tab} onValueChange={v => setTab(v as "usuario" | "cola")} className="mt-1">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="usuario" className="text-xs gap-1.5">
               <User className="w-3.5 h-3.5" /> Usuario
             </TabsTrigger>
-            <TabsTrigger value="equipo" className="text-xs gap-1.5">
-              <Users className="w-3.5 h-3.5" /> Equipo / Cola
+            <TabsTrigger value="cola" className="text-xs gap-1.5">
+              <Layers className="w-3.5 h-3.5" /> Cola
             </TabsTrigger>
           </TabsList>
 
@@ -377,8 +429,8 @@ export function DerivarChatDialog({
             <div className="text-[11px] text-muted-foreground flex items-start gap-1.5 bg-muted/40 rounded p-2">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
-                Si el usuario destino no está disponible, ocupado o sin capacidad,
-                la conversación se enviará automáticamente a la cola del equipo.
+                Si el usuario no está disponible o sin capacidad, la conversación
+                se enviará a su cola principal para asignación automática.
               </span>
             </div>
 
@@ -392,20 +444,21 @@ export function DerivarChatDialog({
               ) : (
                 colaboradores.map(c => {
                   const p = getPresencia(c.id);
-                  const meta = presenciaMeta[p.estado];
+                  const meta = presenciaMeta[p.estado as EstadoPresencia] ?? presenciaMeta.desconectado;
                   const Icon = meta.icon;
                   const elegibleC = isUsuarioElegible(c.id);
                   const isSel = c.id === selUsuarioId;
-                  const cargaPct = p.capacidad_maxima > 0 ? Math.min(100, (p.chats_abiertos / p.capacidad_maxima) * 100) : 0;
+                  const cargaPct = p.capacidad_maxima > 0
+                    ? Math.min(100, ((p.chats_abiertos ?? 0) / p.capacidad_maxima) * 100)
+                    : 0;
+                  const colaIds = colasDeColaborador.get(c.id) ?? [];
                   return (
                     <button
                       key={c.id}
                       type="button"
                       onClick={() => setSelUsuarioId(c.id)}
                       className={`w-full flex items-center gap-2.5 p-2 rounded-lg border text-left transition-all ${
-                        isSel
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/30 hover:bg-accent/30"
+                        isSel ? "border-primary bg-primary/5" : "border-border hover:border-primary/30 hover:bg-accent/30"
                       }`}
                     >
                       <span
@@ -429,10 +482,14 @@ export function DerivarChatDialog({
                             {meta.label}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            {p.chats_abiertos}/{p.capacidad_maxima} chats
+                            {p.chats_abiertos ?? 0}/{p.capacidad_maxima} chats
                           </span>
+                          {colaIds.length > 0 && (
+                            <span className="text-[10px] text-muted-foreground">
+                              · {colaIds.length} cola{colaIds.length > 1 ? "s" : ""}
+                            </span>
+                          )}
                         </div>
-                        {/* Barra de capacidad */}
                         <div className="h-0.5 w-full bg-muted rounded-full mt-1 overflow-hidden">
                           <div
                             className={`h-full transition-all ${
@@ -448,66 +505,78 @@ export function DerivarChatDialog({
               )}
             </div>
 
-            {/* Aviso fallback */}
             {selectedUsuario && !elegible && (
               <div className="rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-[11px] text-warning flex items-start gap-2">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-medium">Fallback automático a cola</p>
                   <p>
-                    {selectedUsuario.nombre} {presenciaSelUsuario && presenciaSelUsuario.estado !== "disponible"
-                      ? `está ${presenciaMeta[presenciaSelUsuario.estado].label.toLowerCase()}.`
+                    {selectedUsuario.nombre}{" "}
+                    {presenciaSelUsuario && presenciaSelUsuario.estado !== "disponible"
+                      ? `está ${presenciaMeta[presenciaSelUsuario.estado as EstadoPresencia].label.toLowerCase()}.`
                       : `alcanzó su capacidad (${presenciaSelUsuario?.chats_abiertos}/${presenciaSelUsuario?.capacidad_maxima}).`}
                     {" "}
                     {colaFallback
-                      ? <>La conversación se enviará a la cola de <span className="font-medium">{colaFallback.nombre}</span>.</>
-                      : <>El usuario no tiene equipo asignado — elegí una cola en la pestaña Equipo.</>
-                    }
+                      ? <>La conversación se enviará a la cola <span className="font-medium">{colaFallback.nombre}</span> para asignación automática.</>
+                      : <>El usuario no pertenece a ninguna cola — elegí una cola directamente.</>}
                   </p>
                 </div>
               </div>
             )}
           </TabsContent>
 
-          {/* --- Tab Equipo --- */}
-          <TabsContent value="equipo" className="space-y-2 mt-3">
+          {/* --- Tab Cola --- */}
+          <TabsContent value="cola" className="space-y-2 mt-3">
             <div className="text-[11px] text-muted-foreground flex items-start gap-1.5 bg-muted/40 rounded p-2">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
-                La conversación queda visible para todos los integrantes del equipo. El primero que la tome pasa a ser responsable.
+                La conversación ingresa a la cola y el motor de asignación selecciona
+                automáticamente al agente disponible según la estrategia configurada.
               </span>
             </div>
+
             <div className="max-h-[280px] overflow-y-auto scrollbar-thin space-y-1 pr-1">
-              {areas.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">No hay áreas configuradas</p>
+              {loadingColas ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : colas.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">No hay colas configuradas</p>
               ) : (
-                areas.map(a => {
-                  const isSel = a.id === selAreaId;
-                  const integrantes = colaboradores.filter(c => c.area_id === a.id);
-                  const disponibles = integrantes.filter(c => isUsuarioElegible(c.id)).length;
+                colas.map(c => {
+                  const isSel = c.id === selColaId;
+                  const totalMiembros = memberships.filter(m => m.cola_id === c.id && m.rol === "agente").length;
+                  const disponibles = colaDisponibles.get(c.id) ?? 0;
                   return (
                     <button
-                      key={a.id}
+                      key={c.id}
                       type="button"
-                      onClick={() => setSelAreaId(a.id)}
+                      onClick={() => setSelColaId(c.id)}
                       className={`w-full flex items-center gap-2.5 p-2 rounded-lg border text-left transition-all ${
-                        isSel
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/30 hover:bg-accent/30"
+                        isSel ? "border-primary bg-primary/5" : "border-border hover:border-primary/30 hover:bg-accent/30"
                       }`}
                     >
                       <span
                         className="w-7 h-7 rounded-full flex items-center justify-center text-white shrink-0"
-                        style={{ backgroundColor: a.color }}
+                        style={{ backgroundColor: c.color }}
                       >
-                        <Users className="w-3.5 h-3.5" />
+                        <Layers className="w-3.5 h-3.5" />
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate">{a.nombre}</p>
+                        <p className="text-xs font-medium truncate">{c.nombre}</p>
                         <p className="text-[10px] text-muted-foreground">
-                          {integrantes.length} integrante{integrantes.length === 1 ? "" : "s"} · {disponibles} disponible{disponibles === 1 ? "" : "s"}
+                          {c.area && <><span>{c.area}</span> · </>}
+                          {totalMiembros} agente{totalMiembros !== 1 ? "s" : ""} ·{" "}
+                          <span className={disponibles > 0 ? "text-success" : "text-muted-foreground"}>
+                            {disponibles} disponible{disponibles !== 1 ? "s" : ""}
+                          </span>
                         </p>
                       </div>
+                      {disponibles === 0 && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium shrink-0">
+                          sin agentes
+                        </span>
+                      )}
                     </button>
                   );
                 })
@@ -516,7 +585,6 @@ export function DerivarChatDialog({
           </TabsContent>
         </Tabs>
 
-        {/* Nota opcional */}
         <div className="space-y-1 mt-2">
           <Label htmlFor="derivar-nota" className="text-[11px] text-muted-foreground">
             Motivo / nota (opcional)
@@ -538,11 +606,19 @@ export function DerivarChatDialog({
           <Button
             size="sm"
             onClick={handleConfirm}
-            disabled={submitting || (tab === "usuario" && !selectedUsuario) || (tab === "equipo" && !selectedArea)}
+            disabled={
+              submitting ||
+              (tab === "usuario" && !selectedUsuario) ||
+              (tab === "cola" && !selectedCola)
+            }
             className="gap-1.5"
           >
-            {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitBranch className="w-3.5 h-3.5" />}
-            {tab === "usuario" && selectedUsuario && !elegible ? "Derivar (con fallback a cola)" : "Derivar"}
+            {submitting
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <GitBranch className="w-3.5 h-3.5" />}
+            {tab === "usuario" && selectedUsuario && !elegible
+              ? "Derivar (fallback a cola)"
+              : "Derivar"}
           </Button>
         </DialogFooter>
       </DialogContent>

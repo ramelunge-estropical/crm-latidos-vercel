@@ -27,33 +27,10 @@ serve(async (req) => {
   }
 
   try {
-    // Exchange code for tokens
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id:     GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri:  REDIRECT_URI,
-        grant_type:    "authorization_code",
-      }),
-    });
-
-    const tokens = await tokenRes.json();
-
-    // Get Google user email
-    const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-    });
-    const googleUser = await userRes.json();
-
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const expiry = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
 
-    // state = "gmail-system" → token for the email inbox account stored in lat_bot_config
+    // ── Gmail system account (bandeja de correo) ──────────────────────────────
     if (state === "gmail-system") {
-      // Use Gmail-specific credentials for token exchange
       const gmailTokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -66,11 +43,21 @@ serve(async (req) => {
         }),
       });
       const gmailTokens = await gmailTokenRes.json();
+      if (!gmailTokens.access_token) {
+        throw new Error(`Gmail token error: ${JSON.stringify(gmailTokens)}`);
+      }
+
+      // Get email address from the Gmail token
+      const profileRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${gmailTokens.access_token}` },
+      });
+      const gmailUser = profileRes.ok ? await profileRes.json() : {};
+
       const gmailExpiry = new Date(Date.now() + (gmailTokens.expires_in || 3600) * 1000).toISOString();
       const patch: any = {
         gmail_access_token:  gmailTokens.access_token,
         gmail_token_expiry:  gmailExpiry,
-        gmail_email:         googleUser.email || "",
+        gmail_email:         gmailUser.email || "",
         updated_at:          new Date().toISOString(),
       };
       if (gmailTokens.refresh_token) patch.gmail_refresh_token = gmailTokens.refresh_token;
@@ -78,7 +65,26 @@ serve(async (req) => {
       return Response.redirect(`${APP_URL}/?gmail=connected`);
     }
 
-    // Normal flow: Calendar token for a colaborador
+    // ── Calendar / normal Google flow ─────────────────────────────────────────
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id:     GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri:  REDIRECT_URI,
+        grant_type:    "authorization_code",
+      }),
+    });
+    const tokens = await tokenRes.json();
+
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    const googleUser = await userRes.json();
+    const expiry = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
+
     const upsertData: any = {
       colaborador_id: state,
       google_email:   googleUser.email || "",

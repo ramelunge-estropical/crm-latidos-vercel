@@ -1,3 +1,0 @@
-ALTER TABLE activities
-  ADD COLUMN IF NOT EXISTS cliente_id   UUID REFERENCES clientes(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS cliente_nombre TEXT;

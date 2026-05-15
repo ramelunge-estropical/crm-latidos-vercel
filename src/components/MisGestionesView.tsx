@@ -8,7 +8,7 @@ import { GestionDetailView } from "./GestionDetailView";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ColaboradorCombobox } from "@/components/ui/ColaboradorCombobox";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, Hash, Tag, AlertCircle, Plus, Check, Search } from "lucide-react";
+import { Calendar, Hash, Tag, AlertCircle, Plus, Check, Search, MessageSquare } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -52,6 +52,7 @@ type GestionRow = {
   area_id: string | null;
   cliente_nombre: string | null;
   updated_at: string;
+  lat_conversacion_id: string | null;
   pipeline_stages: {
     id: string;
     name: string;
@@ -75,12 +76,10 @@ export function MisGestionesView() {
 
   const { data: colaboradores = [] } = useColaboradores();
 
-  // Default al primer colaborador si no hay ninguno seleccionado
+  // Default al primer colaborador activo si no hay sesión activa en localStorage
   useEffect(() => {
     if (!colaboradorId && colaboradores.length > 0) {
-      const roberto = colaboradores.find(c => c.nombre.toLowerCase().includes("roberto")) || colaboradores[0];
-      setColaboradorId(roberto.id);
-      localStorage.setItem("mis_gestiones_colaborador", roberto.id);
+      setColaboradorId(colaboradores[0].id);
     }
   }, [colaboradores, colaboradorId]);
 
@@ -90,7 +89,7 @@ export function MisGestionesView() {
       if (!colaboradorId) return [];
       const { data, error } = await (supabase as any)
         .from("gestiones")
-        .select("*, pipeline_stages(id, name, global_status, order, process_id)")
+        .select("*, lat_conversacion_id, pipeline_stages(id, name, global_status, order, process_id)")
         .eq("responsable_id", colaboradorId)
         .order("updated_at", { ascending: false });
       if (error) throw error;
@@ -146,7 +145,6 @@ export function MisGestionesView() {
 
   const handleSelectColab = (id: string) => {
     setColaboradorId(id);
-    localStorage.setItem("mis_gestiones_colaborador", id);
   };
 
   const handleMarkDone = async (gestionId: string) => {
@@ -395,6 +393,23 @@ export function MisGestionesView() {
                                         {/* Cliente */}
                                         {g.cliente_nombre && (
                                           <p className="text-[11px] text-muted-foreground mb-1.5">{g.cliente_nombre}</p>
+                                        )}
+
+                                        {/* Conversación origen (si proviene del motor LAT) */}
+                                        {g.lat_conversacion_id && (
+                                          <button
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              window.dispatchEvent(new CustomEvent("lat-go-bandeja", {
+                                                detail: { conversacion_id: g.lat_conversacion_id },
+                                              }));
+                                            }}
+                                            title="Ver conversación origen en la Bandeja"
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors mb-1.5"
+                                          >
+                                            <MessageSquare className="w-2.5 h-2.5" />
+                                            Ver en Bandeja
+                                          </button>
                                         )}
 
                                         {/* Etapa específica */}

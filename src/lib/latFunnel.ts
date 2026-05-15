@@ -53,37 +53,43 @@ export const FUNNEL_STAGES: { key: FunnelStage; label: string; description: stri
 
 /**
  * Mapeo determinístico estado DB → etapa funnel.
+ * Considera tanto conv.estado (legado) como conv.estado_asignacion (Phase 1+).
  * Cualquier conversación tiene UNA y solo UNA etapa.
  */
 export function getFunnelStage(conv: LatConversacion): FunnelStage {
-  const estado = (conv.estado ?? "").toLowerCase();
+  const estado     = (conv.estado          ?? "").toLowerCase();
+  const estadoAsig = (conv.estado_asignacion ?? "").toLowerCase();
 
-  if (estado === "finalizado" || estado === "cerrado" || estado === "resuelto") {
+  // Cerrada/finalizada
+  if (
+    estado === "finalizado" || estado === "cerrado" || estado === "resuelto" ||
+    estadoAsig === "cerrada" || estadoAsig === "ignorada"
+  ) {
     return "finalizado";
   }
 
-  // Por atender: el asesor todavía no respondió, o está en cola, o llegó nuevo
+  // En espera: esperando respuesta del cliente / fuera de ventana / liberado
   if (
-    estado === "nuevo" ||
-    estado === "pendiente_respuesta" ||
-    estado === "abierto" ||
+    estado === "en_espera" || estado === "fuera_ventana" ||
+    estado === "liberado"  || estado === "esperando_cliente" ||
+    estadoAsig === "en_espera"
+  ) {
+    return "en_espera";
+  }
+
+  // Por atender: sin asignar, en cola, pendiente o nuevo sin leer
+  if (
+    estadoAsig === "en_cola" || estadoAsig === "pendiente" ||
+    estadoAsig === "desborde" ||
+    estado === "en_cola" || estado === "nuevo" ||
+    estado === "pendiente_respuesta" || estado === "abierto" ||
     conv.en_cola ||
     (conv.no_leidos ?? 0) > 0
   ) {
     return "por_atender";
   }
 
-  // En espera: esperando respuesta del cliente / fuera de ventana / liberado
-  if (
-    estado === "en_espera" ||
-    estado === "fuera_ventana" ||
-    estado === "liberado" ||
-    estado === "esperando_cliente"
-  ) {
-    return "en_espera";
-  }
-
-  // En gestión: activo, atendido por el asesor (con tarea / seguimiento)
+  // En gestión: asignada o activamente gestionada
   return "en_gestion";
 }
 
@@ -105,18 +111,20 @@ export function getFlags(conv: LatConversacion): ConvFlags {
   const ventana = conv.ventana_whatsapp ? new Date(conv.ventana_whatsapp).getTime() : null;
   const ultimaInt = conv.ultima_interaccion ? new Date(conv.ultima_interaccion).getTime() : ahora;
   const horasDesdeInt = (ahora - ultimaInt) / (1000 * 60 * 60);
+  const estadoAsig = (conv.estado_asignacion ?? "").toLowerCase();
 
   return {
-    nuevo: conv.estado === "nuevo",
-    urgente: conv.prioridad === "urgente" || conv.estado === "urgente",
+    nuevo:    conv.estado === "nuevo",
+    urgente:  conv.prioridad === "urgente" || conv.estado === "urgente",
     sin_leer: (conv.no_leidos ?? 0) > 0,
     reabierto: conv.estado === "reabierto",
     fuera_ventana: conv.canal === "whatsapp" && ventana !== null && ventana < ahora,
     // SLA simple: pendiente de respuesta hace más de 4h
     sla_vencido:
-      (conv.estado === "nuevo" || conv.estado === "pendiente_respuesta") && horasDesdeInt > 4,
+      (conv.estado === "nuevo" || conv.estado === "pendiente_respuesta" ||
+       estadoAsig === "en_cola" || estadoAsig === "pendiente") && horasDesdeInt > 4,
     con_gestion: !!conv.gestion_id,
-    en_cola: !!conv.en_cola,
+    en_cola: !!conv.en_cola || estadoAsig === "en_cola",
   };
 }
 

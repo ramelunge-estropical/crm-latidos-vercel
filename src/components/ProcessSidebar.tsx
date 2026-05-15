@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch, LogOut, ExternalLink, Globe } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, CalendarDays, Users, ClipboardList, BarChart3, Settings, Briefcase, FolderKanban, Cog, AlertCircle, X, MessageSquare, TrendingUp, GitBranch, LogOut, ExternalLink, Globe, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import logoHeart from "@/assets/logo-heart.png";
+import { setColaboradorPresence } from "@/lib/presence";
 
 interface Process {
   id: string;
@@ -12,7 +13,7 @@ interface Process {
   area: string | null;
 }
 
-export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos" | "lat-bandeja" | "lat-dashboard" | "granola";
+export type SidebarView = "process" | "agenda" | "cliente360" | "mis-gestiones" | "mi-dia" | "resumen" | "configuraciones" | "comercial" | "proyectos" | "operativa" | "casos" | "lat-bandeja" | "lat-dashboard" | "granola";
 
 interface ProcessSidebarProps {
   processes: Process[];
@@ -26,7 +27,8 @@ interface ProcessSidebarProps {
 }
 
 const mainItems: { view: SidebarView; label: string; icon: typeof CalendarDays }[] = [
-  { view: "cliente360",   label: "Cliente 360",  icon: Users },
+  { view: "mi-dia",        label: "Mi Día",        icon: LayoutDashboard },
+  { view: "cliente360",    label: "Cliente 360",   icon: Users },
   { view: "mis-gestiones", label: "Mis Gestiones", icon: ClipboardList },
 ];
 
@@ -86,10 +88,11 @@ export function ProcessSidebar({
     enabled: !!currentUser?.ver_otros_sistemas,
   });
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await setColaboradorPresence(colaboradorId, false);
     localStorage.removeItem("mis_gestiones_colaborador");
     localStorage.removeItem("crm_session_expiry");
-    supabase.auth.signOut();
+    await supabase.auth.signOut();
     window.location.reload();
   };
 

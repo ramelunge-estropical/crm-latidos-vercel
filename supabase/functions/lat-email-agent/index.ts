@@ -423,8 +423,9 @@ async function fetchUnreadEmailsGmail(): Promise<ParsedEmail[]> {
   // after:2026/04/24 catches last-week-of-April catch-up + all new emails going forward
   // No is:unread — picks up manually-read emails too; isProcessed() handles deduplication
   const query = `to:${EMAIL_INBOX} after:2026/04/24`;
+  const batchSize = Math.max(1, Math.min(Number(Deno.env.get("GMAIL_BATCH_SIZE") ?? "10"), 25));
   const listRes = await fetch(
-    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=10`,
+    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=${batchSize}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
@@ -435,8 +436,8 @@ async function fetchUnreadEmailsGmail(): Promise<ParsedEmail[]> {
 
   const listData = await listRes.json();
   const messages: { id: string }[] = listData.messages ?? [];
-  if (messages.length === 0) { console.log("[gmail] No unread emails"); return []; }
-  console.log(`[gmail] Found ${messages.length} unread emails`);
+  if (messages.length === 0) { console.log("[gmail] No candidate emails"); return []; }
+  console.log(`[gmail] Found ${messages.length} candidate emails`);
 
   const emails: ParsedEmail[] = [];
   for (const { id } of messages) {
@@ -600,6 +601,89 @@ async function markProcessed(messageId: string, convId: string) {
   await supabase.from("lat_email_procesados").insert({ message_id: messageId, conversacion_id: convId });
 }
 
+async function getConnectedGmailChannelId(): Promise<string | undefined> {
+  const { data: cfg } = await supabase
+    .from("lat_bot_config")
+    .select("gmail_email")
+    .eq("canal", "email")
+    .maybeSingle();
+
+  const gmailEmail = String((cfg as any)?.gmail_email || EMAIL_USER || "").trim().toLowerCase();
+  const inboundAlias = String(EMAIL_INBOX || "").trim().toLowerCase();
+  const accountEmails = [gmailEmail, String(EMAIL_USER || "").trim().toLowerCase(), inboundAlias].filter(Boolean);
+  const { data: canales } = await supabase
+    .from("lat_canales")
+    .select("id, nombre, numero_origen, identificador, estado, cola_default_id")
+    .eq("tipo", "email");
+
+  const rows = (canales ?? []) as any[];
+  const matchesAccount = (c: any) =>
+    [c.numero_origen, c.identificador, c.nombre]
+      .some(v => accountEmails.includes(String(v ?? "").trim().toLowerCase()));
+
+  const selected =
+    rows.find(c => matchesAccount(c) && c.estado === "conectado") ??
+    rows.find(matchesAccount) ??
+    rows.find(c => c.estado === "conectado" && c.cola_default_id) ??
+    rows.find(c => c.estado === "conectado") ??
+    rows[0];
+
+  console.log("[email-agent] Gmail channel resolved:", JSON.stringify({
+    gmail_email: gmailEmail,
+    inbound_alias: inboundAlias,
+    channel_id: selected?.id ?? null,
+    channel_name: selected?.nombre ?? null,
+    channel_numero_origen: selected?.numero_origen ?? null,
+    channel_identificador: selected?.identificador ?? null,
+  }));
+
+  return selected?.id;
+}
+
+// ── Routing engine ────────────────────────────────────────────────────────────
+// Delega a lat-routing-engine el flujo completo: canal → reglas → cola → agente.
+
+async function callRoutingEngine(
+  convId:          string,
+  subject:         string,
+  bodyText:        string | null,
+  remitente:       string,
+  attachmentNames: string[],
+): Promise<void> {
+  try {
+    const channelId = await getConnectedGmailChannelId();
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-routing-engine`, {
+      method:  "POST",
+      headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: convId,
+        channel_id:      channelId,
+        channel_type:    "email",
+        message_content: subject,
+        metadata: {
+          remitente:          remitente,
+          destinatario:       EMAIL_INBOX,
+          alias_destinatario: EMAIL_INBOX,
+          asunto:             subject,
+          cuerpo:             (bodyText ?? "").slice(0, 500),
+          nombre_adjunto:     attachmentNames.join(" "),
+          mensaje_inicial:    subject,
+          canal_tipo:         "email",
+        },
+      }),
+    });
+    const txt = await res.text().catch(() => "");
+    if (!res.ok) {
+      console.error("[email-agent] routing-engine failed:", res.status, txt);
+    } else {
+      console.log("[email-agent] routing-engine result:", txt);
+    }
+  } catch (err) {
+    console.error("[email-agent] routing-engine error:", err);
+  }
+}
+
 async function findOrCreateConvEmail(email: string, nombre: string | null, subject: string): Promise<string> {
   const { data: existing } = await supabase
     .from("lat_conversaciones")
@@ -639,7 +723,7 @@ async function findOrCreateConvEmail(email: string, nombre: string | null, subje
 async function getBotConfig() {
   const { data } = await supabase
     .from("lat_bot_config")
-    .select("activo, auto_reply, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id")
+    .select("activo, auto_reply, prompt_identidad, prompt_reglas, prompt_categorias, prompt_calificacion, crear_gestion_auto, gestion_process_id, gestion_stage_id, gmail_refresh_token")
     .eq("canal", "email")
     .maybeSingle();
   return data as any;
@@ -1036,18 +1120,22 @@ Deno.serve(async (req: Request) => {
 
   try {
     const cfg = await getBotConfig();
-    if (!cfg || cfg.activo === false) {
-      console.log("[email-agent] Email bot desactivado");
-      return new Response(JSON.stringify({ ok: true, skipped: "bot disabled" }), { status: 200 });
+    // gmail_refresh_token es necesario para conectarse a Gmail — sin él no hay nada que hacer.
+    // cfg.activo controla solo si el bot IA responde automáticamente, no la ingesta de emails.
+    if (!cfg?.gmail_refresh_token) {
+      console.log("[email-agent] Gmail no configurado — ejecute el flujo OAuth primero");
+      return new Response(JSON.stringify({ ok: true, skipped: "gmail not configured" }), { status: 200 });
     }
 
     const emails = await fetchUnreadEmailsGmail();
     let processed = 0, skipped = 0;
 
     for (const email of emails) {
-      if (await isProcessed(email.messageId)) { skipped++; continue; }
-      const selfAddrs = [EMAIL_USER.toLowerCase(), EMAIL_INBOX.toLowerCase()];
-      if (selfAddrs.includes(email.from.toLowerCase())) { skipped++; continue; }
+      if (await isProcessed(email.messageId)) {
+        console.log(`[email-agent] Skipping already processed: ${email.messageId} subject="${email.subject}" from=${email.from}`);
+        skipped++;
+        continue;
+      }
 
       console.log(`[email] Processing: ${email.subject} from ${email.from}`);
 
@@ -1126,6 +1214,14 @@ Deno.serve(async (req: Request) => {
         estado:              "en_cola",
         no_leidos:           1,
       }).eq("id", convId);
+
+      await callRoutingEngine(
+        convId,
+        email.subject,
+        email.bodyText ?? null,
+        email.from,
+        regularAtts.map(a => a.filename),
+      );
 
       await crearGestion(convId, cliente?.id ?? null, cliente?.nombre_completo ?? email.fromName ?? email.from, analysis.categoria, analysis.urgencia, analysis.resumen, cfg);
 

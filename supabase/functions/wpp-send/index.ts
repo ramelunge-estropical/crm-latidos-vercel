@@ -72,10 +72,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Obtener el teléfono destino de la conversación
+    // Obtener datos de la conversación (teléfono, canal y ventana WhatsApp)
     const { data: conv, error: convErr } = await supabase
       .from("lat_conversaciones")
-      .select("telefono, canal")
+      .select("telefono, canal, ventana_whatsapp")
       .eq("id", conversacion_id)
       .single();
 
@@ -92,6 +92,19 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({ error: `Canal ${conv.canal} no soportado para envío externo` }),
         { status: 400, headers: { ...CORS, "Content-Type": "application/json" } },
       );
+    }
+
+    // Validar ventana de 24h para mensajes libres (no plantilla).
+    // NULL = cliente nunca respondió = ventana cerrada.
+    if (!isTemplate) {
+      const ventana = conv.ventana_whatsapp;
+      const windowOpen = ventana && new Date(ventana).getTime() > Date.now();
+      if (!windowOpen) {
+        return new Response(
+          JSON.stringify({ error: "window_closed", message: "Ventana de 24h cerrada. Usá una plantilla aprobada." }),
+          { status: 400, headers: { ...CORS, "Content-Type": "application/json" } },
+        );
+      }
     }
 
     const destination = conv.telefono?.replace(/\D/g, "") ?? "";

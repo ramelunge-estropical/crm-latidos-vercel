@@ -99,7 +99,9 @@ export function EmailThreadView({ mensajes, onReply, onReplyAll, onForward, scro
     );
   }
 
-  const subject = emails[emails.length - 1].subject;
+  // Título = asunto del primer correo real (ignora notas internas)
+  const subject =
+    (emails.find(e => e.direction !== "internal") ?? emails[emails.length - 1]).subject;
 
   return (
     <div className={`bg-muted/30 px-4 sm:px-6 py-5 space-y-3${scrollable ? " flex-1 overflow-y-auto" : ""}`}>
@@ -167,10 +169,12 @@ export function EmailThreadView({ mensajes, onReply, onReplyAll, onForward, scro
               <>
                 <Separator />
                 <div className="px-4 py-4">
+                  <div className="overflow-x-auto">
                   <div
-                    className="email-body"
+                    className="email-body [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground"
                     dangerouslySetInnerHTML={{ __html: email.bodyHtml || "<em>(sin contenido)</em>" }}
                   />
+                  </div>
 
                   {/* Adjuntos: usa email_attachments[] si existe, o el campo legado adjunto_url */}
                   {(() => {
@@ -204,17 +208,19 @@ export function EmailThreadView({ mensajes, onReply, onReplyAll, onForward, scro
                     );
                   })()}
 
-                  <div className="mt-4 pt-3 border-t flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={() => onReply(email.raw)}>
-                      <Reply className="w-3.5 h-3.5 mr-1.5" /> Responder
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => onReplyAll(email.raw)}>
-                      <ReplyAll className="w-3.5 h-3.5 mr-1.5" /> Responder a todos
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => onForward(email.raw)}>
-                      <Forward className="w-3.5 h-3.5 mr-1.5" /> Reenviar
-                    </Button>
-                  </div>
+                  {email.direction !== "internal" && (
+                    <div className="mt-4 pt-3 border-t flex items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => onReply(email.raw)}>
+                        <Reply className="w-3.5 h-3.5 mr-1.5" /> Responder
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => onReplyAll(email.raw)}>
+                        <ReplyAll className="w-3.5 h-3.5 mr-1.5" /> Responder a todos
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => onForward(email.raw)}>
+                        <Forward className="w-3.5 h-3.5 mr-1.5" /> Reenviar
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </>
             )}

@@ -23,3 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Supabase CLI binary and temp files
+supabase.exe
+supabase/.temp/
+
+# Seed local — no va a prod
+supabase/seed_local_test.sql
+supabase/migrations_backup/

@@ -14,13 +14,17 @@ import { SpecializedView } from "@/components/SpecializedView";
 import { LatBandejaView } from "@/components/lat/LatBandejaView";
 import { LatDashboardView } from "@/components/lat/LatDashboardView";
 import { GranolaView } from "@/components/GranolaView";
+import { MiDiaView } from "@/components/MiDiaView";
 import { CreateProcessDialog } from "@/components/CreateProcessDialog";
 import { LayoutGrid, Menu } from "lucide-react";
 import logoHeart from "@/assets/logo-heart.png";
+import { setColaboradorPresence } from "@/lib/presence";
+import { AiAssistantSidebar } from "@/components/AiAssistantSidebar";
 
 const VIEW_LABELS: Record<SidebarView, string> = {
   process:          "Pipeline",
   agenda:           "Agenda",
+  "mi-dia":         "Mi Día",
   "cliente360":     "Cliente 360",
   "mis-gestiones":  "Mis Gestiones",
   resumen:          "Resumen Diario",
@@ -37,7 +41,7 @@ const VIEW_LABELS: Record<SidebarView, string> = {
 const Index = () => {
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeView, setActiveView] = useState<SidebarView>("mis-gestiones");
+  const [activeView, setActiveView] = useState<SidebarView>("mi-dia");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -60,6 +64,7 @@ const Index = () => {
             .single();
           if (colab && colab.activo !== false) {
             const expiry = Date.now() + 8 * 60 * 60 * 1000;
+            await setColaboradorPresence(colab.id, true);
             localStorage.setItem("mis_gestiones_colaborador", colab.id);
             localStorage.setItem("crm_session_expiry", String(expiry));
             window.history.replaceState({}, "", "/");
@@ -82,18 +87,50 @@ const Index = () => {
         window.history.replaceState({}, "", "/");
       }
 
+      // Si hay sesión Google activa, re-sincronizar siempre el colaboradorId
+      // para reparar sessions corrompidas por el selector de MisGestiones
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession?.user?.email) {
+        const { data: colab } = await (supabase as any)
+          .from("colaboradores")
+          .select("id, activo")
+          .ilike("email", existingSession.user.email)
+          .single();
+        if (colab && colab.activo !== false) {
+          const expiry = Date.now() + 8 * 60 * 60 * 1000;
+          await setColaboradorPresence(colab.id, true);
+          localStorage.setItem("mis_gestiones_colaborador", colab.id);
+          localStorage.setItem("crm_session_expiry", String(expiry));
+          setIsLoggedIn(true);
+          setAuthReady(true);
+          return;
+        }
+      }
+
       const colabId  = localStorage.getItem("mis_gestiones_colaborador");
       const expiry   = localStorage.getItem("crm_session_expiry");
       const valid    = colabId && expiry && Date.now() < parseInt(expiry);
       if (!valid) {
+        await setColaboradorPresence(colabId, false);
         localStorage.removeItem("mis_gestiones_colaborador");
         localStorage.removeItem("crm_session_expiry");
+      } else {
+        await setColaboradorPresence(colabId, true);
       }
       setIsLoggedIn(!!valid);
       setAuthReady(true);
     };
     init();
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const colaboradorId = localStorage.getItem("mis_gestiones_colaborador");
+    const touch = () => setColaboradorPresence(colaboradorId, true).catch(() => {});
+    touch();
+    const interval = window.setInterval(touch, 60_000);
+    return () => window.clearInterval(interval);
+  }, [isLoggedIn]);
 
   // Listener: navegación desde Dashboard → Bandeja con filtro
   // MUST be before conditional returns to satisfy Rules of Hooks
@@ -137,6 +174,7 @@ const Index = () => {
 
   const renderContent = () => {
     switch (activeView) {
+      case "mi-dia":          return <MiDiaView />;
       case "agenda":          return <AgendaView />;
       case "cliente360":      return <Cliente360View />;
       case "mis-gestiones":   return <MisGestionesView />;
@@ -219,6 +257,7 @@ const Index = () => {
       </div>
 
       <CreateProcessDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+      <AiAssistantSidebar />
     </div>
   );
 };

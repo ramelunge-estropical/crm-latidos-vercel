@@ -24,20 +24,29 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 const BUCKET = "lat-adjuntos";
 
 // ── Bot agent trigger ─────────────────────────────────────────────────────────
+// Fire-and-forget: usa waitUntil para que wpp-webhook devuelva 200 a Gupshup
+// de inmediato sin esperar que lat-bot-agent termine su procesamiento.
 
 function triggerBotAgent(convId: string, telefono: string, contenido: string) {
-  const url = `${SUPABASE_URL}/functions/v1/lat-bot-agent`;
-  const promise = fetch(url, {
+  const task = fetch(`${SUPABASE_URL}/functions/v1/lat-bot-agent`, {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
-      "Content-Type":  "application/json",
-    },
+    headers: { "Authorization": `Bearer ${SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ conversacion_id: convId, telefono, contenido }),
-  }).catch(err => console.error("bot-agent trigger failed:", err));
-  // Keep the edge function alive until the bot trigger request completes.
-  // Without this, Deno may terminate the process before the fetch resolves.
-  (globalThis as any).EdgeRuntime?.waitUntil?.(promise);
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[wpp-webhook] bot-agent HTTP ${res.status}: ${body}`);
+    }
+  }).catch((err) => {
+    console.error("[wpp-webhook] bot-agent trigger failed:", err);
+  });
+
+  // Mantiene el worker vivo hasta que la tarea termine
+  try {
+    (globalThis as any).EdgeRuntime?.waitUntil?.(task);
+  } catch (_) {
+    // Si EdgeRuntime no está disponible, la tarea igualmente sigue en background
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -371,6 +380,13 @@ Deno.serve(async (req: Request) => {
         contenido = `[${innerTyp}]`;
       }
 
+      // Deduplicar: si ya existe un mensaje inbound con este wpp_message_id, ignorar
+      if (wppId) {
+        const { data: dup } = await supabase.from("lat_mensajes")
+          .select("id").eq("wpp_message_id", wppId).limit(1).maybeSingle();
+        if (dup) return new Response("OK", { status: 200 });
+      }
+
       const { error: insErr } = await supabase.from("lat_mensajes").insert({
         conversacion_id: convId,
         tipo:            "inbound",
@@ -382,10 +398,10 @@ Deno.serve(async (req: Request) => {
         adjunto_tipo:    adjTipo,
       });
       if (insErr) console.error("lat_mensajes insert error (gupshup):", insErr);
-      else await touchConversacion(convId, contenido);
-
-      // Trigger bot agent (only for text messages — bot can't process media)
-      if (innerTyp === "text") triggerBotAgent(convId, telefono, contenido);
+      else {
+        await touchConversacion(convId, contenido);
+        triggerBotAgent(convId, telefono, contenido);
+      }
 
       return new Response("OK", { status: 200 });
     }
@@ -435,8 +451,23 @@ Deno.serve(async (req: Request) => {
               }
               const labelMap: Record<string,string> = { image:"📷 Imagen", audio:"🎤 Nota de voz", voice:"🎤 Nota de voz", video:"🎥 Video", document:"📎 Documento", sticker:"😀 Sticker" };
               contenido = mediaObj.caption ?? labelMap[msg.type] ?? `[${msg.type}]`;
+            } else if (msg.type === "contacts") {
+              const contactList = (msg.contacts ?? []).map((c: any) => ({
+                nombre: c.name?.formatted_name ?? c.name?.first_name ?? "Contacto",
+                telefono: c.phones?.[0]?.phone ?? null,
+                email: c.emails?.[0]?.email ?? null,
+                empresa: c.org?.company ?? null,
+              }));
+              contenido = JSON.stringify({ __contacts: contactList.length ? contactList : [{ nombre: "Contacto compartido" }] });
             } else {
               contenido = `[${msg.type}]`;
+            }
+
+            // Deduplicar: si ya existe un mensaje inbound con este wpp_message_id, ignorar
+            if (wppId) {
+              const { data: dupMeta } = await supabase.from("lat_mensajes")
+                .select("id").eq("wpp_message_id", wppId).limit(1).maybeSingle();
+              if (dupMeta) continue;
             }
 
             const { error: insErrMeta } = await supabase.from("lat_mensajes").insert({
@@ -450,9 +481,10 @@ Deno.serve(async (req: Request) => {
               adjunto_tipo:    adjTipo,
             });
             if (insErrMeta) console.error("lat_mensajes insert error (meta):", insErrMeta);
-            else await touchConversacion(convId, contenido);
-
-            if (msg.type === "text") triggerBotAgent(convId, telefono, contenido);
+            else {
+              await touchConversacion(convId, contenido);
+              triggerBotAgent(convId, telefono, contenido);
+            }
           }
         }
       }
@@ -485,8 +517,10 @@ Deno.serve(async (req: Request) => {
         adjunto_tipo:    adjTipo,
       });
       if (insErrWati) console.error("lat_mensajes insert error (wati):", insErrWati);
-      else await touchConversacion(convId, watiContenido);
-      if (body.text) triggerBotAgent(convId, telefono, body.text);
+      else {
+        await touchConversacion(convId, watiContenido);
+        triggerBotAgent(convId, telefono, watiContenido);
+      }
       return new Response("OK", { status: 200 });
     }
 

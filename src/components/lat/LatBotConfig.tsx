@@ -1,10 +1,25 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Bot, Save, RotateCcw, Info, GitMerge, ClipboardList, Power, PowerOff } from "lucide-react";
+import { Bot, Save, RotateCcw, Info, GitMerge, ClipboardList, Power, PowerOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const ANON_KEY     = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+async function getGmailOAuthUrl(): Promise<string | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/lat-gmail-oauth-url`, {
+      headers: { Authorization: `Bearer ${ANON_KEY}`, apikey: ANON_KEY },
+    });
+    const json = await res.json();
+    return json.url ?? null;
+  } catch {
+    return null;
+  }
+}
 
 interface BotConfig {
   id: string;
@@ -12,6 +27,7 @@ interface BotConfig {
   activo: boolean;
   modelo: string;
   max_turnos: number;
+  max_tokens: number;
   temperatura: number;
   prompt_identidad: string;
   prompt_reglas: string;
@@ -57,6 +73,7 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
   const [saving, setSaving] = useState(false);
   const [togglingPower, setTogglingPower] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [connectingGmail, setConnectingGmail] = useState(false);
 
   const current = { ...cfg, ...form } as BotConfig;
   const isEnabled = current.activo ?? false;
@@ -160,6 +177,29 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Reconectar Gmail con scopes de envío */}
+          {canal === "email" && !readonly && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
+              disabled={connectingGmail}
+              onClick={async () => {
+                setConnectingGmail(true);
+                const url = await getGmailOAuthUrl();
+                setConnectingGmail(false);
+                if (url) {
+                  window.location.href = url;
+                } else {
+                  toast.error("No se pudo obtener la URL de autorización Gmail");
+                }
+              }}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${connectingGmail ? "animate-spin" : ""}`} />
+              {connectingGmail ? "Cargando…" : "Reconectar Gmail"}
+            </Button>
+          )}
+
           {/* Power toggle */}
           {!readonly && (
             <Button
@@ -225,6 +265,17 @@ export function LatBotConfig({ readonly, canal = "whatsapp" }: { readonly?: bool
               className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
             />
             <p className="text-[10px] text-muted-foreground">Mensajes antes de derivar al asesor</p>
+          </div>
+
+          <div className="sm:col-span-2 space-y-1.5">
+            <label className="text-xs font-medium">Tokens máximos por respuesta</label>
+            <input
+              type="number" min={100} max={1000} step={50} disabled={readonly}
+              value={current.max_tokens ?? 400}
+              onChange={e => set("max_tokens", parseInt(e.target.value))}
+              className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-background focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+            />
+            <p className="text-[10px] text-muted-foreground">Longitud máxima de cada respuesta del bot. Menos = más barato. Recomendado: 300–500</p>
           </div>
         </div>
 

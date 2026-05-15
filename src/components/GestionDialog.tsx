@@ -249,12 +249,38 @@ export function GestionDialog({ open, onOpenChange, processId, stageId, gestion,
         const { data: nueva, error } = await (supabase as any).from("gestiones").insert(payload).select("id, title, type, area_id, process_id").single();
         if (error) throw error;
         toast.success("Gestión creada");
+
         // Emitir evento de integración (fire-and-forget)
         fetch("https://qadfjbgfdejmhblgvaef.supabase.co/functions/v1/recibir-evento", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-api-key": "a8b36b60-ce29-4877-b9af-34a15a496e8a" },
           body: JSON.stringify({ origen: "latidos", tipo: "gestion_creada", payload: { ...payload, id: nueva?.id } }),
         }).catch(() => {});
+
+        // Auto-sync con sistemas integrados del proceso
+        if (nueva?.process_id) {
+          const { data: proc } = await (supabase as any)
+            .from("processes")
+            .select("sistemas_integrados")
+            .eq("id", nueva.process_id)
+            .single();
+          const sistemas: string[] = proc?.sistemas_integrados ?? [];
+          if (sistemas.includes("legal")) {
+            fetch("https://qadfjbgfdejmhblgvaef.supabase.co/functions/v1/legal-task-sync?push=1", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+              body: JSON.stringify({
+                activity_id: nueva.id,
+                titulo: payload.title,
+                descripcion: payload.description ?? "",
+                estado: "pendiente",
+                prioridad: payload.priority ?? "media",
+                fecha_vencimiento: payload.due_date ?? null,
+                colaborador_id: payload.responsable_id ?? null,
+              }),
+            }).catch(() => {});
+          }
+        }
       }
 
       invalidateAll();
