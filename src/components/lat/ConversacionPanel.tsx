@@ -845,29 +845,50 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
       {activeTab === 'chat' && !isEmail && (
         <>
           {/* IA Compact Block */}
-          {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (
-            <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex items-center gap-2 flex-wrap shrink-0">
-              <Zap className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
-              {conversacion.intencion_detectada && (
-                <span className="text-[10px] bg-fuchsia-500/10 text-fuchsia-600 px-2 py-0.5 rounded-full font-medium">
-                  {conversacion.intencion_detectada}
-                </span>
-              )}
-              {conversacion.urgencia_detectada && (
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                  conversacion.urgencia_detectada === 'critica' ? 'bg-red-500/15 text-red-600' :
-                  conversacion.urgencia_detectada === 'alta'    ? 'bg-orange-500/15 text-orange-600' :
-                  conversacion.urgencia_detectada === 'media'   ? 'bg-yellow-500/15 text-yellow-600' :
-                  'bg-muted text-muted-foreground'
-                }`}>
-                  {conversacion.urgencia_detectada === 'critica' ? '🔴' : conversacion.urgencia_detectada === 'alta' ? '🟠' : conversacion.urgencia_detectada === 'media' ? '🟡' : '🟢'} {conversacion.urgencia_detectada}
-                </span>
-              )}
-              {conversacion.resumen_ia && (
-                <span className="text-[10px] text-muted-foreground truncate max-w-xs">{conversacion.resumen_ia}</span>
-              )}
-            </div>
-          )}
+          {!isMock && (conversacion.intencion_detectada || conversacion.urgencia_detectada || conversacion.cola_sugerida_id) && (() => {
+            const secundarias = conversacion.bot_contexto?.intenciones_secundarias ?? [];
+            const urgenciaColor = (u: string) =>
+              u === 'critica' ? 'bg-red-500/15 text-red-600' :
+              u === 'alta'    ? 'bg-orange-500/15 text-orange-600' :
+              u === 'media'   ? 'bg-yellow-500/15 text-yellow-600' :
+                                'bg-muted text-muted-foreground';
+            const urgenciaIcon = (u: string) =>
+              u === 'critica' ? '🔴' : u === 'alta' ? '🟠' : u === 'media' ? '🟡' : '🟢';
+            return (
+              <div className="px-4 py-2 bg-fuchsia-500/5 border-b border-fuchsia-500/15 flex flex-col gap-1.5 shrink-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Zap className="w-3.5 h-3.5 text-fuchsia-500 shrink-0" />
+                  {conversacion.intencion_detectada && (
+                    <span className="text-[10px] bg-fuchsia-500/10 text-fuchsia-600 px-2 py-0.5 rounded-full font-medium">
+                      {conversacion.intencion_detectada}
+                    </span>
+                  )}
+                  {conversacion.urgencia_detectada && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${urgenciaColor(conversacion.urgencia_detectada)}`}>
+                      {urgenciaIcon(conversacion.urgencia_detectada)} {conversacion.urgencia_detectada}
+                    </span>
+                  )}
+                  {conversacion.resumen_ia && (
+                    <span className="text-[10px] text-muted-foreground truncate max-w-xs">{conversacion.resumen_ia}</span>
+                  )}
+                </div>
+                {secundarias.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pl-5">
+                    <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide font-medium shrink-0">También:</span>
+                    {secundarias.map((s, i) => (
+                      <span
+                        key={i}
+                        title={s.evidencia}
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium border border-current/20 ${urgenciaColor(s.urgencia)}`}
+                      >
+                        {urgenciaIcon(s.urgencia)} {s.intencion}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div
             ref={messagesContainerRef}
             className="flex-1 min-h-0 overflow-y-auto scrollbar-thin relative flex flex-col"

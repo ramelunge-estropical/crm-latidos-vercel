@@ -389,7 +389,7 @@ RESPONDE SIEMPRE con este JSON exacto (sin markdown extra ni texto fuera del JSO
     "cola_id": "id exacto de la lista — cola principal",
     "intencion": "descripción corta de la intención principal",
     "urgencia": "baja" | "media" | "alta" | "critica",
-    "confianza": 0.0,
+    "confianza": 0.85,
     "resumen": "resumen para el asesor humano",
     "intenciones_secundarias": [
       {
@@ -436,7 +436,7 @@ async function callOpenAI(
         messages:        [{ role: "system", content: systemPrompt }, ...history],
         response_format: { type: "json_object" },
         temperature:     cfg?.temperatura ?? 0.3,
-        max_tokens:      cfg?.max_tokens  ?? 400,
+        max_tokens:      cfg?.max_tokens  ?? 800,
       }),
     });
   } finally {
@@ -635,14 +635,12 @@ Deno.serve(async (req: Request) => {
       }
 
       // Validar cola_id contra lista real y confianza mínima; fallback a supervisor
+      console.log("[bot] cola_id IA:", clasi.cola_id, "| confianza IA:", clasi.confianza);
       const colaMatch    = colas.find(c => c.id === clasi.cola_id);
-      const confianzaMin = colaMatch?.bot_clasificacion?.confianza_min ?? 0.50;
-      const confianzaOk  = (clasi.confianza ?? 0) >= confianzaMin;
-      const colaFinal    = (colaMatch && confianzaOk) ? colaMatch : (colaFallback ?? null);
-      const esFallback   = !colaMatch || !confianzaOk;
-      const motivoFallback = !colaMatch
-        ? `cola_id ${clasi.cola_id} no existe`
-        : `confianza ${clasi.confianza} < mínima ${confianzaMin}`;
+      console.log("[bot] colaMatch:", colaMatch?.nombre ?? "NINGUNO (fallback)");
+      const colaFinal    = colaMatch ?? (colaFallback ?? null);
+      const esFallback   = !colaMatch;
+      const motivoFallback = `cola_id ${clasi.cola_id} no existe en lista`;
 
       // Validar IDs de colas secundarias contra lista real (descartar inventados por el modelo)
       const secundariasValidas = (clasi.intenciones_secundarias ?? []).filter(

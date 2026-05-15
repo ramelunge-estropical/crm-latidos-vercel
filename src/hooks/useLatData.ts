@@ -65,6 +65,15 @@ export interface LatConversacion {
   sentimiento_detectado?: string | null;
   resumen_ia?: string | null;
   cola_sugerida_id?: string | null;
+  bot_contexto?: {
+    intenciones_secundarias?: Array<{
+      intencion: string;
+      cola_sugerida_id: string;
+      urgencia: "baja" | "media" | "alta" | "critica";
+      evidencia: string;
+    }>;
+    [key: string]: unknown;
+  } | null;
   // Routing result (Phase 3)
   routing_status?: string | null;
   routing_reason?: string | null;
