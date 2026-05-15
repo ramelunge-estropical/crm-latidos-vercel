@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, Search, MessageSquare, Phone as PhoneIcon, Mail, Loader2, UserPlus, ArrowRight } from 'lucide-react';
+import { X, Search, MessageSquare, Phone as PhoneIcon, Mail, Loader2, UserPlus, ArrowRight, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { CreateClienteDialog } from '@/components/CreateClienteDialog';
@@ -14,14 +14,6 @@ interface Props {
   onConversacionCreated: (conversacionId: string) => void;
 }
 
-/**
- * Modal "Nueva conversación":
- *  - Solo pide CLIENTE + CANAL.
- *  - No pide asunto ni mensaje inicial → el asesor escribe luego desde el chat.
- *  - Si ya existe una conversación del mismo cliente/canal, la reutiliza
- *    (no crea hilos paralelos en WhatsApp) y deja un evento de sistema
- *    "Nueva comunicación iniciada HH:MM" en el hilo.
- */
 export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCreated }: Props) {
   const [step, setStep]               = useState<'cliente' | 'canal'>('cliente');
   const [search, setSearch]           = useState('');
@@ -30,6 +22,7 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
   const [canal, setCanal]             = useState<Canal>('whatsapp');
   const [creating, setCreating]       = useState(false);
   const [showCrearCliente, setShowCrearCliente] = useState(false);
+  const [convExistente, setConvExistente] = useState<any>(null);
 
   const { data: clientes = [], isLoading: searching } = useQuery<any[]>({
     queryKey: ['nueva-conv-search', search],
@@ -53,6 +46,7 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
     setClienteId(null);
     setClienteData(null);
     setCanal('whatsapp');
+    setConvExistente(null);
   };
 
   const handleClose = () => {
@@ -63,12 +57,69 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
   const seleccionarCliente = (c: any) => {
     setClienteId(c.id);
     setClienteData(c);
+    setConvExistente(null);
     setStep('canal');
     if (!c.telefono && !c.email) {
       toast.warning('El cliente no tiene teléfono ni correo registrado');
     }
   };
 
+  const handleCanalChange = (c: Canal) => {
+    setCanal(c);
+    setConvExistente(null);
+  };
+
+  // Abre/reutiliza la conversación activa existente encontrada por el check anti-duplicados.
+  const handleAbrirExistente = async () => {
+    if (!convExistente) return;
+    setCreating(true);
+    try {
+      const colaboradorId = localStorage.getItem('mis_gestiones_colaborador');
+      const ahora = new Date();
+      const hhmm = `${ahora.getHours().toString().padStart(2, '0')}:${ahora.getMinutes().toString().padStart(2, '0')}`;
+
+      await (supabase as any)
+        .from('lat_conversaciones')
+        .update({ en_foco: true, ultima_interaccion: ahora.toISOString() })
+        .eq('id', convExistente.id);
+
+      await (supabase as any).from('lat_mensajes').insert({
+        conversacion_id: convExistente.id,
+        tipo:            'sistema',
+        contenido:       `Nueva comunicación iniciada ${hhmm} (${canalLabel(canal)})`,
+        estado:          'enviado',
+      });
+
+      if (colaboradorId) {
+        await (supabase as any).from('lat_trazabilidad').insert({
+          conversacion_id: convExistente.id,
+          tipo_evento:     'ingreso',
+          estado_nuevo:    convExistente.estado,
+          colaborador_id:  colaboradorId,
+          intervencion:    true,
+          motivo:          'Conversación reutilizada manualmente vía bandeja',
+          detalle:         { origen: 'manual', canal, ts: ahora.toISOString() },
+        });
+      }
+
+      if (canal === 'whatsapp') {
+        const ventana = convExistente.ventana_whatsapp;
+        if (!ventana || new Date(ventana) <= ahora) {
+          toast.info('Ventana de 24h cerrada. Usá una plantilla aprobada para iniciar.');
+        }
+      }
+
+      toast.success('Conversación existente abierta');
+      onConversacionCreated(convExistente.id);
+      handleClose();
+    } catch (e: any) {
+      toast.error(e.message ?? 'Error al abrir conversación');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Crea una conversación nueva luego de validar que no existe una activa.
   const handleIniciar = async () => {
     if (!clienteId || !clienteData) return;
     if ((canal === 'whatsapp' || canal === 'phone') && !clienteData.telefono) {
@@ -82,73 +133,80 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
 
     setCreating(true);
     try {
-      // Buscar conversación existente del mismo cliente/canal (cualquier estado salvo cerrado)
+      const colaboradorId = localStorage.getItem('mis_gestiones_colaborador');
+
+      // Anti-duplicados: buscar conversación activa del mismo cliente/canal
       const { data: existentes } = await (supabase as any)
         .from('lat_conversaciones')
-        .select('id, estado, en_foco')
+        .select('id, estado, estado_asignacion, en_foco, responsable_nombre, cola_area_nombre, ventana_whatsapp')
         .eq('cliente_id', clienteId)
         .eq('canal', canal)
-        .neq('estado', 'cerrado')
+        .not('estado', 'in', '(cerrada,resuelta)')
+        .not('estado_asignacion', 'in', '(cerrada,ignorada)')
         .order('updated_at', { ascending: false })
         .limit(1);
 
-      let convId: string;
-      const ahora = new Date();
-      const hhmm = `${ahora.getHours().toString().padStart(2, '0')}:${ahora.getMinutes().toString().padStart(2, '0')}`;
-
       if (existentes && existentes.length > 0) {
-        // ── Reutilizar conversación existente ──
-        convId = existentes[0].id;
-        await (supabase as any)
-          .from('lat_conversaciones')
-          .update({
-            en_foco: true,
-            estado: existentes[0].estado === 'liberado' ? 'abierto' : existentes[0].estado,
-            ultima_interaccion: ahora.toISOString(),
-          })
-          .eq('id', convId);
-
-        // Evento de sistema visible en el hilo
-        await (supabase as any).from('lat_mensajes').insert({
-          conversacion_id: convId,
-          tipo:            'sistema',
-          contenido:       `Nueva comunicación iniciada ${hhmm} (${canalLabel(canal)})`,
-          estado:          'enviado',
-        });
-        toast.success('Conversación existente reactivada');
-      } else {
-        // ── Crear nueva conversación ──
-        const nombre = clienteData.nombre_completo ?? clienteData.razon_social ?? '—';
-        const tel    = clienteData.telefono ?? null;
-        const { data: nueva, error } = await (supabase as any)
-          .from('lat_conversaciones')
-          .insert({
-            cliente_id:        clienteId,
-            cliente_nombre:    nombre,
-            telefono:          tel,
-            canal,
-            estado:            'abierto',
-            asunto:            null,
-            ultimo_mensaje:    `Nueva comunicación iniciada ${hhmm}`,
-            prioridad:         'media',
-            en_foco:           true,
-            ultima_interaccion: ahora.toISOString(),
-          })
-          .select('id')
-          .single();
-        if (error) throw error;
-        convId = nueva.id;
-
-        // Evento de sistema en hilo nuevo
-        await (supabase as any).from('lat_mensajes').insert({
-          conversacion_id: convId,
-          tipo:            'sistema',
-          contenido:       `Nueva comunicación iniciada ${hhmm} (${canalLabel(canal)})`,
-          estado:          'enviado',
-        });
-        toast.success('Conversación creada');
+        // Mostrar aviso al usuario en lugar de proceder automáticamente
+        setConvExistente(existentes[0]);
+        setCreating(false);
+        return;
       }
 
+      // Sin duplicado → crear conversación nueva
+      const ahora = new Date();
+      const hhmm = `${ahora.getHours().toString().padStart(2, '0')}:${ahora.getMinutes().toString().padStart(2, '0')}`;
+      const nombre = clienteData.nombre_completo ?? clienteData.razon_social ?? '—';
+      const tel    = clienteData.telefono ?? null;
+
+      const { data: nueva, error } = await (supabase as any)
+        .from('lat_conversaciones')
+        .insert({
+          cliente_id:         clienteId,
+          cliente_nombre:     nombre,
+          telefono:           tel,
+          canal,
+          estado:             'abierta',
+          estado_asignacion:  'asignada',
+          bot_estado:         'pausado',
+          responsable_id:     colaboradorId ?? null,
+          owner_actual_id:    colaboradorId ?? null,
+          owner_original_id:  colaboradorId ?? null,
+          asunto:             null,
+          ultimo_mensaje:     `Conversación iniciada ${hhmm}`,
+          prioridad:          'media',
+          en_foco:            true,
+          ultima_interaccion: ahora.toISOString(),
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      const convId = nueva.id;
+
+      await (supabase as any).from('lat_mensajes').insert({
+        conversacion_id: convId,
+        tipo:            'sistema',
+        contenido:       `Conversación iniciada manualmente ${hhmm} (${canalLabel(canal)})`,
+        estado:          'enviado',
+      });
+
+      if (colaboradorId) {
+        await (supabase as any).from('lat_trazabilidad').insert({
+          conversacion_id: convId,
+          tipo_evento:     'ingreso',
+          estado_nuevo:    'abierta',
+          colaborador_id:  colaboradorId,
+          intervencion:    true,
+          motivo:          'Conversación creada manualmente vía bandeja',
+          detalle:         { origen: 'manual', canal, ts: ahora.toISOString() },
+        });
+      }
+
+      if (canal === 'whatsapp') {
+        toast.info('Ventana de 24h cerrada. Usá una plantilla aprobada para iniciar.');
+      }
+
+      toast.success('Conversación creada');
       onConversacionCreated(convId);
       handleClose();
     } catch (e: any) {
@@ -258,7 +316,7 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
                       return (
                         <button
                           key={c}
-                          onClick={() => !disabled && setCanal(c)}
+                          onClick={() => !disabled && handleCanalChange(c)}
                           disabled={disabled}
                           className={`flex flex-col items-center gap-1 p-2 rounded-md border transition-colors ${
                             canal === c
@@ -290,14 +348,51 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
                   )}
                 </div>
 
-                <button
-                  onClick={handleIniciar}
-                  disabled={creating}
-                  className="w-full flex items-center justify-center gap-1.5 text-[11px] px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 font-medium"
-                >
-                  {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                  Abrir conversación
-                </button>
+                {/* Aviso de conversación activa existente */}
+                {convExistente && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[11px] font-medium text-foreground">Ya existe una conversación activa</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {convExistente.responsable_nombre
+                            ? `Asignada a ${convExistente.responsable_nombre}`
+                            : convExistente.cola_area_nombre
+                              ? `En cola: ${convExistente.cola_area_nombre}`
+                              : 'Pendiente de asignación'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setConvExistente(null)}
+                        className="flex-1 text-[11px] px-3 py-1.5 rounded-md border border-border hover:bg-accent/30"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleAbrirExistente}
+                        disabled={creating}
+                        className="flex-1 flex items-center justify-center gap-1 text-[11px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+                        Abrir existente
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {!convExistente && (
+                  <button
+                    onClick={handleIniciar}
+                    disabled={creating}
+                    className="w-full flex items-center justify-center gap-1.5 text-[11px] px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 font-medium"
+                  >
+                    {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+                    Abrir conversación
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -310,6 +405,7 @@ export function NuevaConversacionDialog({ open, onOpenChange, onConversacionCrea
         onCreated={(id, nombre, telefono, email) => {
           setClienteId(id);
           setClienteData({ id, nombre_completo: nombre, telefono, email });
+          setConvExistente(null);
           setStep('canal');
         }}
       />
