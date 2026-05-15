@@ -296,9 +296,12 @@ export function ConversacionPanel({ conversacion }: ConversacionPanelProps) {
   const canal = canalMeta[conversacion.canal] ?? canalMeta.whatsapp;
   const CanalIcon = canal.icon;
 
-  const isOutOfWindow = conversacion.estado === 'fuera_ventana' ||
-    (conversacion.ventana_whatsapp && new Date(conversacion.ventana_whatsapp).getTime() < Date.now());
   const isWhatsapp = conversacion.canal === 'whatsapp';
+  const isOutOfWindow = isWhatsapp && (
+    conversacion.estado === 'fuera_ventana' ||
+    !conversacion.ventana_whatsapp ||
+    new Date(conversacion.ventana_whatsapp).getTime() < Date.now()
+  );
   const isEmail = conversacion.canal === 'email';
 
   // ── Mensajes ──────────────────────────────────────────────────────────────
